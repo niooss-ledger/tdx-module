@@ -49,6 +49,7 @@ api_error_type tdh_sys_lp_shutdown(void)
      *   HOST RIP field to the value of SYS_INFO_TABLE.SHUTDOWN_HOST_RIP,
      *   originally configured by the SEAMLDR.
      */
+
     ia32_vmwrite(VMX_HOST_RIP_ENCODE, global_data->shutdown_host_rip);
 
     // Do a global EPT flush.  This is a defense-in-depth

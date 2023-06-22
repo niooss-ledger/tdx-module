@@ -299,7 +299,6 @@ typedef struct tdx_module_global_s
     debug_control_t debug_control;
     debug_message_t trace_buffer[TRACE_BUFFER_SIZE];
 #endif
-
 } tdx_module_global_t;
 
 #endif // __TDX_GLOBAL_DATA_H_INCLUDED__

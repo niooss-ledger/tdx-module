@@ -4,7 +4,7 @@
 #//
 #// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
 #// 
-#// The Materials are provided \“as is,\” without any express or implied warranty of any kind including warranties
+#// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
 #// of merchantability, non-infringement, title, or fitness for a particular purpose.
 
 # src_defs.mk - Sources, targets definitions and locations
@@ -34,6 +34,9 @@ VPATH := $(SRC_DIRS)
 
 # Source and headers files
 C_SRC_FILES = $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c))
+ifndef SUPPRESS_PERF_UTILS_FILTER_OUT
+ C_SRC_FILES := $(filter-out $(PROJ_DIR)/src/common/helpers/perf_meas_util.c, ${C_SRC_FILES})
+endif
 ASM_SRC_FILES = $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.S))
 SRC_FILES = $(C_SRC_FILES) $(ASM_SRC_FILES)
 HEADER_FILES = $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.h))
@@ -61,4 +64,10 @@ INCLUDE_PATH := -I$(PROJ_DIR)/include -I$(CRYPTO_LIB_BUILD_PATH)/include -I$(PRO
 # Tools
 TOOLS_DIR := $(PROJ_DIR)/tools
 PAD_BINARY_PY := $(TOOLS_DIR)/pad_binary/pad_binary.py
+
+#Python scripts
+SCRIPT := $(PROJ_DIR)/tools/tdx_auto_gen_headers/tdx_gen_headers.py
+ARCHITECTURE_FILES_PATH = $(PROJ_DIR)/tools/tdx_auto_gen_headers/architecture_files
+AUTO_GEN_PATH := $(PROJ_DIR)/include/auto_gen
+ARCHITECTURE_REPOSITORY_CLONE_PATH = $(PROJ_DIR)/tdx-flow-code
 

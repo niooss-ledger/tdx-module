@@ -134,6 +134,22 @@ static void restore_guest_td_state_before_td_entry(tdcs_t* tdcs_ptr, tdvps_t* td
         ia32_wrmsr(IA32_UMWAIT_CONTROL, tdvps_ptr->guest_msr_state.ia32_umwait_control);
     }
 
+    if (tdcs_ptr->executions_ctl_fields.cpuid_flags.tsx_supported)
+    {
+        ia32_wrmsr(IA32_TSX_CTRL_MSR_ADDR, tdvps_ptr->guest_msr_state.ia32_tsx_ctrl);
+    }
+    else if (get_global_data()->plt_common_config.ia32_arch_capabilities.tsx_ctrl)
+    {
+        // Read the host VMM value of IA32_TSX_CTRL
+        ia32_tsx_ctrl_t tsx_ctrl = { .raw = ia32_rdmsr(IA32_TSX_CTRL_MSR_ADDR) };
+        get_local_data()->vmm_non_extended_state.ia32_tsx_ctrl = tsx_ctrl.raw;   // Will be used on TD exit
+
+        // Optimize by disabling TSX only if not disabled by the host VMM
+        if ((tsx_ctrl.rtm_disable == 0) || (tsx_ctrl.rsvd != 0))
+        {
+            ia32_wrmsr(IA32_TSX_CTRL_MSR_ADDR, IA32_TSX_CTRL_DISABLE_VALUE);
+        }
+    }
 
     // Unconditionally restore the following MSRs from TDVP:
     // IA32_STAR, IA32_SPEC_CTRL, IA32_LSTAR, IA32_FMASK, IA32_KERNEL_GS_BASE, IA32_TSC_AUX
@@ -231,7 +247,8 @@ api_error_type tdh_vp_enter(uint64_t target_tdvpr_pa)
     tdvpr_pa.raw = target_tdvpr_pa;
 
     // Boot NT4 bit should not be set
-    if ((ia32_rdmsr(IA32_MISC_ENABLES_MSR_ADDR) & MISC_EN_BOOT_NT4_BIT ) != 0)
+    ia32_misc_enable_t misc_enable = { .raw = ia32_rdmsr(IA32_MISC_ENABLES_MSR_ADDR) };
+    if (misc_enable.boot_nt4 != 0)
     {
         return_val = TDX_BOOT_NT4_SET;
         goto EXIT_FAILURE;
@@ -329,13 +346,13 @@ api_error_type tdh_vp_enter(uint64_t target_tdvpr_pa)
         goto EXIT_FAILURE;
     }
 
-    // If IA32_TSX_CTRL MSR exists, we require its value to be the same as sampled on TDHSYSINIT
-    if (global_data_ptr->plt_common_config.ia32_arch_capabilities.tsx_ctrl)
+    // If monitor-mwait support is enabled, then monitor_fsm must be enabled
+    if (tdcs_ptr->executions_ctl_fields.cpuid_flags.monitor_mwait_supported)
     {
-        if (ia32_rdmsr(IA32_TSX_CTRL_MSR_ADDR) != global_data_ptr->plt_common_config.ia32_tsx_ctrl.raw)
+        if (!misc_enable.enable_monitor_fsm)
         {
-            return_val = api_error_with_operand_id(TDX_INCONSISTENT_MSR, IA32_TSX_CTRL_MSR_ADDR);
-            TDX_ERROR("IA32_TSX_CTRL MSR exists, but its value does not match to the value sampled on tdh_sys_init\n");
+            return_val = api_error_with_operand_id(TDX_INCORRECT_MSR_VALUE, IA32_MISC_ENABLES_MSR_ADDR);
+            TDX_ERROR("monitor_fsm is disabled although monitor-mwait support is enabled\n");
             goto EXIT_FAILURE;
         }
     }

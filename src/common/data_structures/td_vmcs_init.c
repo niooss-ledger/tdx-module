@@ -220,8 +220,10 @@ static void init_td_vmcs_exec_control_field(tdcs_t * tdcs_ptr)
         vmentry_controls_vector &= ~((uint32_t) 1 << VMCS_ENTRY_LOAD_PKRS_BIT_LOCATION);
     }
 
+    processor_based_execution_controls.mwait_exiting = ~tdcs_ptr->executions_ctl_fields.cpuid_flags.monitor_mwait_supported;
     processor_based_execution_controls.rdpmc_exiting = ~tdcs_ptr->executions_ctl_fields.attributes.perfmon;
-    
+    processor_based_execution_controls.monitor_exiting = ~tdcs_ptr->executions_ctl_fields.cpuid_flags.monitor_mwait_supported;
+
     sec_proc_based_execution_controls.en_guest_wait_pause = tdcs_ptr->executions_ctl_fields.cpuid_flags.waitpkg_supported; 
     sec_proc_based_execution_controls.en_pconfig = tdcs_ptr->executions_ctl_fields.cpuid_flags.mktme_supported;    
 

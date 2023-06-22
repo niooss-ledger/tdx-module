@@ -90,6 +90,13 @@ static void init_msr_opt(uint64_t addr, uint64_t cur_value)
             ia32_wrmsr(IA32_LBR_DEPTH_MSR_ADDR, IA32_LBR_DEPTH_MSR_RESET_STATE);
         }
     }
+    else if (addr == IA32_TSX_CTRL_MSR_ADDR)
+    {
+        if (cur_value != IA32_TSX_CTRL_DISABLE_VALUE)
+        {
+            ia32_wrmsr(IA32_TSX_CTRL_MSR_ADDR, IA32_TSX_CTRL_DISABLE_VALUE);
+        }
+    }
     else // All other MSR's are reset to 0
     {
         if (cur_value != 0)
@@ -162,6 +169,14 @@ static void load_vmm_state_before_td_exit(tdx_module_local_t* local_data_ptr)
     init_msr_opt(IA32_LSTAR_MSR_ADDR, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_lstar);
     init_msr_opt(IA32_FMASK_MSR_ADDR, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_fmask);
     init_msr_opt(IA32_KERNEL_GS_BASE_MSR_ADDR, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_kernel_gs_base);
+    if(local_data_ptr->vp_ctx.tdcs->executions_ctl_fields.cpuid_flags.tsx_supported)
+    {
+        ia32_wrmsr(IA32_TSX_CTRL_MSR_ADDR, 0);
+    }
+    else
+    {
+        init_msr_opt(IA32_TSX_CTRL_MSR_ADDR, get_local_data()->vmm_non_extended_state.ia32_tsx_ctrl);
+    }
 
     /*
      *  Use vmwrite to update the following SEAM-VMCS guest fields
@@ -246,6 +261,10 @@ static void save_guest_td_state_before_td_exit(tdcs_t* tdcs_ptr, tdx_module_loca
     {
         tdvps_ptr->guest_msr_state.ia32_umwait_control= ia32_rdmsr(IA32_UMWAIT_CONTROL);
     }
+    if (tdcs_ptr->executions_ctl_fields.cpuid_flags.tsx_supported)
+    {
+        tdvps_ptr->guest_msr_state.ia32_tsx_ctrl= ia32_rdmsr(IA32_TSX_CTRL_MSR_ADDR);
+    }    
 
     // Save the following MSRs:
     // IA32_STAR, IA32_LSTAR,

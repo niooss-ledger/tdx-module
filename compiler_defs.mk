@@ -4,7 +4,7 @@
 #//
 #// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
 #// 
-#// The Materials are provided \“as is,\” without any express or implied warranty of any kind including warranties
+#// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
 #// of merchantability, non-infringement, title, or fitness for a particular purpose.
 
 # compiler_defs.mk - Compiler definition and flags
@@ -23,6 +23,8 @@ CXX_WITHOUT_CODE_COVERAGE := $(CXX)
 STD_FLAGS = -MD -MP -m64 -Wall -Wextra -fPIC -fno-builtin-memset -fvisibility=hidden -mcmodel=small \
 			-mstack-alignment=16 -mstackrealign -std=c17 -mno-mmx -mno-sse -fno-jump-tables
 
+# Optimization flags
+
 OPT_FLAGS = -O2
 
 # SecV mandatory flags
@@ -32,10 +34,6 @@ CET_FLAGS = -mshstk -fcf-protection
 
 # Combined flags
 CFLAGS = $(STD_FLAGS) $(PROJ_FLAGS) $(OPT_FLAGS) $(SECV_FLAGS) $(CET_FLAGS) $(PRODUCTION_FLAGS) 
-ifdef CHECK_DBG_DEFINE
-# Add flags to dump preprocessor defines 
-CFLAGS += -dM -E
-endif
 
 # Entry pointer for the linker
 MODULE_ENTRY_POINT = tdx_seamcall_entry_point

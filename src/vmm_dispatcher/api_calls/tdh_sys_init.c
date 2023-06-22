@@ -290,6 +290,11 @@ _STATIC_INLINE_ api_error_type check_cpuid_configurations(tdx_module_global_t* g
     global_data_ptr->xfd_faulting_mask = 0; // Updated later per CPUID leaf 0xD
     global_data_ptr->x2apic_core_id_shift_count = 0;  // Updated later per CPUID leaf 0x1F
 
+    // Boot NT4 bit should not be set
+    if ((ia32_rdmsr(IA32_MISC_ENABLES_MSR_ADDR) & MISC_EN_BOOT_NT4_BIT) != 0)
+    {
+        return TDX_BOOT_NT4_SET;
+    }
 
     for (uint32_t i = 0; i < MAX_NUM_CPUID_LOOKUP; i++)
     {
@@ -373,12 +378,6 @@ _STATIC_INLINE_ api_error_type check_cpuid_configurations(tdx_module_global_t* g
         */
         else if (leaf == CPUID_EXT_FEATURES_LEAF && subleaf == CPUID_EXT_FEATURES_SUBLEAF)
         {
-            // Check the number of supported sub-leaves
-            if ((cpuid_config.values.eax < 1) || (cpuid_config.values.eax > 2))
-            {
-                return api_error_with_operand_id(TDX_CPUID_MAX_SUBLEAVES_UNRECOGNIZED, CPUID_EXT_FEATURES_LEAF);
-            }
-
             //Sample the TSX support bits. 
             cpuid_07_00_ebx_t cpuid_07_00_ebx = {.raw = cpuid_config.values.ebx};
             global_data_ptr->hle_supported = cpuid_07_00_ebx.hle;
@@ -598,7 +597,7 @@ _STATIC_INLINE_ api_error_type check_cpuid_configurations(tdx_module_global_t* g
     return TDX_SUCCESS;
 }
 
-_STATIC_INLINE_ api_error_type check_capabilities_msrs(tdx_module_global_t* global_data_ptr)
+_STATIC_INLINE_ api_error_type check_capabilities_msrs(tdx_module_global_t* global_data_ptr, ia32_tsx_ctrl_t* tsx_ctrl, bool_t* tsx_ctrl_modified_flag)
 {
     platform_common_config_t* msr_values_ptr = &global_data_ptr->plt_common_config;
 
@@ -613,18 +612,29 @@ _STATIC_INLINE_ api_error_type check_capabilities_msrs(tdx_module_global_t* glob
         (msr_values_ptr->ia32_arch_capabilities.taa_no == 0) ||
         (msr_values_ptr->ia32_arch_capabilities.misc_package_ctls == 0) ||
         (msr_values_ptr->ia32_arch_capabilities.skip_l1dfl_vmentry == 0) ||
-        (msr_values_ptr->ia32_arch_capabilities.energy_filtering_ctl == 0))
+        (msr_values_ptr->ia32_arch_capabilities.energy_filtering_ctl == 0) ||
+        (msr_values_ptr->ia32_arch_capabilities.doitm == 0) || 
+        (msr_values_ptr->ia32_arch_capabilities.sbdr_ssdp_no == 0) || 
+        (msr_values_ptr->ia32_arch_capabilities.fbsdp_no == 0) || 
+        (msr_values_ptr->ia32_arch_capabilities.psdp_no == 0))
     {
         return api_error_with_operand_id(TDX_INCORRECT_MSR_VALUE, IA32_ARCH_CAPABILITIES_MSR_ADDR);
     }
 
     if (msr_values_ptr->ia32_arch_capabilities.tsx_ctrl)
     {
-        msr_values_ptr->ia32_tsx_ctrl.raw = ia32_rdmsr(IA32_TSX_CTRL_MSR_ADDR);
-        if ((msr_values_ptr->ia32_tsx_ctrl.rtm_disable == 1) ||
-            (msr_values_ptr->ia32_tsx_ctrl.tsx_cpuid_clear == 1))
+        // Clear IA32_TSX_CTRL.TSX_CPUID_CLEAR to allow sampling the real values
+        tsx_ctrl->raw = ia32_rdmsr(IA32_TSX_CTRL_MSR_ADDR);
+        global_data_ptr->plt_common_config.ia32_tsx_ctrl.raw = tsx_ctrl->raw;
+        if (tsx_ctrl->tsx_cpuid_clear == 1)
         {
-            return api_error_with_operand_id(TDX_INCORRECT_MSR_VALUE, IA32_TSX_CTRL_MSR_ADDR);
+            /*  TSX_CPUID_CLEAR forces CPUID(7,0).EBX bits 4 and 11 to 0.  In order
+             *  to get their real values, clear this bit.  
+             *  It will be restored later, after we sample CPUID.
+             */
+            tsx_ctrl->tsx_cpuid_clear = 0;
+            ia32_wrmsr(IA32_TSX_CTRL_MSR_ADDR, tsx_ctrl->raw);
+            *tsx_ctrl_modified_flag = true;
         }
     }
 
@@ -813,15 +823,16 @@ _STATIC_INLINE_ api_error_type check_vmx_msrs(tdx_module_global_t* tdx_global_da
 }
 
 _STATIC_INLINE_ api_error_type check_platform_config_and_cpu_enumeration(
-        tdx_module_global_t* tdx_global_data_ptr)
+        tdx_module_global_t* tdx_global_data_ptr, bool_t* tsx_ctrl_modified_flag)
 {
 
     api_error_type err;
+    ia32_tsx_ctrl_t tsx_ctrl = {.raw = 0};
 
     /*------------------------------------------
       Sample and Check capabilities MSRs
       ------------------------------------------*/
-    if ((err = check_capabilities_msrs(tdx_global_data_ptr)) != TDX_SUCCESS)
+    if ((err = check_capabilities_msrs(tdx_global_data_ptr, &tsx_ctrl, tsx_ctrl_modified_flag)) != TDX_SUCCESS)
     {
         TDX_ERROR("Check capabilities MSRs failure\n");
         return err;
@@ -972,6 +983,8 @@ api_error_type tdh_sys_init(sys_attributes_t tmp_sys_attributes)
     api_error_type retval = TDX_SYS_BUSY;
     api_error_type err;
 
+    bool_t tsx_ctrl_modified_flag = false;
+
     td_param_attributes_t attributes_fixed0;
     td_param_attributes_t attributes_fixed1;
 
@@ -1006,14 +1019,7 @@ api_error_type tdh_sys_init(sys_attributes_t tmp_sys_attributes)
         goto EXIT;
     }
 
-    // Boot NT4 bit should not be set
-    if ((ia32_rdmsr(IA32_MISC_ENABLES_MSR_ADDR) & MISC_EN_BOOT_NT4_BIT ) != 0)
-    {
-        retval = TDX_BOOT_NT4_SET;
-        goto EXIT;
-    }
-
-    if ((err = check_platform_config_and_cpu_enumeration(tdx_global_data_ptr)) != TDX_SUCCESS)
+    if ((err = check_platform_config_and_cpu_enumeration(tdx_global_data_ptr, &tsx_ctrl_modified_flag)) != TDX_SUCCESS)
     {
         TDX_ERROR("Failed to check and config CPU enumeration\n");
         retval = err;
@@ -1040,6 +1046,13 @@ api_error_type tdh_sys_init(sys_attributes_t tmp_sys_attributes)
     retval = TDX_SUCCESS;
 
     EXIT:
+    
+    // Restore the original value of IA32_TSX_CTRL, if modified above
+    if (tsx_ctrl_modified_flag)
+    {
+        ia32_wrmsr(IA32_TSX_CTRL_MSR_ADDR, tdx_global_data_ptr->plt_common_config.ia32_tsx_ctrl.raw);
+    }
+
     if (global_lock_acquired)
     {
         release_sharex_lock_ex(&tdx_global_data_ptr->global_lock);

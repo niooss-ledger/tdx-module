@@ -68,6 +68,7 @@ api_error_type tdh_sys_key_config(void)
 
     // Update the number of initialized packages. If this is the last one, update the system state.
     tdx_global_data_ptr->num_of_init_pkgs++;
+
     if (tdx_global_data_ptr->num_of_init_pkgs == tdx_global_data_ptr->num_of_pkgs)
     {
         tdx_global_data_ptr->global_state.sys_state = SYS_READY;

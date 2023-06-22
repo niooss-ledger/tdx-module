@@ -78,6 +78,12 @@ void tdx_return_to_td(bool_t launch_state)
     wrmsr_opt(IA32_SPEC_CTRL_MSR_ADDR, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_spec_ctrl, spec_ctrl.raw);
 
     // Exit to TD
+#ifdef DEBUG   
+    // Check that we have no mapped keyholes left, beside the 2 that we store for TDR/TDVPR PAMT entries
+    tdx_debug_assert(local_data_ptr->keyhole_state.total_ref_count == NUM_OF_PRESERVED_KEYHOLES);
+#endif
+
+    // Exit to TD
     tdx_tdentry_to_td(launch_state, &local_data_ptr->vp_ctx.tdvps->guest_state);
 }
 
@@ -420,7 +426,6 @@ void tdx_td_dispatcher(void)
 
     // Get exit information
     ia32_vmread(VMX_VM_EXIT_REASON_ENCODE, &vm_exit_reason.raw);
-
     ia32_vmread(VMX_VM_EXIT_QUALIFICATION_ENCODE, &vm_exit_qualification.raw);
     ia32_vmread(VMX_VM_EXIT_INTERRUPTION_INFO_ENCODE, &vm_exit_inter_info.raw);
 

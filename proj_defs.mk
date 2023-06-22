@@ -4,7 +4,7 @@
 #//
 #// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
 #// 
-#// The Materials are provided \“as is,\” without any express or implied warranty of any kind including warranties
+#// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
 #// of merchantability, non-infringement, title, or fitness for a particular purpose.
 
 # proj_defs.mk - Project related defintions
@@ -54,7 +54,13 @@ ifndef TDX_MODULE_MAJOR_VER
 PROJ_FLAGS += -DTDX_MODULE_MAJOR_VER=1
 endif
 
-PRODUCTION_FLAGS = 
-
 PROJ_FLAGS += -D_NO_IPP_DEPRECATED
+
+#Architecture git data
+COMMIT_ID = cc07df69
+ARCHITECTURE_BRANCH_NAME = TDX_Module_1.0_v0.98
+CPUID_EXCEL_VERSION_SUPPORTED = 2
+MSR_EXCEL_VERSION_SUPPORTED = 4
+TDVPS_EXCEL_VERSION_SUPPORTED = 1
+ERRORS_VERSION_SUPPORTED = 3
 

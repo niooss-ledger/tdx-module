@@ -157,7 +157,9 @@ static void rd_wr_msr_generic_case(vm_exit_basic_reason_e vm_exit_reason, uint32
         ((msr_lookup_ptr->bit_meaning == MSR_BITMAP_OTHER) && (msr_addr == IA32_PKRS)
                 && !is_pks_supported_in_tdcs(tdcs_p)) ||
         ((msr_lookup_ptr->bit_meaning == MSR_BITMAP_OTHER) && (msr_addr == IA32_XFD_MSR_ADDR || msr_addr == IA32_XFD_ERROR_MSR_ADDR) &&
-                !is_xfd_supported_in_tdcs(tdcs_p)))
+                !is_xfd_supported_in_tdcs(tdcs_p)) || 
+        ((msr_lookup_ptr->bit_meaning == MSR_BITMAP_OTHER) && (msr_addr == IA32_TSX_CTRL_MSR_ADDR) &&
+                !is_tsx_ctrl_supported_in_tdcs(tdcs_p)) )
     {
         inject_gp(0);
         return;
@@ -195,6 +197,19 @@ static void rd_wr_msr_generic_case(vm_exit_basic_reason_e vm_exit_reason, uint32
         if (msr_addr == IA32_MKTME_KEYID_PARTITIONING_MSR_ADDR)
         {
             if (!is_mktme_supported_in_tdcs(tdcs_p))
+            {
+                inject_gp(0);
+                return;
+            }
+            else
+            {
+                tdx_inject_ve(vm_exit_reason, 0, tdvps_p, 0, 0);
+                return;
+            }
+        }
+        if (msr_addr == IA32_TSC_DEADLINE_MSR_ADDR)
+        {
+            if (!is_tsc_deadline_supported_in_tdcs(tdcs_p))
             {
                 inject_gp(0);
                 return;
@@ -297,7 +312,7 @@ static void rdmsr_ia32_debugctl(tdvps_t* tdvps_p)
     tdvps_p->guest_state.rax = LOW_32BITS(ia32_debugctl.raw);
 }
 
-static void rdmsr_ia32_arch_capabilities(tdvps_t* tdvps_p)
+static void rdmsr_ia32_arch_capabilities(tdvps_t* tdvps_p, tdcs_t* tdcs_p)
 {
     tdx_module_global_t * global_data_ptr = get_global_data();
 
@@ -305,12 +320,27 @@ static void rdmsr_ia32_arch_capabilities(tdvps_t* tdvps_p)
     ia32_arch_capabilities_t ia32_arch_capabilities_value = global_data_ptr->plt_common_config.ia32_arch_capabilities;
 
     // Enumerate IA32_TSX_CTRL MSR as non-existent
-    ia32_arch_capabilities_value.tsx_ctrl = 0;
+    if (!tdcs_p->executions_ctl_fields.cpuid_flags.tsx_supported)
+    {
+        ia32_arch_capabilities_value.tsx_ctrl = 0;
+    }
+    
 
     // Virtualize as 0 all IA32_ARCH_CAPABILITIES bits that are known by the TDX module as reserved  
     ia32_arch_capabilities_value.misc_package_ctls = 0;
     ia32_arch_capabilities_value.energy_filtering_ctl = 0;
-    ia32_arch_capabilities_value.rsvd = 0;
+    ia32_arch_capabilities_value.fb_clear = 0;
+    ia32_arch_capabilities_value.fb_clear_ctrl = 0;
+    ia32_arch_capabilities_value.rrsba = 1;
+    ia32_arch_capabilities_value.bhi_no = 0;
+    ia32_arch_capabilities_value.xapic_disable_status = 0;
+    ia32_arch_capabilities_value.overclocking_status = 0;
+    ia32_arch_capabilities_value.pbrsb_no = 0;
+    
+    // Clear the reserved bits
+    ia32_arch_capabilities_value.reserved_1 = 0;
+    ia32_arch_capabilities_value.reserved_2 = 0;
+    ia32_arch_capabilities_value.reserved_3 = 0;
     
     // Return the value in EDX:EAX
     tdvps_p->guest_state.rdx = HIGH_32BITS(ia32_arch_capabilities_value.raw);
@@ -412,7 +442,7 @@ void td_rdmsr_exit(void)
             rdmsr_ia32_perf_capabilities(tdvps_p, tdcs_p);
             break;
         case IA32_ARCH_CAPABILITIES_MSR_ADDR:
-            rdmsr_ia32_arch_capabilities(tdvps_p);
+            rdmsr_ia32_arch_capabilities(tdvps_p, tdcs_p);
             break;
         default:
             rd_wr_msr_generic_case(VMEXIT_REASON_MSR_READ, msr_addr, false, tdvps_p, tdcs_p);

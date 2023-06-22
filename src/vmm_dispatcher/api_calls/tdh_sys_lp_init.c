@@ -292,7 +292,7 @@ _STATIC_INLINE_ api_error_type check_enumeration_and_compare_configuration(
     if ((err = compare_cpuid_configuration(tdx_global_data_ptr, tdx_local_data_ptr)) != TDX_SUCCESS)
     {
         return err;
-    }
+    }    
 
     if ((err = check_msrs(tdx_global_data_ptr)) != TDX_SUCCESS)
     {
@@ -354,6 +354,7 @@ _STATIC_INLINE_ void tdx_local_init(tdx_module_local_t* tdx_local_data_ptr,
 
     tdx_local_data_ptr->lp_is_init = true;
 
+    // Mark the current LP as initialized
     increment_num_of_lps(tdx_global_data_ptr);
 }
 
@@ -374,7 +375,11 @@ api_error_type tdh_sys_lp_init(void)
     tdx_module_global_t* tdx_global_data_ptr = get_global_data();
     tdx_module_local_t* tdx_local_data_ptr = get_local_data();
 
+    ia32_tsx_ctrl_t tsx_ctrl = {.raw = 0};
+
     api_error_type retval = TDX_SYS_BUSY;
+
+    bool_t tsx_ctrl_modified_flag = false;
 
     tdx_local_data_ptr->vmm_regs.rcx = 0ULL;
     tdx_local_data_ptr->vmm_regs.rdx = 0ULL;
@@ -414,7 +419,7 @@ api_error_type tdh_sys_lp_init(void)
     }
     tdx_local_data_ptr->single_step_def_state.lfsr_value = lfsr_value;
 
-    /* Do a global EPT flush.  This is required to guarantee security in case of
+    /* Do a global EPT flush.  This is required to help ensure security in case of
        a TDX-SEAM module update. */
     const ept_descriptor_t zero_descriptor = { 0 };
     ia32_invept(&zero_descriptor, INVEPT_TYPE_2);
@@ -427,7 +432,9 @@ api_error_type tdh_sys_lp_init(void)
         goto EXIT;
     }
 
-    // Check Capabilities MSRs to have the same values as sampled during TDHSYSINIT
+    /** 
+     * Check Capabilities MSRs to have the same values as sampled during TDHSYSINIT
+     */ 
     if (ia32_rdmsr(IA32_CORE_CAPABILITIES) !=
             tdx_global_data_ptr->plt_common_config.ia32_core_capabilities.raw)
     {
@@ -443,15 +450,35 @@ api_error_type tdh_sys_lp_init(void)
         retval =  api_error_with_operand_id(TDX_INCONSISTENT_MSR, IA32_ARCH_CAPABILITIES_MSR_ADDR);
         goto EXIT;
     }
-
+    
     if (tdx_global_data_ptr->plt_common_config.ia32_arch_capabilities.tsx_ctrl)
     {
+        
         if (ia32_rdmsr(IA32_TSX_CTRL_MSR_ADDR) !=
                 tdx_global_data_ptr->plt_common_config.ia32_tsx_ctrl.raw)
         {
             TDX_ERROR("The check of TSX_CTRL MSR's value failed\n");
             retval =  api_error_with_operand_id(TDX_INCONSISTENT_MSR, IA32_TSX_CTRL_MSR_ADDR);
             goto EXIT;
+        }
+    }
+
+    /**
+     *  Clear IA32_TSX_CTRL.TSX_CPUID_CLEAR to allow sampling the real values
+     *  of CPUID(7,0).EBX bits 4 and 11.
+     */
+    if (tdx_global_data_ptr->plt_common_config.ia32_arch_capabilities.tsx_ctrl)
+    {
+        tsx_ctrl.raw = tdx_global_data_ptr->plt_common_config.ia32_tsx_ctrl.raw;
+        if (tsx_ctrl.tsx_cpuid_clear == 1)
+        {
+            /*  TSX_CPUID_CLEAR forces CPUID(7,0).EBX bits 4 and 11 to 0.  In order
+             *  to get their real values, clear this bit.  
+             *  It will be restored later, after we sample CPUID.
+             */
+            tsx_ctrl.tsx_cpuid_clear = 0;
+            ia32_wrmsr(IA32_TSX_CTRL_MSR_ADDR, tsx_ctrl.raw);
+            tsx_ctrl_modified_flag = true;
         }
     }
 
@@ -472,6 +499,12 @@ api_error_type tdh_sys_lp_init(void)
 
     retval = TDX_SUCCESS;
     EXIT:
+
+    // Restore the original value of IA32_TSX_CTRL, if modified above
+    if (tsx_ctrl_modified_flag)
+    {
+        ia32_wrmsr(IA32_TSX_CTRL_MSR_ADDR, tdx_global_data_ptr->plt_common_config.ia32_tsx_ctrl.raw);
+    }
 
     if (tmp_global_lock_acquired)
     {

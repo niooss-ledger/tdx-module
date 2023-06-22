@@ -12,14 +12,18 @@ List the steps to build the binary and requirements from build environment
 
 -	Python 3.6.3
 
+
 ## Environment dependencies
 
 -	Binary padding script 
 
 
--	[IPP 2021.4](https://github.com/intel/ipp-crypto/releases/tag/ippcp_2021.4):
+-   Compiled in Linux* OS
 
-  1) IPP can be automatically built by the project's makefile.
+
+-	[IPP 2021.4](https://github.com/intel/ipp-crypto/releases/tag/ippcp_2021.4) :
+
+1) IPP can be automatically built by the project's makefile.
 
      - IPP sources needs to be placed under ./libs/ipp/ipp-crypto-ippcp_2021.4 folder.
 
@@ -28,9 +32,13 @@ List the steps to build the binary and requirements from build environment
   2) It can also be built separately with the following flags:
     
 ```bash
+	cd <PROJ_DIR>/libs/ipp/ipp-crypto-ippcp_2021.4/
+
 	CC=clang CXX=clang++ cmake CMakeLists.txt -B_build -DARCH=intel64 -DMERGED_BLD:BOOL=off -DPLATFORM_LIST="y8"
+	
 	cd _build
-	make ippcp_s_y8
+	
+	make -j8 ippcp_s_y8
 ```
 
 

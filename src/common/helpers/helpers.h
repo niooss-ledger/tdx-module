@@ -1092,7 +1092,6 @@ _STATIC_INLINE_ void revert_tlb_tracking_state(tdcs_t* tdcs_ptr, tdvps_t* tdvps_
  *
  * @param leaf
  * @param subleaf
- *
  * @return the index if exist, otherwise -1
  */
 uint32_t get_cpuid_lookup_entry(uint32_t leaf, uint32_t subleaf);
@@ -1100,7 +1099,6 @@ uint32_t get_cpuid_lookup_entry(uint32_t leaf, uint32_t subleaf);
 
 /**
  * @brief Return the current CPL of the guest TD
- *
  * @return the current CPL of the guest TD
  */
 uint32_t get_guest_td_cpl(void);
@@ -1157,6 +1155,10 @@ _STATIC_INLINE_ bool_t is_dca_supported_in_tdcs(tdcs_t * tdcs_ptr)
 {
     return tdcs_ptr->executions_ctl_fields.cpuid_flags.dca_supported;
 }
+_STATIC_INLINE_ bool_t is_tsc_deadline_supported_in_tdcs(tdcs_t * tdcs_ptr)
+{
+    return tdcs_ptr->executions_ctl_fields.cpuid_flags.tsc_deadline_supported;
+}
 _STATIC_INLINE_ bool_t is_waitpkg_supported_in_tdcs(tdcs_t * tdcs_ptr)
 {
     return tdcs_ptr->executions_ctl_fields.cpuid_flags.waitpkg_supported;
@@ -1176,6 +1178,10 @@ _STATIC_INLINE_ bool_t is_pks_supported_in_tdcs(tdcs_t * tdcs_ptr)
 _STATIC_INLINE_ bool_t is_xfd_supported_in_tdcs(tdcs_t * tdcs_ptr)
 {
     return tdcs_ptr->executions_ctl_fields.cpuid_flags.xfd_supported;
+}
+_STATIC_INLINE_ bool_t is_tsx_ctrl_supported_in_tdcs(tdcs_t * tdcs_ptr)
+{
+    return tdcs_ptr->executions_ctl_fields.cpuid_flags.tsx_supported;
 }
 
 _STATIC_INLINE_ api_error_type check_perf_msrs(void)

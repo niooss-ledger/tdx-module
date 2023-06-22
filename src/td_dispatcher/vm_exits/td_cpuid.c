@@ -63,6 +63,7 @@ void td_cpuid_exit(void)
     cpuid_config_return_values_t return_values;
     cpuid_01_ebx_t cpuid_01_ebx;
     cpuid_01_ecx_t cpuid_01_ecx;
+    cpuid_07_00_ebx_t cpuid_07_00_ebx;
     cpuid_07_00_ecx_t cpuid_07_00_ecx;
     ia32_cr4_t     cr4;
 
@@ -146,6 +147,20 @@ void td_cpuid_exit(void)
                                     vp_ctx->tdvps->management.xfam,
                                     xfam_mask_0x7_0x0);
 
+            if(vp_ctx->tdcs->executions_ctl_fields.cpuid_flags.tsx_supported)
+            {
+                /*  TSX is supported for the TD.  Emulate the effect of IA32_TSX_CTRL; if the TSX_CPUID_CLEAR
+                 *  bit is 1, then clear the TSX CPUID bits in the virtual value that is returned to the guest.
+                 */
+                ia32_tsx_ctrl_t ia32_tsx_ctrl = { .raw = ia32_rdmsr(IA32_TSX_CTRL_MSR_ADDR) };
+                if (ia32_tsx_ctrl.tsx_cpuid_clear)
+                {
+                    cpuid_07_00_ebx.raw = return_values.ebx;
+                    cpuid_07_00_ebx.hle = 0;
+                    cpuid_07_00_ebx.rtm = 0;
+                    return_values.ebx = cpuid_07_00_ebx.raw;
+                }
+            }
 
             cpuid_07_00_ecx.raw = return_values.ecx;
 
@@ -166,12 +181,6 @@ void td_cpuid_exit(void)
             apply_cpuid_xfam_masks(&return_values,
                                     vp_ctx->tdvps->management.xfam,
                                     xfam_mask_0x7_0x1);
-        }
-        else
-        {
-            // Should never get here, this sub-leaf is faulting
-            TDX_ERROR("CPUID subleaf %d fatal error\n", subleaf);
-            FATAL_ERROR();
         }
 
         break;

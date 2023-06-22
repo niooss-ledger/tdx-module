@@ -4,7 +4,7 @@
 // 
 // Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
 // 
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
+// The Materials are provided 'as is,' without any express or implied warranty of any kind including warranties
 // of merchantability, non-infringement, title, or fitness for a particular purpose.
 
 /**
@@ -21,9 +21,9 @@ const cpuid_lookup_t cpuid_lookup[MAX_NUM_CPUID_LOOKUP] = {
   .leaf_subleaf = {.leaf = 0x1, .subleaf = 0xffffffff},
   .verify_mask = { .ebx = 0xff00, .ecx = 0x4620a000, .edx = 0x2850e0 },
   .verify_value = { .ebx = 0x800, .ecx = 0x4620a000, .edx = 0x2850e0 },
-  .verify_same = { .eax = 0xf000c000, .ebx = 0xffff, .ecx = 0xf7ffff97, .edx = 0xffffffff },
+  .verify_same = { .eax = 0xf000c000, .ebx = 0xffff, .ecx = 0xf7ffff9f, .edx = 0xffffffff },
   .fixed1 = { .ecx = 0x80000000, .edx = 0x200 },
-  .fixed0_or_dynamic = { .eax = 0xf000c000, .ebx = 0xff000000, .ecx = 0x8010068, .edx = 0x40100400 }
+  .fixed0_or_dynamic = { .eax = 0xf000c000, .ebx = 0xff000000, .ecx = 0x8010060, .edx = 0x40100400 }
   },
   { // ENTRY_NUM = 1 
   .leaf_subleaf = {.leaf = 0x4, .subleaf = 0x0},
@@ -45,259 +45,266 @@ const cpuid_lookup_t cpuid_lookup[MAX_NUM_CPUID_LOOKUP] = {
   },
   { // ENTRY_NUM = 5 
   .leaf_subleaf = {.leaf = 0x7, .subleaf = 0x0},
-  .verify_mask = { .ebx = 0x21940803, .ecx = 0x91000000, .edx = 0xe4080000 },
-  .verify_value = { .ebx = 0x21940803, .ecx = 0x91000000, .edx = 0xe4080000 },
-  .verify_same = { .ebx = 0xffffbffb, .ecx = 0xbfc17f6f, .edx = 0xffebffff },
-  .fixed1 = { .eax = 0x1 },
-  .fixed0_or_dynamic = { .eax = 0xfffffffe, .ebx = 0x4006, .ecx = 0x603e8010, .edx = 0x223ac3 }
+  .verify_mask = { .eax = 0xffffffff, .ebx = 0x21940003, .ecx = 0x91000000, .edx = 0xe4080000 },
+  .verify_value = { .eax = 0x2, .ebx = 0x21940003, .ecx = 0x91000000, .edx = 0xe4080000 },
+  .verify_same = { .eax = 0xffffffff, .ebx = 0xffffbffb, .ecx = 0xbfc17f6f, .edx = 0xffebffff },
+  .fixed1 = { .eax = 0x2 },
+  .fixed0_or_dynamic = { .eax = 0xfffffffd, .ebx = 0x404006, .ecx = 0x603e8010, .edx = 0x223ac3 }
   },
   { // ENTRY_NUM = 6 
+  .leaf_subleaf = {.leaf = 0x80000008, .subleaf = 0xffffffff},
+  .verify_mask = { .eax = 0xff, .ebx = 0x200 },
+  .verify_value = { .eax = 0x34, .ebx = 0x200 },
+  .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff },
+  .fixed0_or_dynamic = { .eax = 0xffff0000, .ebx = 0xfffffdff, .ecx = 0xffffffff, .edx = 0xffffffff }
+  },
+  { // ENTRY_NUM = 7 
   .leaf_subleaf = {.leaf = 0x0, .subleaf = 0xffffffff},
   .verify_same = { .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff },
   .fixed1 = { .eax = 0x21 },
   .fixed0_or_dynamic = { .eax = 0xffffffde }
   },
-  { // ENTRY_NUM = 7 
+  { // ENTRY_NUM = 8 
   .leaf_subleaf = {.leaf = 0x3, .subleaf = 0xffffffff},
   .fixed0_or_dynamic = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 8 
+  { // ENTRY_NUM = 9 
   .leaf_subleaf = {.leaf = 0x4, .subleaf = 0x4},
   .verify_mask = { .eax = 0x1f },
   .verify_value = { .eax = 0x0 },
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff },
   .fixed0_or_dynamic = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 9 
+  { // ENTRY_NUM = 10 
   .leaf_subleaf = {.leaf = 0x6, .subleaf = 0xffffffff},
   .faulting = true,
   .verify_mask = { .eax = 0x800000 },
   .verify_value = { .eax = 0x0 },
   .verify_same = { .eax = 0x800000 }
   },
-  { // ENTRY_NUM = 10 
+  { // ENTRY_NUM = 11 
   .leaf_subleaf = {.leaf = 0x7, .subleaf = 0x1},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff },
   .fixed0_or_dynamic = { .eax = 0xffffe3cf, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 11 
+  { // ENTRY_NUM = 12 
+  .leaf_subleaf = {.leaf = 0x7, .subleaf = 0x2},
+  .verify_mask = { .edx = 0x17 },
+  .verify_value = { .edx = 0x17 },
+  .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff },
+  .fixed0_or_dynamic = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffc0 }
+  },
+  { // ENTRY_NUM = 13 
   .leaf_subleaf = {.leaf = 0x8, .subleaf = 0xffffffff},
   .fixed0_or_dynamic = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 12 
+  { // ENTRY_NUM = 14 
   .leaf_subleaf = {.leaf = 0xa, .subleaf = 0xffffffff},
   .verify_mask = { .eax = 0xffff, .ecx = 0xf, .edx = 0x801f },
   .verify_value = { .eax = 0x805, .ecx = 0xf, .edx = 0x8004 },
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 13 
+  { // ENTRY_NUM = 15 
   .leaf_subleaf = {.leaf = 0xd, .subleaf = 0x0},
   .verify_mask = { .eax = 0x3 },
   .verify_value = { .eax = 0x3 },
   .verify_same = { .eax = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff },
   .fixed0_or_dynamic = { .eax = 0xfff9fd18, .ebx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 14 
+  { // ENTRY_NUM = 16 
   .leaf_subleaf = {.leaf = 0xd, .subleaf = 0x1},
   .verify_mask = { .eax = 0xb, .ecx = 0x1800 },
   .verify_value = { .eax = 0xb, .ecx = 0x1800 },
   .verify_same = { .eax = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff },
   .fixed0_or_dynamic = { .eax = 0xffffffe0, .ebx = 0xffffffff, .ecx = 0xffff26ff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 15 
+  { // ENTRY_NUM = 17 
   .leaf_subleaf = {.leaf = 0xd, .subleaf = 0x2},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 16 
+  { // ENTRY_NUM = 18 
   .leaf_subleaf = {.leaf = 0xd, .subleaf = 0x3},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 17 
+  { // ENTRY_NUM = 19 
   .leaf_subleaf = {.leaf = 0xd, .subleaf = 0x4},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 18 
+  { // ENTRY_NUM = 20 
   .leaf_subleaf = {.leaf = 0xd, .subleaf = 0x5},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 19 
+  { // ENTRY_NUM = 21 
   .leaf_subleaf = {.leaf = 0xd, .subleaf = 0x6},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 20 
+  { // ENTRY_NUM = 22 
   .leaf_subleaf = {.leaf = 0xd, .subleaf = 0x7},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 21 
+  { // ENTRY_NUM = 23 
   .leaf_subleaf = {.leaf = 0xd, .subleaf = 0x8},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 22 
+  { // ENTRY_NUM = 24 
   .leaf_subleaf = {.leaf = 0xd, .subleaf = 0x9},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 23 
+  { // ENTRY_NUM = 25 
   .leaf_subleaf = {.leaf = 0xd, .subleaf = 0xa},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 24 
+  { // ENTRY_NUM = 26 
   .leaf_subleaf = {.leaf = 0xd, .subleaf = 0xb},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 25 
+  { // ENTRY_NUM = 27 
   .leaf_subleaf = {.leaf = 0xd, .subleaf = 0xc},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 26 
+  { // ENTRY_NUM = 28 
   .leaf_subleaf = {.leaf = 0xd, .subleaf = 0xd},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 27 
+  { // ENTRY_NUM = 29 
   .leaf_subleaf = {.leaf = 0xd, .subleaf = 0xe},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 28 
+  { // ENTRY_NUM = 30 
   .leaf_subleaf = {.leaf = 0xd, .subleaf = 0xf},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 29 
+  { // ENTRY_NUM = 31 
   .leaf_subleaf = {.leaf = 0xd, .subleaf = 0x10},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 30 
+  { // ENTRY_NUM = 32 
   .leaf_subleaf = {.leaf = 0xd, .subleaf = 0x11},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 31 
+  { // ENTRY_NUM = 33 
   .leaf_subleaf = {.leaf = 0xd, .subleaf = 0x12},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 32 
+  { // ENTRY_NUM = 34 
   .leaf_subleaf = {.leaf = 0xe, .subleaf = 0xffffffff},
   .fixed0_or_dynamic = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 33 
+  { // ENTRY_NUM = 35 
   .leaf_subleaf = {.leaf = 0x11, .subleaf = 0xffffffff},
   .fixed0_or_dynamic = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 34 
+  { // ENTRY_NUM = 36 
   .leaf_subleaf = {.leaf = 0x12, .subleaf = 0xffffffff},
   .fixed0_or_dynamic = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 35 
+  { // ENTRY_NUM = 37 
   .leaf_subleaf = {.leaf = 0x13, .subleaf = 0xffffffff},
   .fixed0_or_dynamic = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 36 
+  { // ENTRY_NUM = 38 
   .leaf_subleaf = {.leaf = 0x14, .subleaf = 0x0},
   .verify_mask = { .eax = 0xffffffff },
   .verify_value = { .eax = 0x1 },
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 37 
+  { // ENTRY_NUM = 39 
   .leaf_subleaf = {.leaf = 0x14, .subleaf = 0x1},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 38 
+  { // ENTRY_NUM = 40 
   .leaf_subleaf = {.leaf = 0x15, .subleaf = 0xffffffff},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff },
   .fixed1 = { .eax = 0x1, .ecx = 0x17d7840 },
   .fixed0_or_dynamic = { .eax = 0xfffffffe, .ecx = 0xfe8287bf, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 39 
+  { // ENTRY_NUM = 41 
   .leaf_subleaf = {.leaf = 0x19, .subleaf = 0xffffffff},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xfffffffe, .ecx = 0xffffffff, .edx = 0xffffffff },
   .fixed0_or_dynamic = { .ecx = 0xfffffffe, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 40 
+  { // ENTRY_NUM = 42 
   .leaf_subleaf = {.leaf = 0x1c, .subleaf = 0xffffffff},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 41 
+  { // ENTRY_NUM = 43 
   .leaf_subleaf = {.leaf = 0x1d, .subleaf = 0x0},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 42 
+  { // ENTRY_NUM = 44 
   .leaf_subleaf = {.leaf = 0x1d, .subleaf = 0x1},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 43 
+  { // ENTRY_NUM = 45 
   .leaf_subleaf = {.leaf = 0x1e, .subleaf = 0xffffffff},
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 44 
+  { // ENTRY_NUM = 46 
   .leaf_subleaf = {.leaf = 0x1f, .subleaf = 0x0},
   .faulting = true,
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff }
   },
-  { // ENTRY_NUM = 45 
+  { // ENTRY_NUM = 47 
   .leaf_subleaf = {.leaf = 0x1f, .subleaf = 0x1},
   .faulting = true,
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff }
   },
-  { // ENTRY_NUM = 46 
+  { // ENTRY_NUM = 48 
   .leaf_subleaf = {.leaf = 0x1f, .subleaf = 0x2},
   .faulting = true,
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff }
   },
-  { // ENTRY_NUM = 47 
+  { // ENTRY_NUM = 49 
   .leaf_subleaf = {.leaf = 0x1f, .subleaf = 0x3},
   .faulting = true,
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff }
   },
-  { // ENTRY_NUM = 48 
+  { // ENTRY_NUM = 50 
   .leaf_subleaf = {.leaf = 0x1f, .subleaf = 0x4},
   .faulting = true,
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff }
   },
-  { // ENTRY_NUM = 49 
+  { // ENTRY_NUM = 51 
   .leaf_subleaf = {.leaf = 0x1f, .subleaf = 0x5},
   .faulting = true,
   .verify_mask = { .ecx = 0xff00 },
   .verify_value = { .ecx = 0x0 },
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff }
   },
-  { // ENTRY_NUM = 50 
+  { // ENTRY_NUM = 52 
   .leaf_subleaf = {.leaf = 0x20, .subleaf = 0xffffffff},
   .fixed0_or_dynamic = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 51 
+  { // ENTRY_NUM = 53 
   .leaf_subleaf = {.leaf = 0x21, .subleaf = 0x0},
   .fixed1 = { .eax = 0x0, .ebx = 0x65746e49, .ecx = 0x20202020, .edx = 0x5844546c },
   .fixed0_or_dynamic = { .eax = 0xffffffff, .ebx = 0x9a8b91b6, .ecx = 0xdfdfdfdf, .edx = 0xa7bbab93 }
   },
-  { // ENTRY_NUM = 52 
+  { // ENTRY_NUM = 54 
   .leaf_subleaf = {.leaf = 0x80000000, .subleaf = 0xffffffff},
   .verify_same = { .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff },
   .fixed0_or_dynamic = { .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff }
   },
-  { // ENTRY_NUM = 53 
+  { // ENTRY_NUM = 55 
   .leaf_subleaf = {.leaf = 0x80000001, .subleaf = 0xffffffff},
   .verify_mask = { .edx = 0x2c100000 },
   .verify_value = { .edx = 0x2c100000 },
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff },
   .fixed0_or_dynamic = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xfffffede, .edx = 0xd3eff7ff }
   },
-  { // ENTRY_NUM = 54 
+  { // ENTRY_NUM = 56 
   .leaf_subleaf = {.leaf = 0x80000006, .subleaf = 0xffffffff},
   .faulting = true,
   .verify_mask = { .ecx = 0xff },
   .verify_value = { .ecx = 0x40 },
   .verify_same = { .ecx = 0xff }
   },
-  { // ENTRY_NUM = 55 
+  { // ENTRY_NUM = 57 
   .leaf_subleaf = {.leaf = 0x80000007, .subleaf = 0xffffffff},
   .faulting = true,
   .verify_mask = { .edx = 0x100 },
   .verify_value = { .edx = 0x100 },
   .verify_same = { .edx = 0x100 }
-  },
-  { // ENTRY_NUM = 56 
-  .leaf_subleaf = {.leaf = 0x80000008, .subleaf = 0xffffffff},
-  .verify_mask = { .eax = 0xff, .ebx = 0x200 },
-  .verify_value = { .eax = 0x34, .ebx = 0x200 },
-  .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff },
-  .fixed0_or_dynamic = { .eax = 0xffff0000, .ebx = 0xfffffdff, .ecx = 0xffffffff, .edx = 0xffffffff }
   }
 };
 
@@ -305,7 +312,7 @@ const cpuid_configurable_t cpuid_configurable[MAX_NUM_CPUID_CONFIG] = {
   { // ENTRY_NUM = 0 
   .leaf_subleaf = {.leaf = 0x1, .subleaf = 0xffffffff},
   .config_direct = { .ebx = 0xff0000 },
-  .allow_direct = { .ecx = 0x44180, .edx = 0xb0400000 }
+  .allow_direct = { .ecx = 0x1044d88, .edx = 0xb0440000 }
   },
   { // ENTRY_NUM = 1 
   .leaf_subleaf = {.leaf = 0x4, .subleaf = 0x0},
@@ -325,7 +332,11 @@ const cpuid_configurable_t cpuid_configurable[MAX_NUM_CPUID_CONFIG] = {
   },
   { // ENTRY_NUM = 5 
   .leaf_subleaf = {.leaf = 0x7, .subleaf = 0x0},
-  .allow_direct = { .ebx = 0x89108, .ecx = 0x2020, .edx = 0x40000 }
+  .allow_direct = { .ebx = 0x89918, .ecx = 0x2020, .edx = 0x40000 }
+  },
+  { // ENTRY_NUM = 6 
+  .leaf_subleaf = {.leaf = 0x80000008, .subleaf = 0xffffffff},
+  .allow_direct = { .ebx = 0x200 }
   }
 };
 

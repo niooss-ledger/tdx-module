@@ -11,5 +11,3 @@
  * @file crypto_stubs.c
  * @brief Crypto API stubs
  */
-
-

@@ -4,7 +4,7 @@
 // 
 // Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
 // 
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
+// The Materials are provided 'as is,' without any express or implied warranty of any kind including warranties
 // of merchantability, non-infringement, title, or fitness for a particular purpose.
 
 /**
@@ -581,236 +581,242 @@ const tdvps_lookup_t tdvps_lookup[MAX_NUM_TDVPS_LOOKUP] = {
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
-   // IA32_PERFEVTSELx // 94
-   .tdvps_field_code =  { .raw  = 0x1300000000000186 }, .offset = 0x510,
+   // IA32_TSX_CTRL // 94
+   .tdvps_field_code =  { .raw  = 0x1300000000000122 }, .offset = 0x510,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
    // IA32_PERFEVTSELx // 95
-   .tdvps_field_code =  { .raw  = 0x1300000000000187 }, .offset = 0x518,
+   .tdvps_field_code =  { .raw  = 0x1300000000000186 }, .offset = 0x518,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
    // IA32_PERFEVTSELx // 96
-   .tdvps_field_code =  { .raw  = 0x1300000000000188 }, .offset = 0x520,
+   .tdvps_field_code =  { .raw  = 0x1300000000000187 }, .offset = 0x520,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
    // IA32_PERFEVTSELx // 97
-   .tdvps_field_code =  { .raw  = 0x1300000000000189 }, .offset = 0x528,
+   .tdvps_field_code =  { .raw  = 0x1300000000000188 }, .offset = 0x528,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
    // IA32_PERFEVTSELx // 98
-   .tdvps_field_code =  { .raw  = 0x130000000000018a }, .offset = 0x530,
+   .tdvps_field_code =  { .raw  = 0x1300000000000189 }, .offset = 0x530,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
    // IA32_PERFEVTSELx // 99
-   .tdvps_field_code =  { .raw  = 0x130000000000018b }, .offset = 0x538,
+   .tdvps_field_code =  { .raw  = 0x130000000000018a }, .offset = 0x538,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
    // IA32_PERFEVTSELx // 100
-   .tdvps_field_code =  { .raw  = 0x130000000000018c }, .offset = 0x540,
+   .tdvps_field_code =  { .raw  = 0x130000000000018b }, .offset = 0x540,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
    // IA32_PERFEVTSELx // 101
-   .tdvps_field_code =  { .raw  = 0x130000000000018d }, .offset = 0x548,
+   .tdvps_field_code =  { .raw  = 0x130000000000018c }, .offset = 0x548,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
-   // MSR_OFFCORE_RSPx // 102
-   .tdvps_field_code =  { .raw  = 0x13000000000001a6 }, .offset = 0x550,
+   // IA32_PERFEVTSELx // 102
+   .tdvps_field_code =  { .raw  = 0x130000000000018d }, .offset = 0x550,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
    // MSR_OFFCORE_RSPx // 103
-   .tdvps_field_code =  { .raw  = 0x13000000000001a7 }, .offset = 0x558,
+   .tdvps_field_code =  { .raw  = 0x13000000000001a6 }, .offset = 0x558,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
-   // IA32_XFD // 104
-   .tdvps_field_code =  { .raw  = 0x13000000000001c4 }, .offset = 0x560,
-   .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
-   .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL)
- },
- {
-   // IA32_XFD_ERR // 105
-   .tdvps_field_code =  { .raw  = 0x13000000000001c5 }, .offset = 0x568,
-   .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
-   .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL)
- },
- {
-   // IA32_FIXED_CTRx // 106
-   .tdvps_field_code =  { .raw  = 0x1300000000000309 }, .offset = 0x570,
+   // MSR_OFFCORE_RSPx // 104
+   .tdvps_field_code =  { .raw  = 0x13000000000001a7 }, .offset = 0x560,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
+ },
+ {
+   // IA32_XFD // 105
+   .tdvps_field_code =  { .raw  = 0x13000000000001c4 }, .offset = 0x568,
+   .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL)
+ },
+ {
+   // IA32_XFD_ERR // 106
+   .tdvps_field_code =  { .raw  = 0x13000000000001c5 }, .offset = 0x570,
+   .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
    // IA32_FIXED_CTRx // 107
-   .tdvps_field_code =  { .raw  = 0x130000000000030a }, .offset = 0x578,
+   .tdvps_field_code =  { .raw  = 0x1300000000000309 }, .offset = 0x578,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
    // IA32_FIXED_CTRx // 108
-   .tdvps_field_code =  { .raw  = 0x130000000000030b }, .offset = 0x580,
+   .tdvps_field_code =  { .raw  = 0x130000000000030a }, .offset = 0x580,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
    // IA32_FIXED_CTRx // 109
-   .tdvps_field_code =  { .raw  = 0x130000000000030c }, .offset = 0x588,
+   .tdvps_field_code =  { .raw  = 0x130000000000030b }, .offset = 0x588,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
-   // IA32_PERF_METRICS // 110
-   .tdvps_field_code =  { .raw  = 0x1300000000000329 }, .offset = 0x590,
+   // IA32_FIXED_CTRx // 110
+   .tdvps_field_code =  { .raw  = 0x130000000000030c }, .offset = 0x590,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
-   // IA32_FIXED_CTR_CTRL // 111
-   .tdvps_field_code =  { .raw  = 0x130000000000038d }, .offset = 0x598,
+   // IA32_PERF_METRICS // 111
+   .tdvps_field_code =  { .raw  = 0x1300000000000329 }, .offset = 0x598,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
-   // IA32_PERF_GLOBAL_STATUS // 112
-   .tdvps_field_code =  { .raw  = 0x130000000000038e }, .offset = 0x5a0,
+   // IA32_FIXED_CTR_CTRL // 112
+   .tdvps_field_code =  { .raw  = 0x130000000000038d }, .offset = 0x5a0,
+   .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
+ },
+ {
+   // IA32_PERF_GLOBAL_STATUS // 113
+   .tdvps_field_code =  { .raw  = 0x130000000000038e }, .offset = 0x5a8,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
-   // IA32_PEBS_ENABLE // 113
-   .tdvps_field_code =  { .raw  = 0x13000000000003f1 }, .offset = 0x5a8,
+   // IA32_PEBS_ENABLE // 114
+   .tdvps_field_code =  { .raw  = 0x13000000000003f1 }, .offset = 0x5b0,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
-   // MSR_PEBS_DATA_CFG // 114
-   .tdvps_field_code =  { .raw  = 0x13000000000003f2 }, .offset = 0x5b0,
+   // MSR_PEBS_DATA_CFG // 115
+   .tdvps_field_code =  { .raw  = 0x13000000000003f2 }, .offset = 0x5b8,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
-   // MSR_PEBS_LD_LAT // 115
-   .tdvps_field_code =  { .raw  = 0x13000000000003f6 }, .offset = 0x5b8,
+   // MSR_PEBS_LD_LAT // 116
+   .tdvps_field_code =  { .raw  = 0x13000000000003f6 }, .offset = 0x5c0,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
-   // MSR_PEBS_FRONTEND // 116
-   .tdvps_field_code =  { .raw  = 0x13000000000003f7 }, .offset = 0x5c0,
-   .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
-   .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
- },
- {
-   // IA32_A_PMCx // 117
-   .tdvps_field_code =  { .raw  = 0x13000000000004c1 }, .offset = 0x5c8,
+   // MSR_PEBS_FRONTEND // 117
+   .tdvps_field_code =  { .raw  = 0x13000000000003f7 }, .offset = 0x5c8,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
    // IA32_A_PMCx // 118
-   .tdvps_field_code =  { .raw  = 0x13000000000004c2 }, .offset = 0x5d0,
+   .tdvps_field_code =  { .raw  = 0x13000000000004c1 }, .offset = 0x5d0,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
    // IA32_A_PMCx // 119
-   .tdvps_field_code =  { .raw  = 0x13000000000004c3 }, .offset = 0x5d8,
+   .tdvps_field_code =  { .raw  = 0x13000000000004c2 }, .offset = 0x5d8,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
    // IA32_A_PMCx // 120
-   .tdvps_field_code =  { .raw  = 0x13000000000004c4 }, .offset = 0x5e0,
+   .tdvps_field_code =  { .raw  = 0x13000000000004c3 }, .offset = 0x5e0,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
    // IA32_A_PMCx // 121
-   .tdvps_field_code =  { .raw  = 0x13000000000004c5 }, .offset = 0x5e8,
+   .tdvps_field_code =  { .raw  = 0x13000000000004c4 }, .offset = 0x5e8,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
    // IA32_A_PMCx // 122
-   .tdvps_field_code =  { .raw  = 0x13000000000004c6 }, .offset = 0x5f0,
+   .tdvps_field_code =  { .raw  = 0x13000000000004c5 }, .offset = 0x5f0,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
    // IA32_A_PMCx // 123
-   .tdvps_field_code =  { .raw  = 0x13000000000004c7 }, .offset = 0x5f8,
+   .tdvps_field_code =  { .raw  = 0x13000000000004c6 }, .offset = 0x5f8,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
    // IA32_A_PMCx // 124
-   .tdvps_field_code =  { .raw  = 0x13000000000004c8 }, .offset = 0x600,
+   .tdvps_field_code =  { .raw  = 0x13000000000004c7 }, .offset = 0x600,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
-   // IA32_DS_AREA // 125
-   .tdvps_field_code =  { .raw  = 0x1300000000000600 }, .offset = 0x608,
+   // IA32_A_PMCx // 125
+   .tdvps_field_code =  { .raw  = 0x13000000000004c8 }, .offset = 0x608,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
-   // IA32_XSS // 126
-   .tdvps_field_code =  { .raw  = 0x1300000000000da0 }, .offset = 0x610,
-   .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
-   .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL)
- },
- {
-   // IA32_LBR_DEPTH // 127
-   .tdvps_field_code =  { .raw  = 0x13000000000014cf }, .offset = 0x618,
+   // IA32_DS_AREA // 126
+   .tdvps_field_code =  { .raw  = 0x1300000000000600 }, .offset = 0x610,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
-   // IA32_STAR // 128
-   .tdvps_field_code =  { .raw  = 0x1300000000002081 }, .offset = 0x620,
+   // IA32_XSS // 127
+   .tdvps_field_code =  { .raw  = 0x1300000000000da0 }, .offset = 0x618,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
-   // IA32_LSTAR // 129
-   .tdvps_field_code =  { .raw  = 0x1300000000002082 }, .offset = 0x628,
+   // IA32_LBR_DEPTH // 128
+   .tdvps_field_code =  { .raw  = 0x13000000000014cf }, .offset = 0x620,
+   .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
+ },
+ {
+   // IA32_STAR // 129
+   .tdvps_field_code =  { .raw  = 0x1300000000002081 }, .offset = 0x628,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
-   // IA32_FMASK // 130
-   .tdvps_field_code =  { .raw  = 0x1300000000002084 }, .offset = 0x630,
+   // IA32_LSTAR // 130
+   .tdvps_field_code =  { .raw  = 0x1300000000002082 }, .offset = 0x630,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
-   // IA32_KERNEL_GS_BASE // 131
-   .tdvps_field_code =  { .raw  = 0x1300000000002102 }, .offset = 0x638,
+   // IA32_FMASK // 131
+   .tdvps_field_code =  { .raw  = 0x1300000000002084 }, .offset = 0x638,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL)
  },
  {
-   // IA32_TSC_AUX // 132
-   .tdvps_field_code =  { .raw  = 0x1300000000002103 }, .offset = 0x640,
+   // IA32_KERNEL_GS_BASE // 132
+   .tdvps_field_code =  { .raw  = 0x1300000000002102 }, .offset = 0x640,
+   .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL)
+ },
+ {
+   // IA32_TSC_AUX // 133
+   .tdvps_field_code =  { .raw  = 0x1300000000002103 }, .offset = 0x648,
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL)
  }

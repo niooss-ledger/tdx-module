@@ -303,19 +303,36 @@ static api_error_type read_and_set_cpuid_configurations(tdcs_t * tdcs_ptr,
         {
             cpuid_01_ecx_t cpuid_01_ecx;
             cpuid_01_ecx.raw = tdcs_ptr->executions_ctl_fields.cpuid_config_vals[cpuid_index].ecx;
+            tdcs_ptr->executions_ctl_fields.cpuid_flags.monitor_mwait_supported = cpuid_01_ecx.monitor;
             tdcs_ptr->executions_ctl_fields.cpuid_flags.dca_supported = cpuid_01_ecx.dca;
+            tdcs_ptr->executions_ctl_fields.cpuid_flags.tsc_deadline_supported = cpuid_01_ecx.tsc_deadline;
         }
         if (cpuid_leaf_subleaf.leaf == 7)
         {
            if (cpuid_leaf_subleaf.subleaf == 0)
            {
-               cpuid_07_00_ecx_t cpuid_07_00_ecx;
-               cpuid_07_00_edx_t cpuid_07_00_edx;
-               cpuid_07_00_ecx.raw = tdcs_ptr->executions_ctl_fields.cpuid_config_vals[cpuid_index].ecx;
-               tdcs_ptr->executions_ctl_fields.cpuid_flags.waitpkg_supported = cpuid_07_00_ecx.waitpkg;
-               tdcs_ptr->executions_ctl_fields.cpuid_flags.tme_supported = cpuid_07_00_ecx.tme;
-               cpuid_07_00_edx.raw = tdcs_ptr->executions_ctl_fields.cpuid_config_vals[cpuid_index].edx;
-               tdcs_ptr->executions_ctl_fields.cpuid_flags.mktme_supported = cpuid_07_00_edx.pconfig_mktme;
+                cpuid_07_00_ebx_t cpuid_07_00_ebx = { .raw = tdcs_ptr->executions_ctl_fields.cpuid_config_vals[cpuid_index].ebx };
+                // Both CPUID bits that enumerate TSX must have the same virtual value
+                if (cpuid_07_00_ebx.hle != cpuid_07_00_ebx.rtm)
+                {
+                    return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_CPUID_CONFIG);
+                    goto EXIT;
+                }
+                // If virtual TSX is enabled, IA32_TSX_CTRL must exist
+                if (cpuid_07_00_ebx.hle && !global_data_ptr->plt_common_config.ia32_arch_capabilities.tsx_ctrl)
+                {
+                    return_val = api_error_with_operand_id(TDX_INCORRECT_MSR_VALUE, IA32_ARCH_CAPABILITIES_MSR_ADDR);
+                    goto EXIT;
+                }
+                tdcs_ptr->executions_ctl_fields.cpuid_flags.tsx_supported = cpuid_07_00_ebx.hle;
+
+                cpuid_07_00_ecx_t cpuid_07_00_ecx;
+                cpuid_07_00_edx_t cpuid_07_00_edx;
+                cpuid_07_00_ecx.raw = tdcs_ptr->executions_ctl_fields.cpuid_config_vals[cpuid_index].ecx;
+                tdcs_ptr->executions_ctl_fields.cpuid_flags.waitpkg_supported = cpuid_07_00_ecx.waitpkg;
+                tdcs_ptr->executions_ctl_fields.cpuid_flags.tme_supported = cpuid_07_00_ecx.tme;
+                cpuid_07_00_edx.raw = tdcs_ptr->executions_ctl_fields.cpuid_config_vals[cpuid_index].edx;
+                tdcs_ptr->executions_ctl_fields.cpuid_flags.mktme_supported = cpuid_07_00_edx.pconfig_mktme;
            }
         }
     }
@@ -417,7 +434,8 @@ static void set_msr_bitmaps(tdcs_t * tdcs_ptr)
                 ((bit_meaning == MSR_BITMAP_OTHER) &&
                 (((addr == IA32_UMWAIT_CONTROL) && is_waitpkg_supported_in_tdcs(tdcs_ptr)) ||
                 ((addr == IA32_PKRS) && is_pks_supported_in_tdcs(tdcs_ptr)) ||
-                ((addr == IA32_XFD_MSR_ADDR || addr == IA32_XFD_ERROR_MSR_ADDR) && is_xfd_supported_in_tdcs(tdcs_ptr)))))
+                ((addr == IA32_XFD_MSR_ADDR || addr == IA32_XFD_ERROR_MSR_ADDR) && is_xfd_supported_in_tdcs(tdcs_ptr)) ||
+                ((addr == IA32_TSX_CTRL_MSR_ADDR) && is_tsx_ctrl_supported_in_tdcs(tdcs_ptr)))))
             {
                 btr_32b(byte_addr_rd, bit_offset);
                 btr_32b(byte_addr_wr, bit_offset);

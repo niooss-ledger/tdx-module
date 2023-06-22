@@ -37,6 +37,7 @@
 #define IA32_SPEC_CTRL_MSR_ADDR                          0x48
 #define IA32_LBR_DEPTH_MSR_ADDR                          0x14CF
 #define IA32_DS_AREA_MSR_ADDR                            0x600
+#define IA32_TSC_DEADLINE_MSR_ADDR                       0x6E0
 #define IA32_PKRS                                        0x6E1
 #define IA32_X2APIC_APICID                               0x802
 #define IA32_X2APIC_ICR                                  0x830
@@ -309,7 +310,20 @@ typedef union ia32_arch_capabilities_u
         uint64_t mcu_ctls             : 1;  // Bit 9
         uint64_t misc_package_ctls    : 1;  // Bit 10
         uint64_t energy_filtering_ctl : 1;  // Bit 11
-        uint64_t rsvd                 : 52; // BITS 12:63
+        uint64_t doitm                : 1;  // Bit 12
+        uint64_t sbdr_ssdp_no         : 1;  // Bit 13
+        uint64_t fbsdp_no             : 1;  // Bit 14
+        uint64_t psdp_no              : 1;  // Bit 15
+        uint64_t reserved_1           : 1;  // Bit 16
+        uint64_t fb_clear             : 1;  // Bit 17
+        uint64_t fb_clear_ctrl        : 1;  // Bit 18
+        uint64_t rrsba                : 1;  // Bit 19
+        uint64_t bhi_no               : 1;  // Bit 20
+        uint64_t xapic_disable_status : 1;  // Bit 21
+        uint64_t reserved_2           : 1;  // Bit 22
+        uint64_t overclocking_status  : 1;  // Bit 23
+        uint64_t pbrsb_no             : 1;  // Bit 24
+        uint64_t reserved_3           : 39; // BITS 25:63
     };
     uint64_t raw;
 } ia32_arch_capabilities_t;
@@ -325,6 +339,7 @@ typedef union ia32_tsx_ctrl_u
     uint64_t raw;
 } ia32_tsx_ctrl_t;
 
+#define IA32_TSX_CTRL_DISABLE_VALUE 0x3ULL
 
 typedef union ia32_misc_enable_u
 {

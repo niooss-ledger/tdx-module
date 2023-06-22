@@ -77,6 +77,7 @@ typedef struct PACKED non_extended_state_s
     uint64_t ia32_spec_ctrl;
     uint64_t ia32_lam_enable;
     uint64_t ia32_ds_area;
+    uint64_t ia32_tsx_ctrl;
 } non_extended_state_t;
 
 

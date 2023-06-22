@@ -194,6 +194,36 @@ _STATIC_INLINE_ void ia32_xsetbv(uint64_t xcr, uint64_t value)
     _ASM_VOLATILE_ ("xsetbv" : : "a"((uint32_t)value), "d"((uint32_t)(value >> 32)), "c"(xcr));
 }
 
+_STATIC_INLINE_ ia32_rflags_t ia32_loadiwk(const uint8_t* intkey, const uint8_t* enckey, uint32_t flags)
+{
+    uint128_t tmp_xmm_buf[3];
+    ia32_rflags_t rflags;
+
+    _ASM_VOLATILE_ (
+        // Storing the existing XMM's
+        "movdqa %%xmm0, (%5)\n"
+        "movdqa %%xmm1, (%6)\n"
+        "movdqa %%xmm2, (%7)\n"
+        // Moving the input parameters of LOADIWK
+        "movdqa (%2), %%xmm0\n"
+        "movdqa (%3), %%xmm1\n"
+        "movdqa (%4), %%xmm2\n"
+
+        "nop\n"
+        // Restoring the existing XMM's
+        "movdqa (%5), %%xmm0\n"
+        "movdqa (%6), %%xmm1\n"
+        "movdqa (%7), %%xmm2\n"
+
+        "pushfq \n"
+        "pop %0\n"
+
+        : "=r"(rflags.raw) : "a"(flags), "r"(intkey), "r"(enckey), "r"(enckey + 16),
+                        "r"(tmp_xmm_buf), "r"(&tmp_xmm_buf[1]), "r"(&tmp_xmm_buf[2]));
+
+    return rflags;
+}
+
 _STATIC_INLINE_ void ia32_xsaves(void* xsave_area, uint64_t xfam)
 {
     _ASM_VOLATILE_ ( "xsaves %0 \n" : "=m"(*((uint64_t *)xsave_area)) : "d"((uint32_t)(xfam >> 32)),

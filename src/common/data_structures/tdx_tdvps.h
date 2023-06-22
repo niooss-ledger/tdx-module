@@ -244,6 +244,7 @@ typedef struct tdvps_guest_msr_state_s
 {
     uint64_t ia32_spec_ctrl;
     uint64_t ia32_umwait_control;
+    uint64_t ia32_tsx_ctrl;
     uint64_t ia32_perfevtsel[NUM_PMC];
     uint64_t ia32_offcore_rsp[2];
     uint64_t ia32_xfd;
@@ -265,7 +266,7 @@ typedef struct tdvps_guest_msr_state_s
     uint64_t ia32_fmask;
     uint64_t ia32_kernel_gs_base;
     uint64_t ia32_tsc_aux;
-    uint8_t  reserved[56]; /**< Reserved for aligning the next field */
+    uint8_t  reserved[48]; /**< Reserved for aligning the next field */
 } tdvps_guest_msr_state_t;
 tdx_static_assert(sizeof(tdvps_guest_msr_state_t) == SIZE_OF_TDVPS_GUEST_MSR_STATE_IN_BYTES, tdvps_guest_msr_state_t);
 

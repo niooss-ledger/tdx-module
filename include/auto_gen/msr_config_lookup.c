@@ -4,7 +4,7 @@
 // 
 // Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
 // 
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
+// The Materials are provided 'as is,' without any express or implied warranty of any kind including warranties
 // of merchantability, non-infringement, title, or fitness for a particular purpose.
 
 /**
@@ -75,7 +75,7 @@ const msr_lookup_t msr_lookup[MAX_NUM_MSR_LOOKUP] = {
  },
  {
   // 14 - IA32_TSX_CTRL 
-  .start_address  = 0x122, .end_address = 0x122, .bit_meaning = MSR_BITMAP_FIXED_1_GP_AT_EXIT
+  .start_address  = 0x122, .end_address = 0x122, .bit_meaning = MSR_BITMAP_OTHER
  },
  {
   // 15 - IA32_SYSENTER_CS 
@@ -354,183 +354,187 @@ const msr_lookup_t msr_lookup[MAX_NUM_MSR_LOOKUP] = {
   .start_address  = 0x6a8, .end_address = 0x6a8, .bit_meaning = MSR_BITMAP_XFAM_CET
  },
  {
-  // 84 - IA32_PKRS 
+  // 84 - IA32_TSC_DEADLINE 
+  .start_address  = 0x6e0, .end_address = 0x6e0, .bit_meaning = MSR_BITMAP_FIXED_1_OTHER
+ },
+ {
+  // 85 - IA32_PKRS 
   .start_address  = 0x6e1, .end_address = 0x6e1, .bit_meaning = MSR_BITMAP_OTHER
  },
  {
-  // 85 - Reserved for xAPIC MSRs 
+  // 86 - Reserved for xAPIC MSRs 
   .start_address  = 0x800, .end_address = 0x801, .bit_meaning = MSR_BITMAP_FIXED_1_GP_AT_EXIT
  },
  {
-  // 86 - Reserved for xAPIC MSRs 
+  // 87 - Reserved for xAPIC MSRs 
   .start_address  = 0x804, .end_address = 0x807, .bit_meaning = MSR_BITMAP_FIXED_1_GP_AT_EXIT
  },
  {
-  // 87 - IA32_X2APIC_TPR 
+  // 88 - IA32_X2APIC_TPR 
   .start_address  = 0x808, .end_address = 0x808, .bit_meaning = MSR_BITMAP_FIXED_00
  },
  {
-  // 88 - Reserved for xAPIC MSRs 
+  // 89 - Reserved for xAPIC MSRs 
   .start_address  = 0x809, .end_address = 0x809, .bit_meaning = MSR_BITMAP_FIXED_00
  },
  {
-  // 89 - IA32_X2APIC_PPR 
+  // 90 - IA32_X2APIC_PPR 
   .start_address  = 0x80a, .end_address = 0x80a, .bit_meaning = MSR_BITMAP_FIXED_00
  },
  {
-  // 90 - IA32_X2APIC_EOI 
+  // 91 - IA32_X2APIC_EOI 
   .start_address  = 0x80b, .end_address = 0x80b, .bit_meaning = MSR_BITMAP_FIXED_00
  },
  {
-  // 91 - Reserved for xAPIC MSRs 
+  // 92 - Reserved for xAPIC MSRs 
   .start_address  = 0x80c, .end_address = 0x80c, .bit_meaning = MSR_BITMAP_FIXED_00
  },
  {
-  // 92 - Reserved for xAPIC MSRs 
+  // 93 - Reserved for xAPIC MSRs 
   .start_address  = 0x80e, .end_address = 0x80e, .bit_meaning = MSR_BITMAP_FIXED_00
  },
  {
-  // 93 - IA32_X2APIC_ISRx 
+  // 94 - IA32_X2APIC_ISRx 
   .start_address  = 0x810, .end_address = 0x817, .bit_meaning = MSR_BITMAP_FIXED_00
  },
  {
-  // 94 - IA32_X2APIC_TMRx 
+  // 95 - IA32_X2APIC_TMRx 
   .start_address  = 0x818, .end_address = 0x81f, .bit_meaning = MSR_BITMAP_FIXED_00
  },
  {
-  // 95 - IA32_X2APIC_IRRx 
+  // 96 - IA32_X2APIC_IRRx 
   .start_address  = 0x820, .end_address = 0x827, .bit_meaning = MSR_BITMAP_FIXED_00
  },
  {
-  // 96 - Reserved for xAPIC MSRs 
+  // 97 - Reserved for xAPIC MSRs 
   .start_address  = 0x829, .end_address = 0x82e, .bit_meaning = MSR_BITMAP_FIXED_1_GP_AT_EXIT
  },
  {
-  // 97 - Reserved for xAPIC MSRs 
+  // 98 - Reserved for xAPIC MSRs 
   .start_address  = 0x831, .end_address = 0x831, .bit_meaning = MSR_BITMAP_FIXED_1_GP_AT_EXIT
  },
  {
-  // 98 - IA32_X2APIC_SELF_IPI 
+  // 99 - IA32_X2APIC_SELF_IPI 
   .start_address  = 0x83f, .end_address = 0x83f, .bit_meaning = MSR_BITMAP_FIXED_00
  },
  {
-  // 99 - Reserved for xAPIC MSRs 
+  // 100 - Reserved for xAPIC MSRs 
   .start_address  = 0x840, .end_address = 0x87f, .bit_meaning = MSR_BITMAP_FIXED_1_GP_AT_EXIT
  },
  {
-  // 100 - Reserved for xAPIC MSRs 
+  // 101 - Reserved for xAPIC MSRs 
   .start_address  = 0x880, .end_address = 0x8bf, .bit_meaning = MSR_BITMAP_FIXED_1_GP_AT_EXIT
  },
  {
-  // 101 - Reserved for xAPIC MSRs 
+  // 102 - Reserved for xAPIC MSRs 
   .start_address  = 0x8c0, .end_address = 0x8ff, .bit_meaning = MSR_BITMAP_FIXED_1_GP_AT_EXIT
  },
  {
-  // 102 - IA32_TME_CAPABILITY 
+  // 103 - IA32_TME_CAPABILITY 
   .start_address  = 0x981, .end_address = 0x981, .bit_meaning = MSR_BITMAP_FIXED_1_OTHER
  },
  {
-  // 103 - IA32_TME_ACTIVATE 
+  // 104 - IA32_TME_ACTIVATE 
   .start_address  = 0x982, .end_address = 0x982, .bit_meaning = MSR_BITMAP_FIXED_1_OTHER
  },
  {
-  // 104 - IA32_TME_EXCLUDE_MASK 
+  // 105 - IA32_TME_EXCLUDE_MASK 
   .start_address  = 0x983, .end_address = 0x983, .bit_meaning = MSR_BITMAP_FIXED_1_OTHER
  },
  {
-  // 105 - IA32_TME_EXCLUDE_BASE 
+  // 106 - IA32_TME_EXCLUDE_BASE 
   .start_address  = 0x984, .end_address = 0x984, .bit_meaning = MSR_BITMAP_FIXED_1_OTHER
  },
  {
-  // 106 - IA32_UINT_RR 
+  // 107 - IA32_UINTR_RR 
   .start_address  = 0x985, .end_address = 0x985, .bit_meaning = MSR_BITMAP_XFAM_ULI
  },
  {
-  // 107 - IA32_UINT_HANDLER 
+  // 108 - IA32_UINTR_HANDLER 
   .start_address  = 0x986, .end_address = 0x986, .bit_meaning = MSR_BITMAP_XFAM_ULI
  },
  {
-  // 108 - IA32_UINT_STACKADJUST 
+  // 109 - IA32_UINTR_STACKADJUST 
   .start_address  = 0x987, .end_address = 0x987, .bit_meaning = MSR_BITMAP_XFAM_ULI
  },
  {
-  // 109 - IA32_UINT_MISC 
+  // 110 - IA32_UINTR_MISC 
   .start_address  = 0x988, .end_address = 0x988, .bit_meaning = MSR_BITMAP_XFAM_ULI
  },
  {
-  // 110 - IA32_UINT_PD 
+  // 111 - IA32_UINTR_PD 
   .start_address  = 0x989, .end_address = 0x989, .bit_meaning = MSR_BITMAP_XFAM_ULI
  },
  {
-  // 111 - IA32_UINT_TT 
+  // 112 - IA32_UINTR_TT 
   .start_address  = 0x98a, .end_address = 0x98a, .bit_meaning = MSR_BITMAP_XFAM_ULI
  },
  {
-  // 112 - IA32_DEBUG_INTERFACE 
+  // 113 - IA32_DEBUG_INTERFACE 
   .start_address  = 0xc80, .end_address = 0xc80, .bit_meaning = MSR_BITMAP_FIXED_01
  },
  {
-  // 113 - IA32_BNDCFGS 
+  // 114 - IA32_BNDCFGS 
   .start_address  = 0xd90, .end_address = 0xd90, .bit_meaning = MSR_BITMAP_FIXED_1_GP_AT_EXIT
  },
  {
-  // 114 - IA32_PASID 
+  // 115 - IA32_PASID 
   .start_address  = 0xd93, .end_address = 0xd93, .bit_meaning = MSR_BITMAP_FIXED_1_GP_AT_EXIT
  },
  {
-  // 115 - IA32_XSS 
+  // 116 - IA32_XSS 
   .start_address  = 0xda0, .end_address = 0xda0, .bit_meaning = MSR_BITMAP_FIXED_01
  },
  {
-  // 116 - IA32_LBR_INFO 
+  // 117 - IA32_LBR_INFO 
   .start_address  = 0x1200, .end_address = 0x12ff, .bit_meaning = MSR_BITMAP_XFAM_LBR
  },
  {
-  // 117 - IA32_LBR_CTL 
+  // 118 - IA32_LBR_CTL 
   .start_address  = 0x14ce, .end_address = 0x14ce, .bit_meaning = MSR_BITMAP_XFAM_LBR
  },
  {
-  // 118 - IA32_LBR_DEPTH 
+  // 119 - IA32_LBR_DEPTH 
   .start_address  = 0x14cf, .end_address = 0x14cf, .bit_meaning = MSR_BITMAP_XFAM_LBR
  },
  {
-  // 119 - IA32_LBR_FROM_IP 
+  // 120 - IA32_LBR_FROM_IP 
   .start_address  = 0x1500, .end_address = 0x15ff, .bit_meaning = MSR_BITMAP_XFAM_LBR
  },
  {
-  // 120 - IA32_LBR_TO_IP 
+  // 121 - IA32_LBR_TO_IP 
   .start_address  = 0x1600, .end_address = 0x16ff, .bit_meaning = MSR_BITMAP_XFAM_LBR
  },
  {
-  // 121 - IA32_EFER 
+  // 122 - IA32_EFER 
   .start_address  = 0xc0000080, .end_address = 0xc0000080, .bit_meaning = MSR_BITMAP_FIXED_01
  },
  {
-  // 122 - IA32_STAR 
+  // 123 - IA32_STAR 
   .start_address  = 0xc0000081, .end_address = 0xc0000081, .bit_meaning = MSR_BITMAP_FIXED_00
  },
  {
-  // 123 - IA32_LSTAR 
+  // 124 - IA32_LSTAR 
   .start_address  = 0xc0000082, .end_address = 0xc0000082, .bit_meaning = MSR_BITMAP_FIXED_00
  },
  {
-  // 124 - IA32_FMASK 
+  // 125 - IA32_FMASK 
   .start_address  = 0xc0000084, .end_address = 0xc0000084, .bit_meaning = MSR_BITMAP_FIXED_00
  },
  {
-  // 125 - IA32_FSBASE 
+  // 126 - IA32_FSBASE 
   .start_address  = 0xc0000100, .end_address = 0xc0000100, .bit_meaning = MSR_BITMAP_FIXED_00
  },
  {
-  // 126 - IA32_GSBASE 
+  // 127 - IA32_GSBASE 
   .start_address  = 0xc0000101, .end_address = 0xc0000101, .bit_meaning = MSR_BITMAP_FIXED_00
  },
  {
-  // 127 - IA32_KERNEL_GS_BASE 
+  // 128 - IA32_KERNEL_GS_BASE 
   .start_address  = 0xc0000102, .end_address = 0xc0000102, .bit_meaning = MSR_BITMAP_FIXED_00
  },
  {
-  // 128 - IA32_TSC_AUX 
+  // 129 - IA32_TSC_AUX 
   .start_address  = 0xc0000103, .end_address = 0xc0000103, .bit_meaning = MSR_BITMAP_FIXED_00
  }
 };

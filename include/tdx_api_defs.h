@@ -1,4 +1,4 @@
-// Intel Proprietary
+// Intel Proprietary 
 // 
 // Copyright 2021 Intel Corporation All Rights Reserved.
 // 
@@ -330,10 +330,7 @@ typedef struct
     cpuid_config_leaf_subleaf_t leaf_subleaf;
     cpuid_config_return_values_t values;
 } cpuid_config_t;
-
-
 tdx_static_assert(sizeof(cpuid_config_t) == 24, cpuid_config_t);
-
 
 
 /**
@@ -411,7 +408,7 @@ tdx_static_assert(sizeof(exec_controls_t) == 8, exec_controls_t);
 #define TD_PARAMS_RESERVED1_SIZE       38
 
 #define TD_PARAMS_RESERVED2_SIZE       32
-#define TD_PARAMS_RESERVED3_SIZE       672
+#define TD_PARAMS_RESERVED3_SIZE       656
 
 /**
  * @struct td_params_t
@@ -563,7 +560,7 @@ typedef struct PACKED td_sys_info_s
 
     uint32_t num_cpuid_config;
     cpuid_config_t cpuid_config_list[MAX_NUM_CPUID_CONFIG];
-    uint8_t reserved_5[748];
+    uint8_t reserved_5[724];
 } td_sys_info_t;
 
 tdx_static_assert(offsetof(td_sys_info_t, max_tdmrs) == OFFSET_OF_MEMORY_INFO_IN_TDHSYSINFO, td_sys_info_t);

@@ -58,8 +58,14 @@ _STATIC_INLINE_ bool_t is_secure_ept_entry_misconfigured(ia32e_sept_t* pte, ept_
     pa_t hpa;
     hpa.raw = pte->raw & IA32E_PAGING_STRUCT_ADDR_MASK;
 
-    if ((pte->fields_ps.r == 0) && (pte->fields_ps.w == 1))
+    if (!is_pa_smaller_than_max_pa(hpa.raw))
     {
+        return true;
+    }
+
+    if ((pte->r == 0) && (pte->w == 1))
+    {
+        TDX_ERROR("Read bit is zero but write bit is 1 - 0x%llx\n", pte->raw);
         return true;
     }
 
@@ -67,13 +73,14 @@ _STATIC_INLINE_ bool_t is_secure_ept_entry_misconfigured(ia32e_sept_t* pte, ept_
 
     if (!(msr_values->ia32_vmx_ept_vpid_cap & EPT_VPID_CAP_ALLOW_EXECUTE_ONLY))
     {
-        if ((pte->fields_ps.r == 0) && (pte->fields_ps.x == 1))
+        if ((pte->r == 0) && (pte->x == 1))
         {
+            TDX_ERROR("Read bit is zero but X bit is 1 - 0x%llx\n", pte->raw);
             return true;
         }
     }
 
-    if (pte->present.rwx)
+    if (pte->rwx)
     {
         // A reserved bit is set. This includes the setting of a bit in the
         // range 51:12 that is beyond the logical processor’s physical-address width.
@@ -82,30 +89,33 @@ _STATIC_INLINE_ bool_t is_secure_ept_entry_misconfigured(ia32e_sept_t* pte, ept_
         // by the is_pa_smaller_than_max_pa() function call above
 
         // Paging structure case:
-        if (((level > LVL_PDPT) || ((level > LVL_PT) && !pte->fields_1g.leaf))
+        if (((level > LVL_PDPT) || ((level > LVL_PT) && !pte->leaf))
                 && pte->fields_ps.reserved_0)
         {
+            TDX_ERROR("Reserved bits are set in PS entry - 0x%llx\n", pte->raw);
             return true;
         }
         // Leaf case
-        if ( ((level == LVL_PDPT) && pte->fields_1g.leaf && pte->fields_1g.reserved_1) ||
-             ((level == LVL_PD) && pte->fields_2m.leaf && pte->fields_2m.reserved_1)
+        if ( ((level == LVL_PDPT) && pte->leaf && pte->reserved_1) ||
+             ((level == LVL_PD) && pte->leaf && pte->reserved_1)
            )
         {
+            TDX_ERROR("Reserved bits are set in leaf entry - 0x%llx\n", pte->raw);
             return true;
         }
 
         // The entry is the last one used to translate a guest physical address
         // (either an EPT PDE with bit 7 set to 1 or an EPT PTE) and the
         // value of bits 5:3 (EPT memory type) is 2, 3, or 7 (these values are reserved).
-        if ( ((level == LVL_PDPT) && pte->fields_1g.leaf) ||
-             ((level == LVL_PD) && pte->fields_2m.leaf) ||
+        if ( ((level == LVL_PDPT) && pte->leaf) ||
+             ((level == LVL_PD) && pte->leaf) ||
               (level == LVL_PT) )
         {
             // Looking here at 4K struct because the MT bits location is the same in 1G and 2M
-            if ((pte->fields_4k.mt == MT_RSVD0) || (pte->fields_4k.mt == MT_RSVD1) ||
-                (pte->fields_4k.mt == MT_UCM))
+            if ((pte->mt == MT_RSVD0) || (pte->mt == MT_RSVD1) ||
+                (pte->mt == MT_UCM))
             {
+                TDX_ERROR("Memory type is incorrect (%d) - 0x%llx\n", pte->mt, pte->raw);
                 return true;
             }
         }
@@ -292,11 +302,17 @@ ept_walk_result_t gpa_translate(ia32e_eptp_t eptp, pa_t gpa, bool_t private_gpa,
         }
 
         // Check if leaf is reached - page walk done
-        if (is_ept_leaf_entry((ia32e_sept_t*)cached_ept_entry, current_lvl))
+        if (is_ept_leaf_entry(cached_ept_entry, current_lvl))
         {
             // Calculate the final HPA
             hpa->raw = leaf_ept_entry_to_hpa((*(ia32e_sept_t*)cached_ept_entry), gpa.raw, current_lvl);
             break;
+        }
+
+        // Cannot continue to next level, this should be the last one
+        IF_RARE (current_lvl == LVL_PT)
+        {
+            FATAL_ERROR();
         }
 
         pt_pa.raw = cached_ept_entry->raw & IA32E_PAGING_STRUCT_ADDR_MASK;
@@ -315,7 +331,8 @@ ept_walk_result_t gpa_translate(ia32e_eptp_t eptp, pa_t gpa, bool_t private_gpa,
 }
 
 ia32e_sept_t* secure_ept_walk(ia32e_eptp_t septp, pa_t gpa, uint16_t private_hkid,
-                              ept_level_t* level, ia32e_sept_t* cached_sept_entry)
+                              ept_level_t* level, ia32e_sept_t* cached_sept_entry,
+                              bool_t l2_sept_guest_side_walk)
 {
     ia32e_paging_table_t *pt;
     ia32e_sept_t *pte;
@@ -353,9 +370,19 @@ ia32e_sept_t* secure_ept_walk(ia32e_eptp_t septp, pa_t gpa, uint16_t private_hki
         }
 
         // Check if entry not present, or a leaf - so can't walk any further.
-        IF_RARE (cached_sept_entry->present.rwx == 0 || is_ept_leaf_entry(cached_sept_entry, current_lvl))
+        // In L2 SEPT guest-side walk mode, a L2_FREE state is checked
+        // In any other walk mode, RWX bits are checked
+        IF_RARE ((l2_sept_guest_side_walk && is_l2_sept_free(cached_sept_entry)) ||
+                 (!l2_sept_guest_side_walk && (cached_sept_entry->rwx == 0))     ||
+                  is_secure_ept_leaf_entry(cached_sept_entry))
         {
             break;
+        }
+
+        // Cannot continue to next level, this should be the last one
+        IF_RARE (current_lvl == LVL_PT)
+        {
+            FATAL_ERROR();
         }
 
         // Continue to next level in the walk
@@ -368,3 +395,239 @@ ia32e_sept_t* secure_ept_walk(ia32e_eptp_t septp, pa_t gpa, uint16_t private_hki
 
     return pte;
 }
+
+static void sept_set_leaf_no_lock_internal(ia32e_sept_t * ept_entry, uint64_t attributes, pa_t page_pa,
+                                           uint64_t state_encoding, bool_t sept_ve_disable, bool_t set_lock)
+{
+    ia32e_sept_t septe_value = {.raw = attributes};
+
+    // Sanity check:  any attributes bit that is set to 1 must also be 1 in the MIGRATABLE_ATTRIBUTES_MASK
+    tdx_debug_assert((attributes & (~SEPT_MIGRATABLE_ATTRIBUTES_MASK)) == 0);
+
+    septe_value.raw |= state_encoding;
+    septe_value.mt = MT_WB;
+    septe_value.ipat = 1;
+    septe_value.base = page_pa.page_4k_num;
+
+    tdx_debug_assert(septe_value.leaf == 1);   // PS is part of the state encoding assigned above
+    septe_value.base = page_pa.page_4k_num;
+
+    sept_update_supp_ve_bit(&septe_value, sept_ve_disable);
+
+    septe_value.tdel = set_lock ? 1 : 0;
+
+    atomic_mem_write_64b(&ept_entry->raw, septe_value.raw);
+}
+
+void sept_set_leaf_and_release_locks(ia32e_sept_t * ept_entry, uint64_t attributes,
+                                     pa_t page_pa, uint64_t state_encoding, bool_t sept_ve_disable)
+{
+    sept_set_leaf_no_lock_internal(ept_entry, attributes, page_pa, state_encoding, sept_ve_disable, false);
+}
+
+void sept_set_leaf_and_keep_lock(ia32e_sept_t * ept_entry, uint64_t attributes,
+                                 pa_t page_pa, uint64_t state_encoding, bool_t sept_ve_disable)
+{
+    // Sanity check, entry should already be locked
+    tdx_sanity_check(ept_entry->tdel, SCEC_SEPT_MANAGER_SOURCE, 3);
+
+    sept_set_leaf_no_lock_internal(ept_entry, attributes, page_pa, state_encoding, sept_ve_disable, true);
+}
+
+void sept_set_leaf_unlocked_entry(ia32e_sept_t * ept_entry, uint64_t attributes,
+                                  pa_t page_pa, uint64_t state_encoding, bool_t sept_ve_disable)
+{
+    // Sanity check: SEPT entry must be unlocked
+    tdx_sanity_check(ept_entry->tdel == 0, SCEC_SEPT_MANAGER_SOURCE, 4);
+
+    sept_set_leaf_no_lock_internal(ept_entry, attributes, page_pa, state_encoding, sept_ve_disable, false);
+}
+
+void sept_set_mapped_non_leaf(ia32e_sept_t * ept_entry, pa_t page_pa, bool_t lock)
+{
+    ia32e_sept_t curr_entry = {.raw = SEPT_PERMISSIONS_RWX | SEPT_STATE_NL_MAPPED_MASK};
+
+    tdx_debug_assert(curr_entry.leaf == 0);   // PS is part of the state encoding assigned above
+
+    curr_entry.base = page_pa.page_4k_num;
+    curr_entry.supp_ve = 1;
+    curr_entry.tdel = lock;
+
+    // One aligned assignment to make it atomic
+    atomic_mem_write_64b(&ept_entry->raw, curr_entry.raw);
+}
+
+void sept_l2_set_leaf(ia32e_sept_t* l2_sept_entry_ptr, gpa_attr_single_vm_t gpa_attr_single_vm,
+                      pa_t pa, bool_t is_l2_blocked)
+{
+    ia32e_sept_t tmp_sept = *l2_sept_entry_ptr;
+    tmp_sept.l2_encoding.r = gpa_attr_single_vm.r;
+    tmp_sept.l2_encoding.w = gpa_attr_single_vm.w;
+    tmp_sept.l2_encoding.x = gpa_attr_single_vm.xs;
+    tmp_sept.l2_encoding.xu = gpa_attr_single_vm.xu;
+    tmp_sept.l2_encoding.vgp = gpa_attr_single_vm.vgp;
+    tmp_sept.l2_encoding.pwa = gpa_attr_single_vm.pwa;
+    tmp_sept.l2_encoding.sss = gpa_attr_single_vm.sss;
+    tmp_sept.l2_encoding.sve = gpa_attr_single_vm.sve;
+    tmp_sept.l2_encoding.hpa = pa.page_4k_num;
+
+    tmp_sept.mt = MT_WB;
+    tmp_sept.l2_encoding.tdwr = 0;
+    tmp_sept.ipat = 1;
+
+    sept_state_mask_t sept_state_mask = SEPT_STATE_L2_MAPPED_MASK;
+
+    if (is_l2_blocked)
+    {
+        sept_state_mask = SEPT_STATE_L2_BLOCKED_MASK;
+        tmp_sept.l2_encoding.mt0_tdrd = gpa_attr_single_vm.r;
+        tmp_sept.l2_encoding.r = 0;
+        tmp_sept.l2_encoding.tdwr = gpa_attr_single_vm.w;
+        tmp_sept.l2_encoding.w = 0;
+        tmp_sept.l2_encoding.mt1_tdxs = gpa_attr_single_vm.xs;
+        tmp_sept.l2_encoding.x = 0;
+        tmp_sept.l2_encoding.mt2_tdxu = gpa_attr_single_vm.xu;
+        tmp_sept.l2_encoding.xu = 0;
+    }
+
+    sept_l2_update_state(&tmp_sept, sept_state_mask);
+
+    atomic_mem_write_64b(&l2_sept_entry_ptr->raw, tmp_sept.raw);
+}
+
+void sept_l2_set_mapped_non_leaf(ia32e_sept_t * ept_entry, pa_t page_pa)
+{
+    ia32e_sept_t curr_entry = {.raw = SEPT_PERMISSIONS_RW_XS_XU | SEPT_STATE_L2_NL_MAPPED_MASK};
+
+    tdx_debug_assert(curr_entry.leaf == 0);   // PS is part of the state encoding assigned above
+
+    curr_entry.base = page_pa.page_4k_num;
+#ifdef L2_VE_SUPPORT
+    curr_entry.supp_ve = 1;
+#endif
+
+    // One aligned assignment to make it atomic
+    atomic_mem_write_64b(&ept_entry->raw, curr_entry.raw);
+}
+
+void set_arch_septe_details_in_vmm_regs(ia32e_sept_t sept_entry, ept_level_t level, tdx_module_local_t* local_data_ptr)
+{
+    ia32e_sept_t detailed_arch_sept_entry;
+    sept_entry_arch_info_t detailed_arch_info;
+
+    /* Build the architectural representation of the Secure EPT entry.
+       See the table in the spec for details*/
+    if (is_sept_free(&sept_entry))
+    {
+        detailed_arch_sept_entry.raw = 0;
+        detailed_arch_sept_entry.supp_ve = 1;
+    }
+    else
+    {
+        detailed_arch_sept_entry.raw = sept_entry.raw;
+        sept_cleanup_if_pending(&sept_entry, level);
+
+        if (is_secure_ept_leaf_entry(&detailed_arch_sept_entry))
+        {
+            detailed_arch_sept_entry.raw &= SEPT_ARCH_ENTRY_LEAF_MASK;
+        }
+        else
+        {
+            detailed_arch_sept_entry.raw &= SEPT_ARCH_ENTRY_NON_LEAF_MASK;
+        }
+        // No need to restore the values of MT1 and MT2, they are not overwritten
+    }
+
+    // Build the architectural information of the Secure EPT entry
+    detailed_arch_info.raw = 0;
+
+    detailed_arch_info.state = sept_get_arch_state(sept_entry);
+    detailed_arch_info.level = (uint8_t)level;   // Cast down is OK since level fits in 8 bits
+
+    // Return the values as simple 64b
+    local_data_ptr->vmm_regs.rcx = detailed_arch_sept_entry.raw;
+    local_data_ptr->vmm_regs.rdx = detailed_arch_info.raw;
+}
+
+void set_arch_l2_septe_details_in_vmm_regs(ia32e_sept_t l2_sept_entry, uint16_t vm_id, bool_t is_debug,
+                                           uint64_t level, tdx_module_local_t* local_data_ptr)
+{
+    ia32e_sept_t           detailed_arch_sept_entry;
+    sept_entry_arch_info_t detailed_arch_info;
+
+    // Build the architectural representation of the L2 Secure EPT entry.
+    // See the table in the spec for details
+    if (is_l2_sept_free(&l2_sept_entry))
+    {
+        detailed_arch_sept_entry.raw = 0;
+        detailed_arch_sept_entry.supp_ve = 1;
+    }
+    else
+    {
+        // Create the architectural SEPT entry as reported to the user
+        detailed_arch_sept_entry.raw = l2_sept_entry.raw;
+        if (is_secure_ept_leaf_entry(&l2_sept_entry))
+        {
+            if (is_debug)
+            {
+                detailed_arch_sept_entry.raw &= L2_SEPT_ARCH_ENTRY_LEAF_DEBUG_MASK;   // Attribute bits are included
+            }
+            else if (is_l2_sept_mapped(&l2_sept_entry))
+            {
+                detailed_arch_sept_entry.raw &= L2_SEPT_ARCH_ENTRY_LEAF_MASK;   // Attribute bits are excluded
+                detailed_arch_sept_entry.raw |= L2_SEPT_PERMISSIONS_MASK;       // Force RWXsXu to 1111
+            }
+            else   // L2_BLOCKED
+            {
+                detailed_arch_sept_entry.raw &= L2_SEPT_ARCH_ENTRY_LEAF_MASK;   // Attribute bits are excluded
+            }
+        }
+        else
+        {
+            detailed_arch_sept_entry.raw &= L2_SEPT_ARCH_ENTRY_NON_LEAF_MASK;
+        }
+    }
+
+    // Build the architectural information of the Secure EPT entry
+    detailed_arch_info.raw = 0;
+    detailed_arch_info.state = l2_sept_get_arch_state(l2_sept_entry);
+    detailed_arch_info.level = (uint8_t)level;   // Cast down is OK since level fits in 8 bits
+    detailed_arch_info.vm = vm_id;
+
+    // Return the values as simple 64b
+    local_data_ptr->vmm_regs.rcx = detailed_arch_sept_entry.raw;
+    local_data_ptr->vmm_regs.rdx = detailed_arch_info.raw;
+}
+
+#ifdef SEPT_AD_BITS_SUPPORTED
+bool_t sept_atomic_xchange_keep_ad_bits(ia32e_sept_t* sept_entry_ptr, ia32e_sept_t expected_entry,
+                                        ia32e_sept_t new_entry, bool_t keep_d_bit)
+{
+    ia32e_sept_t current_entry;
+
+    // Try to update the whole 64-bit EPT entry in an atomic operation.
+    current_entry.raw = _lock_cmpxchg_64b(expected_entry.raw, new_entry.raw, &sept_entry_ptr->raw);
+
+    // The following while loop is limited if the masked bits can only change concurrently in one
+    // direction.  I.e., A or D bits can only be set by the CPU but never cleared, thus for AD bits
+    // the loop will execute at most 3 times.
+    uint64_t ad_bit_mask = BIT(SEPT_ENTRY_A_BIT_POSITION) | BIT_MASK(keep_d_bit, SEPT_ENTRY_D_BIT_POSITION);
+
+    uint32_t loop_counter = 0;
+
+    // If the values differ only by the AD bits, continue into the loop. Otherwise, return a failure
+    while ((current_entry.raw != expected_entry.raw) && ((current_entry.raw & ~ad_bit_mask) == (expected_entry.raw & ~ad_bit_mask)))
+    {
+        tdx_sanity_check(loop_counter < 3, SCEC_SEPT_MANAGER_SOURCE, 2);
+
+        // Values differ only in the masked bits, try again with those bits taken from the old value
+        expected_entry = current_entry;
+        new_entry.raw = (new_entry.raw & ~ad_bit_mask) | (current_entry.raw & ad_bit_mask);
+        current_entry.raw = _lock_cmpxchg_64b(expected_entry.raw, new_entry.raw, &sept_entry_ptr->raw);
+
+        loop_counter++;
+    }
+
+    return (current_entry.raw == expected_entry.raw);
+}
+#endif

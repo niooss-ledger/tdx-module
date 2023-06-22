@@ -1,9 +1,9 @@
-// Intel Proprietary 
-// 
+// Intel Proprietary
+//
 // Copyright 2021 Intel Corporation All Rights Reserved.
-// 
+//
 // Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
+//
 // The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
 // of merchantability, non-infringement, title, or fitness for a particular purpose.
 
@@ -21,16 +21,21 @@
 #include "accessors/ia32_accessors.h"
 #include "debug/tdx_debug.h"
 #include "helpers/error_reporting.h"
+#include "service_td.h"
+
+#include "auto_gen/tdx_error_codes_defs.h"
+#include "tdx_api_defs.h"
 
 typedef enum
 {
-    TDX_LOCK_SHARED = 0,
-    TDX_LOCK_EXCLUSIVE = 1
+    TDX_LOCK_NO_LOCK = 0,
+    TDX_LOCK_SHARED = 1,
+    TDX_LOCK_EXCLUSIVE = 2
 } lock_type_t;
 
 typedef enum
 {
-    LOCK_RET_FAIL, LOCK_RET_SUCCESS
+    LOCK_RET_FAIL, LOCK_RET_SUCCESS, LOCK_RET_FAIL_HOST_PRIORITY
 } lock_return_t;
 
 typedef uint8_t mutex_lock_t;
@@ -91,6 +96,15 @@ typedef enum
     SHAREX_FREE = 0, SHAREX_SINGLE_READER = BIT(1), SHAREX_EXCLUSIVE_LOCK = BIT(0)
 } sharex_state_t;
 
+//Host-priority sharex lock layout:  [ Readers count [14:2] | Host-priority flag [1] |  Exclusive lock [0] ]
+typedef enum
+{
+    SHAREX_HP_FREE = 0,
+    SHAREX_HP_EXCLUSIVE_LOCK = BIT(0),
+    SHAREX_HP_HOST_PRIORITY = BIT(1),
+    SHAREX_HP_SINGLE_READER = BIT(2)
+} sharex_hp_state_t;
+
 
 typedef union ALIGN(2)
 {
@@ -101,7 +115,9 @@ typedef union ALIGN(2)
     };
     uint16_t raw;
 } sharex_lock_t;
+tdx_static_assert(sizeof(sharex_lock_t) == 2, sharex_lock_t);
 
+#define SHAREX_FULL_COUNTER            0x7FFF
 #define SHAREX_FULL_COUNTER_NO_WRITER  0xFFFE
 
 _STATIC_INLINE_ lock_return_t acquire_sharex_lock_sh(sharex_lock_t * lock_ptr)
@@ -212,6 +228,269 @@ _STATIC_INLINE_ lock_return_t demote_sharex_lock(sharex_lock_t * lock_ptr)
     tdx_sanity_check(retval.exclusive == 1, SCEC_LOCK_SOURCE, 7);
 
     return LOCK_RET_SUCCESS;
+}
+
+// SEPT locks:
+_STATIC_INLINE_ api_error_type sept_lock_acquire_host(ia32e_sept_t* sept_ptr)
+{
+    bool_t ret_val = _lock_bts_64b(&sept_ptr->raw, SEPT_ENTRY_TDEL_BIT_POSITION) == 0;
+    if (!ret_val)
+    {
+        // The lock is already taken. Just set (no need to check return value) the HP bit
+        // and return BUSY_HOST PRIORITY error code
+        (void)_lock_bts_64b(&sept_ptr->raw, SEPT_ENTRY_TDHP_BIT_POSITION);
+        return TDX_OPERAND_BUSY;
+    }
+
+    // IF lock successfully acquired, reset the HP bit.
+    (void)_lock_btr_64b(&sept_ptr->raw, SEPT_ENTRY_TDHP_BIT_POSITION);
+
+    return TDX_SUCCESS;
+}
+
+_STATIC_INLINE_ api_error_type sept_lock_acquire_guest(ia32e_sept_t* sept_ptr)
+{
+    bool_t ret_val = _lock_bts_64b(&sept_ptr->raw, SEPT_ENTRY_TDEL_BIT_POSITION) == 0;
+    if (!ret_val)
+    {
+        return TDX_OPERAND_BUSY;
+    }
+
+    // Lock is successfully acquired. Check if the HP bit is set
+    // No need for atomic operations since the SEPT entry is locked
+    if (sept_ptr->hp)
+    {
+        // If the HP bit is set, release the lock and return BUSY_HOAT_PRORITY error code
+        (void)_lock_btr_64b(&sept_ptr->raw, SEPT_ENTRY_TDEL_BIT_POSITION);
+
+        return TDX_OPERAND_BUSY_HOST_PRIORITY;
+    }
+
+    return TDX_SUCCESS;
+}
+
+_STATIC_INLINE_ void sept_lock_release(ia32e_sept_t* sept_ptr)
+{
+    tdx_sanity_check(sept_ptr->raw & BIT(SEPT_ENTRY_TDEL_BIT_POSITION) , SCEC_LOCK_SOURCE, 8);
+
+    // Lock is taken. Just release it by resetting the TDEL bit
+    (void)_lock_btr_64b(&sept_ptr->raw, SEPT_ENTRY_TDEL_BIT_POSITION);
+}
+
+_STATIC_INLINE_ void sept_lock_release_local(ia32e_sept_t* sept_ptr)
+{
+    // set the TDEL bit to 0 on a local SEPT entry copy. No need for atomic operations
+    sept_ptr->raw &= (uint64_t)~(BIT(SEPT_ENTRY_TDEL_BIT_POSITION));
+}
+
+
+
+///////////////////////////////////////////////////////////////////////////////
+/// Sharex host-priority lock implementation:
+///////////////////////////////////////////////////////////////////////////////
+
+typedef union ALIGN(2)
+{
+    struct
+    {
+        uint16_t exclusive :1;
+        uint16_t host_prio :1;
+        uint16_t counter   :14;
+    };
+    uint16_t raw;
+} sharex_hp_lock_t;
+tdx_static_assert(sizeof(sharex_hp_lock_t) == 2, sharex_hp_lock_t);
+
+#define SHAREX_HP_FULL_COUNTER           0x3FFF
+
+_STATIC_INLINE_ api_error_code_e acquire_sharex_lock_hp_sh(sharex_hp_lock_t * lock_ptr, bool_t is_guest)
+{
+    sharex_hp_lock_t retval;
+
+    tdx_debug_assert(lock_ptr != NULL);
+
+    if (is_guest)
+    {
+        // Increment SHARE_COUNTER
+        retval.raw = _lock_xadd_16b(&lock_ptr->raw, SHAREX_HP_SINGLE_READER);
+
+        if (retval.host_prio)
+        {
+            // Decrement SHARE_COUNTER
+            retval.raw = _lock_xadd_16b(&lock_ptr->raw, (uint16_t)-SHAREX_HP_SINGLE_READER);
+            return TDX_OPERAND_BUSY_HOST_PRIORITY;
+        }
+        else if (retval.exclusive)
+        {
+            return TDX_OPERAND_BUSY; // Counter is n/a
+        }
+
+        // Sanity-check the counter after we know that exclusive bit was not set
+        // Only when exclusive bit is not set the shared-counters has "real" "readers"
+        // And that number should not overflow
+        tdx_sanity_check((retval.counter != SHAREX_HP_FULL_COUNTER), SCEC_LOCK_SOURCE, 10);
+
+        return TDX_SUCCESS;
+    }
+    else
+    {
+        // Increment SHARE_COUNTER
+        retval.raw = _lock_xadd_16b(&lock_ptr->raw, SHAREX_HP_SINGLE_READER);
+
+        if (retval.exclusive)
+        {
+            _lock_or_16b(&lock_ptr->raw, SHAREX_HP_HOST_PRIORITY);
+            return TDX_OPERAND_BUSY;
+        }
+        else if (retval.host_prio)
+        {
+            // Leave SHARE_COUNTER incremented and reset HP bit
+            _lock_and_16b(&lock_ptr->raw, (uint16_t)~SHAREX_HP_HOST_PRIORITY);
+        }
+
+        // Sanity-check the counter after we know that exclusive bit was not set
+        // Only when exclusive bit is not set the shared-counters has "real" "readers"
+        // And that number should not overflow
+        tdx_sanity_check((retval.counter != SHAREX_HP_FULL_COUNTER), SCEC_LOCK_SOURCE, 11);
+
+        return TDX_SUCCESS;
+    }
+}
+
+_STATIC_INLINE_ api_error_code_e acquire_sharex_lock_hp_ex(sharex_hp_lock_t * lock_ptr, bool_t is_guest)
+{
+    sharex_hp_lock_t retval;
+
+    tdx_debug_assert(lock_ptr != NULL);
+
+    retval.raw = _lock_cmpxchg_16b(SHAREX_HP_FREE, SHAREX_HP_EXCLUSIVE_LOCK, &lock_ptr->raw); // Set EXCLUSIVE to 1
+
+    if (retval.raw == SHAREX_HP_FREE)
+    {
+        return TDX_SUCCESS;
+    }
+    else if (retval.raw == SHAREX_HP_HOST_PRIORITY)
+    {
+        if (is_guest)
+        {
+            return TDX_OPERAND_BUSY_HOST_PRIORITY;
+        }
+        else
+        {
+            // HOST_PRIORITY is 1, try again if you are host
+            // Set EXCLUSIVE to 1, clear HOST_PRIORITY
+            retval.raw = _lock_cmpxchg_16b(SHAREX_HP_HOST_PRIORITY, SHAREX_HP_EXCLUSIVE_LOCK, &lock_ptr->raw);
+            return (retval.raw == SHAREX_HP_HOST_PRIORITY) ? TDX_SUCCESS : TDX_OPERAND_BUSY;
+        }
+    }
+    else
+    {
+        if (is_guest)
+        {
+            return TDX_OPERAND_BUSY;
+        }
+        else
+        {
+            _lock_or_16b(&lock_ptr->raw, SHAREX_HP_HOST_PRIORITY);
+            return TDX_OPERAND_BUSY;
+        }
+    }
+}
+
+// shared/exclusive lock with host priority
+_STATIC_INLINE_ api_error_code_e acquire_sharex_lock_hp(sharex_hp_lock_t * lock_ptr, lock_type_t lock_type,
+                                                        bool_t is_guest)
+{
+    if (lock_type == TDX_LOCK_EXCLUSIVE)
+    {
+        return acquire_sharex_lock_hp_ex(lock_ptr, is_guest);
+    }
+    else if (lock_type == TDX_LOCK_SHARED)
+    {
+        return acquire_sharex_lock_hp_sh(lock_ptr, is_guest);
+    }
+
+    tdx_sanity_check(0, SCEC_LOCK_SOURCE, 12);
+
+    // Not supposed to return this after sanity check
+    return UNINITIALIZE_ERROR;
+}
+
+_STATIC_INLINE_ void release_sharex_lock_hp_sh(sharex_hp_lock_t * lock_ptr)
+{
+    sharex_hp_lock_t retval;
+
+    tdx_debug_assert(lock_ptr != NULL);
+
+    retval.raw = _lock_xadd_16b(&lock_ptr->raw, (uint16_t)-SHAREX_HP_SINGLE_READER);
+
+    // Check that the previous lock wasn't exclusively taken, or wasn't taken at all
+    tdx_sanity_check(!(retval.exclusive == 1 || retval.counter == 0), SCEC_LOCK_SOURCE, 13);
+}
+
+_STATIC_INLINE_ void release_sharex_lock_hp_ex(sharex_hp_lock_t * lock_ptr)
+{
+    tdx_debug_assert(lock_ptr != NULL);
+
+    //Check if lock isn't free, or shared
+    tdx_sanity_check(lock_ptr->exclusive == 1, SCEC_LOCK_SOURCE, 14);
+
+    _lock_and_16b(&lock_ptr->raw, SHAREX_HP_HOST_PRIORITY); // save HP state and reset counter and exclusive bit
+}
+
+_STATIC_INLINE_ void release_sharex_lock_hp(sharex_hp_lock_t * lock_ptr, lock_type_t lock_type)
+{
+    if (lock_type == TDX_LOCK_EXCLUSIVE)
+    {
+        release_sharex_lock_hp_ex(lock_ptr);
+        return;
+    }
+    else if (lock_type == TDX_LOCK_SHARED)
+    {
+        release_sharex_lock_hp_sh(lock_ptr);
+        return;
+    }
+
+    tdx_sanity_check(0, SCEC_LOCK_SOURCE, 15);
+}
+
+_STATIC_INLINE_ api_error_code_e promote_sharex_lock_hp(sharex_hp_lock_t * lock_ptr)
+{
+    sharex_hp_lock_t retval;
+
+    tdx_debug_assert(lock_ptr != NULL);
+
+    retval.raw = _lock_cmpxchg_16b(SHAREX_HP_SINGLE_READER, SHAREX_HP_EXCLUSIVE_LOCK, &lock_ptr->raw);
+
+    //Check if lock was already exclusive or free
+    tdx_sanity_check(!(retval.exclusive == 1 || retval.raw == SHAREX_HP_FREE), SCEC_LOCK_SOURCE, 16);
+
+    if (retval.raw == SHAREX_HP_SINGLE_READER)
+    {
+        return TDX_SUCCESS;
+    }
+    else if (retval.raw == (SHAREX_HP_SINGLE_READER | SHAREX_HP_HOST_PRIORITY))
+    {
+        retval.raw = _lock_cmpxchg_16b((SHAREX_HP_SINGLE_READER | SHAREX_HP_HOST_PRIORITY),
+                                        SHAREX_HP_EXCLUSIVE_LOCK, &lock_ptr->raw);
+
+        //Check again if lock was already exclusive or free
+        tdx_sanity_check(!(retval.exclusive == 1 || retval.raw == SHAREX_HP_FREE), SCEC_LOCK_SOURCE, 17);
+
+        if (retval.raw == (SHAREX_HP_SINGLE_READER | SHAREX_HP_HOST_PRIORITY))
+        {
+            return TDX_SUCCESS;
+        }
+        else
+        {
+            return TDX_OPERAND_BUSY;
+        }
+    }
+    else
+    {
+        _lock_or_16b(&lock_ptr->raw, SHAREX_HP_HOST_PRIORITY);
+        return TDX_OPERAND_BUSY;
+    }
 }
 
 #endif /* SRC_COMMON_HELPERS_TDX_LOCKS_H_ */

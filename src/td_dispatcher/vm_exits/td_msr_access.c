@@ -1,9 +1,9 @@
-// Intel Proprietary 
-// 
+// Intel Proprietary
+//
 // Copyright 2021 Intel Corporation All Rights Reserved.
-// 
+//
 // Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
+//
 // The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
 // of merchantability, non-infringement, title, or fitness for a particular purpose.
 
@@ -47,7 +47,16 @@ const static msr_lookup_t* find_msr_entry(uint32_t msr_addr)
     return NULL;
 }
 
-static uint8_t get_msr_bitmap_bit(tdcs_t* tdcs_p, uint32_t msr_addr, bool_t wr)
+_STATIC_INLINE_ bool_t is_msr_covered_by_bitmap(uint32_t msr_addr)
+{
+    uint32_t num_of_msrs_in_bitmap = (MSR_BITMAP_SIZE * 8);
+    bool_t msr_in_low_bitmap = (msr_addr < num_of_msrs_in_bitmap);
+    bool_t msr_in_high_bitmap = ((msr_addr >= HIGH_MSR_START) && (msr_addr < HIGH_MSR_START + num_of_msrs_in_bitmap));
+
+    return (msr_in_low_bitmap || msr_in_high_bitmap);
+}
+
+static uint8_t get_msr_bitmap_bit(uint8_t* msr_bitmaps_page, uint32_t msr_addr, bool_t wr)
 {
     uint32_t byte_offset, bit_offset;
     byte_offset = (msr_addr & ~HIGH_MSR_MASK) ? MSR_BITMAP_SIZE : 0;
@@ -58,188 +67,97 @@ static uint8_t get_msr_bitmap_bit(tdcs_t* tdcs_p, uint32_t msr_addr, bool_t wr)
 
     if (wr)
     {
-        byte_addr = &tdcs_p->MSR_BITMAPS[byte_offset + (MSR_BITMAP_SIZE * 2)];
+        byte_addr = &msr_bitmaps_page[byte_offset + (MSR_BITMAP_SIZE * 2)];
     }
     else
     {
-        byte_addr = &tdcs_p->MSR_BITMAPS[byte_offset];
+        byte_addr = &msr_bitmaps_page[byte_offset];
     }
 
     return (((*byte_addr) & (1 << bit_offset)) >> bit_offset);
 }
 
-_STATIC_INLINE_ bool_t is_msr_covered_by_bitmap(uint32_t msr_addr)
-{
-    uint32_t num_of_msrs_in_bitmap = (MSR_BITMAP_SIZE * 8);
-    bool_t msr_in_low_bitmap = (msr_addr < num_of_msrs_in_bitmap);
-    bool_t msr_in_high_bitmap = ((msr_addr >= (uint32_t)HIGH_MSR_START) &&
-                                    (msr_addr < (uint32_t)(HIGH_MSR_START + num_of_msrs_in_bitmap)));
-
-    return (msr_in_low_bitmap || msr_in_high_bitmap);
-}
-
-static void msr_exit_sanity_check(uint32_t msr_addr, bool_t wr, tdcs_t* tdcs_p)
-{
-    // Sanity check: was there supposed to be a VM exit?
-    if (is_msr_covered_by_bitmap(msr_addr) && (get_msr_bitmap_bit(tdcs_p, msr_addr, wr) != 1))
-    {
-        TDX_ERROR("VM exit wasn't supposed to happen on MSR 0x%llx (WR=%d)\n", msr_addr, wr);
-        // Fatal error
-        FATAL_ERROR();
-    }
-}
-
-static void rd_wr_msr_generic_case(vm_exit_basic_reason_e vm_exit_reason, uint32_t msr_addr, bool_t wr,
-                                   tdvps_t* tdvps_p, tdcs_t* tdcs_p)
+static td_msr_access_status_t rd_wr_msr_generic_checks(uint32_t msr_addr, bool_t wr, tdvps_t* tdvps_p, uint16_t vm_id)
 {
     // Access to any MSR not in the bitmap ranges results in a #VE
     if (!is_msr_covered_by_bitmap(msr_addr))
     {
-        tdx_inject_ve(vm_exit_reason, 0, tdvps_p, 0, 0);
-        return;
+        return TD_MSR_ACCESS_MSR_NON_ARCH_EXCEPTION;
     }
 
+    if ((vm_id > 0) &&
+        get_msr_bitmap_bit((uint8_t*)tdvps_p->l2_vm_ctrl[vm_id-1].l2_shadow_msr_bitmaps, msr_addr, wr))
+    {
+        return TD_MSR_ACCESS_L2_TO_L1_EXIT;
+    }
+
+    return TD_MSR_ACCESS_SUCCESS;
+}
+
+static td_msr_access_status_t rd_wr_msr_generic_case(uint32_t msr_addr, bool_t wr, tdcs_t* tdcs_p)
+{
     const msr_lookup_t* msr_lookup_ptr = find_msr_entry(msr_addr);
 
     // Access to any MSR not in lookup table results in a #VE
     // To save space all MSR's with Fixed-1 RD+WR exit which result in #VE aren't stored in the lookup table
     if (msr_lookup_ptr == NULL)
     {
-        tdx_inject_ve(vm_exit_reason, 0, tdvps_p, 0, 0);
-        return;
+        return TD_MSR_ACCESS_MSR_NON_ARCH_EXCEPTION;
     }
 
-    if (msr_lookup_ptr->bit_meaning == MSR_BITMAP_FIXED_01 ||
-            (msr_lookup_ptr->bit_meaning == MSR_BITMAP_PERFMON && msr_addr == IA32_MISC_ENABLES_MSR_ADDR))
+    msr_bitmap_action action = wr ? msr_lookup_ptr->wr_action : msr_lookup_ptr->rd_action;
+    msr_bitmap_bit_type bit_type = wr ? msr_lookup_ptr->wr_bit_meaning : msr_lookup_ptr->rd_bit_meaning;
+
+    IF_RARE ((bit_type == MSR_BITMAP_FIXED_0) || is_msr_dynamic_bit_cleared(tdcs_p, msr_addr, bit_type))
     {
-        // Case of fixed 0 bit was covered by previous check with fatal error
-        if (wr)
-        {
-            tdx_inject_ve(vm_exit_reason, 0, tdvps_p, 0, 0);
-            return;
-        }
-        else
-        {
-            TDX_ERROR("RDMSR VM exit wasn't supposed to happen on MSR 0x%llx (FIXED 01)\n", msr_addr);
-            // Fatal error
-            FATAL_ERROR();
-        }
+        TDX_ERROR("VM exit (wr = %d) wasn't supposed to happen on MSR 0x%llx (FIXED/DYNAMIC 0)\n", wr, msr_addr);
+        // Fatal error
+        FATAL_ERROR();
     }
 
-    if (msr_lookup_ptr->bit_meaning == MSR_BITMAP_FIXED_10)
+    if (action == MSR_ACTION_VE)
     {
-        // Case of fixed 0 bit was covered by previous check with fatal error
-        if (!wr)
-        {
-            inject_gp(0);
-            return;
-        }
-        else
-        {
-            TDX_ERROR("RDMSR VM exit wasn't supposed to happen on MSR 0x%llx (FIXED 10)\n", msr_addr);
-            // Fatal error
-            FATAL_ERROR();
-        }
+        return TD_MSR_ACCESS_MSR_NON_ARCH_EXCEPTION;
     }
-
-    // Check for MSRs enabled by XFAM and ATTRIBUTES bits
-
-    if (((msr_lookup_ptr->bit_meaning == MSR_BITMAP_FIXED_1_GP_AT_EXIT)) ||
-        ((msr_lookup_ptr->bit_meaning == MSR_BITMAP_PERFMON) && !is_perfmon_supported_in_tdcs(tdcs_p) && (msr_addr != IA32_MISC_ENABLES_MSR_ADDR)) ||
-        ((msr_lookup_ptr->bit_meaning == MSR_BITMAP_XFAM_CET) && !is_cet_supported_in_tdvps(tdvps_p)) ||
-        ((msr_lookup_ptr->bit_meaning == MSR_BITMAP_XFAM_PT)  && !is_pt_supported_in_tdvps(tdvps_p)) ||
-        ((msr_lookup_ptr->bit_meaning == MSR_BITMAP_XFAM_ULI) && !is_uli_supported_in_tdvps(tdvps_p)) ||
-        ((msr_lookup_ptr->bit_meaning == MSR_BITMAP_XFAM_LBR) && !is_lbr_supported_in_tdvps(tdvps_p)) ||
-        ((msr_lookup_ptr->bit_meaning == MSR_BITMAP_OTHER) && (msr_addr == IA32_UMWAIT_CONTROL) &&
-                !is_waitpkg_supported_in_tdcs(tdcs_p)) ||
-        ((msr_lookup_ptr->bit_meaning == MSR_BITMAP_OTHER) && (msr_addr == IA32_PERF_CAPABILITIES_MSR_ADDR) &&
-                !is_perfmon_supported_in_tdcs(tdcs_p)) ||
-        ((msr_lookup_ptr->bit_meaning == MSR_BITMAP_OTHER) && (msr_addr == IA32_PKRS)
-                && !is_pks_supported_in_tdcs(tdcs_p)) ||
-        ((msr_lookup_ptr->bit_meaning == MSR_BITMAP_OTHER) && (msr_addr == IA32_XFD_MSR_ADDR || msr_addr == IA32_XFD_ERROR_MSR_ADDR) &&
-                !is_xfd_supported_in_tdcs(tdcs_p)) || 
-        ((msr_lookup_ptr->bit_meaning == MSR_BITMAP_OTHER) && (msr_addr == IA32_TSX_CTRL_MSR_ADDR) &&
-                !is_tsx_ctrl_supported_in_tdcs(tdcs_p)) )
+    else if (action == MSR_ACTION_GP)
     {
-        inject_gp(0);
-        return;
+        return TD_MSR_ACCESS_GP;
     }
-    if (msr_lookup_ptr->bit_meaning == MSR_BITMAP_FIXED_1_OTHER)
+    else if (action == MSR_ACTION_GP_OR_VE)
     {
-        if ((msr_addr == IA32_PLATFORM_DCA_CAP) ||  (msr_addr == IA32_CPU_DCA_CAP)
-                || (msr_addr == IA32_DCA_CAP))
+        if ((msr_addr == IA32_PLATFORM_DCA_CAP) || (msr_addr == IA32_CPU_DCA_CAP) || (msr_addr == IA32_DCA_CAP))
         {
-            if (!is_dca_supported_in_tdcs(tdcs_p))
-            {
-                inject_gp(0);
-                return;
-            }
-            else
-            {
-                tdx_inject_ve(vm_exit_reason, 0, tdvps_p, 0, 0);
-                return;
-            }
+            return !is_dca_supported_in_tdcs(tdcs_p) ? TD_MSR_ACCESS_GP : TD_MSR_ACCESS_MSR_NON_ARCH_EXCEPTION;
         }
-        if ((msr_addr == IA32_TME_CAPABILITY_MSR_ADDR) ||  (msr_addr == IA32_TME_ACTIVATE_MSR_ADDR)
-                || (msr_addr == IA32_TME_EXCLUDE_MASK) || (msr_addr == IA32_TME_EXCLUDE_BASE))
+        else if ((msr_addr == IA32_TME_CAPABILITY_MSR_ADDR) || (msr_addr == IA32_TME_ACTIVATE_MSR_ADDR) ||
+                 (msr_addr == IA32_TME_EXCLUDE_MASK) || (msr_addr == IA32_TME_EXCLUDE_BASE))
         {
-            if (!is_tme_supported_in_tdcs(tdcs_p))
-            {
-                inject_gp(0);
-                return;
-            }
-            else
-            {
-                tdx_inject_ve(vm_exit_reason, 0, tdvps_p, 0, 0);
-                return;
-            }
+            return !is_tme_supported_in_tdcs(tdcs_p) ? TD_MSR_ACCESS_GP : TD_MSR_ACCESS_MSR_NON_ARCH_EXCEPTION;
         }
-        if (msr_addr == IA32_MKTME_KEYID_PARTITIONING_MSR_ADDR)
+        else if (msr_addr == IA32_MKTME_KEYID_PARTITIONING_MSR_ADDR)
         {
-            if (!is_mktme_supported_in_tdcs(tdcs_p))
-            {
-                inject_gp(0);
-                return;
-            }
-            else
-            {
-                tdx_inject_ve(vm_exit_reason, 0, tdvps_p, 0, 0);
-                return;
-            }
+            return !is_mktme_supported_in_tdcs(tdcs_p) ? TD_MSR_ACCESS_GP : TD_MSR_ACCESS_MSR_NON_ARCH_EXCEPTION;
         }
-        if (msr_addr == IA32_TSC_DEADLINE_MSR_ADDR)
+        else if (msr_addr == IA32_TSC_DEADLINE_MSR_ADDR)
         {
-            if (!is_tsc_deadline_supported_in_tdcs(tdcs_p))
-            {
-                inject_gp(0);
-                return;
-            }
-            else
-            {
-                tdx_inject_ve(vm_exit_reason, 0, tdvps_p, 0, 0);
-                return;
-            }
-        }
-        if (msr_addr == IA32_ARCH_CAPABILITIES_MSR_ADDR)
-        {
-            TDX_ERROR("WRMSR VM exit wasn't supposed to happen on MSR 0x%llx (FIXED 10)\n", msr_addr);
-            // Fatal error
-            FATAL_ERROR();
+            return !is_tsc_deadline_supported_in_tdcs(tdcs_p) ? TD_MSR_ACCESS_GP : TD_MSR_ACCESS_MSR_NON_ARCH_EXCEPTION;
         }
     }
 
     // Any other case is not covered and not expected
-    TDX_ERROR("Unexpected case of MSR 0x%llx (WR=%d)\n", msr_addr, wr);
+    TDX_ERROR("Unexpected case of MSR 0x%llx (WR=%d) (action=%d)\n", msr_addr, wr, action);
     // Fatal error
     FATAL_ERROR();
+
+    return TD_MSR_ACCESS_SUCCESS; // No real success, can't reach here due to FATAL_ERROR above
 }
 
-static void wrmsr_ia32_xss(tdvps_t* tdvps_p)
+static td_msr_access_status_t wrmsr_ia32_xss(tdvps_t* tdvps_p)
 {
     tdx_module_global_t* tdx_global_data_ptr = get_global_data();
     ia32_xcr0_t value;
 
-    value.raw = construct_wrmsr_value(tdvps_p->guest_state.rdx, tdvps_p->guest_state.rax);
+    value.raw = construct_wrmsr_value(tdvps_p->guest_state.gpr_state.rdx, tdvps_p->guest_state.gpr_state.rax);
 
     // Check that any bit that is set to 1 is supported by IA32_XSS and XFAM.
     // Note that CPU support has been enumerated on TDHSYSINIT and used to verify XFAM on TDHMNGINIT.
@@ -247,35 +165,34 @@ static void wrmsr_ia32_xss(tdvps_t* tdvps_p)
     if ((value.raw & ~((uint64_t)tdx_global_data_ptr->ia32_xss_supported_mask &
             tdvps_p->management.xfam)) != 0)
     {
-        inject_gp(0);
-        return;
+        return TD_MSR_ACCESS_GP;
     }
 
     // All checks passed, emulate the WRMSR instruction
     ia32_wrmsr(IA32_XSS_MSR_ADDR, value.raw);
 
     get_local_data()->vp_ctx.tdvps->guest_msr_state.ia32_xss = value.raw;
+
+    return TD_MSR_ACCESS_SUCCESS;
 }
 
-static void wrmsr_ia32_debugctl(tdvps_t* tdvps_p)
+static td_msr_access_status_t wrmsr_ia32_debugctl(tdvps_t* tdvps_p)
 {
     ia32_debugctl_t old_value;
     ia32_debugctl_t new_value;
 
     ia32_vmread(VMX_GUEST_IA32_DEBUGCTLMSR_FULL_ENCODE, &old_value.raw);
-    new_value.raw = construct_wrmsr_value(tdvps_p->guest_state.rdx, tdvps_p->guest_state.rax);
+    new_value.raw = construct_wrmsr_value(tdvps_p->guest_state.gpr_state.rdx, tdvps_p->guest_state.gpr_state.rax);
 
     if (new_value.reserved_0 || new_value.reserved_1)
     {
-        inject_gp(0);
-        return;
+        return TD_MSR_ACCESS_GP;
     }
 
     // Bits 7:6 must not be set to 01 unless the TD is in debug mode
     if (new_value.tr && !new_value.bts)
     {
-        tdx_inject_ve(VMEXIT_REASON_MSR_WRITE, 0, tdvps_p, 0, 0);
-        return;
+        return TD_MSR_ACCESS_MSR_NON_ARCH_EXCEPTION;
     }
 
     // Bit 13 (Enable Uncore PMI) must be 0
@@ -296,9 +213,52 @@ static void wrmsr_ia32_debugctl(tdvps_t* tdvps_p)
         ia32_vmwrite(VMX_GUEST_PND_DEBUG_EXCEPTION_ENCODE, pde.raw);
     }
 
+    return TD_MSR_ACCESS_SUCCESS;
 }
 
-static void rdmsr_ia32_debugctl(tdvps_t* tdvps_p)
+static td_msr_access_status_t wrmsr_ia32_efer(tdvps_t* tdvps_p)
+{
+    ia32_efer_t old_value;
+    ia32_efer_t new_value;
+
+    ia32_vmread(VMX_GUEST_IA32_EFER_FULL_ENCODE, &old_value.raw);
+    new_value.raw = construct_wrmsr_value(tdvps_p->guest_state.gpr_state.rdx, tdvps_p->guest_state.gpr_state.rax);
+
+    // The LMA bit is read-only, use the old value
+    new_value.lma = old_value.lma;
+
+    // We allow only the SCE bit to be changed.
+    // For the comparison below, set the old value of this bit to the new value.
+    old_value.syscall_enabled = new_value.syscall_enabled;
+
+    if (tdvps_p->management.curr_vm != 0)
+    {
+        /* For L2 VMs, we allow the LME bit to be changed.
+         * For the comparison below, set the old value of this bit to the new values. 
+         * We don't allow NXE bit to be changed.
+         */
+        old_value.lme = new_value.lme;
+    }
+
+    // If any other bit has changed, this is a non-architectural exception
+    // (for L1: #VE, for L2: either #VE or L2-->L1 exit)
+    if (old_value.raw != new_value.raw)
+    {
+        return TD_MSR_ACCESS_MSR_NON_ARCH_EXCEPTION;
+    }
+
+    ia32_vmwrite(VMX_GUEST_IA32_EFER_FULL_ENCODE, new_value.raw);
+
+    return TD_MSR_ACCESS_SUCCESS;
+}
+
+_STATIC_INLINE_ void rdmsr_set_value_in_tdvps(tdvps_t* tdvps_p, uint64_t value)
+{
+    tdvps_p->guest_state.gpr_state.rdx = HIGH_32BITS(value);
+    tdvps_p->guest_state.gpr_state.rax = LOW_32BITS(value);
+}
+
+static td_msr_access_status_t rdmsr_ia32_debugctl(tdvps_t* tdvps_p)
 {
     // Get the saved guest value
     ia32_debugctl_t ia32_debugctl;
@@ -308,46 +268,20 @@ static void rdmsr_ia32_debugctl(tdvps_t* tdvps_p)
     ia32_debugctl.en_uncore_pmi = 0;
 
     // Return the value in EDX:EAX
-    tdvps_p->guest_state.rdx = HIGH_32BITS(ia32_debugctl.raw);
-    tdvps_p->guest_state.rax = LOW_32BITS(ia32_debugctl.raw);
+    rdmsr_set_value_in_tdvps(tdvps_p, ia32_debugctl.raw);
+
+    return TD_MSR_ACCESS_SUCCESS;
 }
 
-static void rdmsr_ia32_arch_capabilities(tdvps_t* tdvps_p, tdcs_t* tdcs_p)
+static td_msr_access_status_t rdmsr_ia32_arch_capabilities(tdvps_t* tdvps_p, tdcs_t* tdcs_p)
 {
-    tdx_module_global_t * global_data_ptr = get_global_data();
+    // Return the value calculated on TDH.MNG.INIT or TDH.IMPORT.STATE.IMMUTABLE in EDX:EAX
+    rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_arch_capabilities);
 
-    // Get the value sampled during TDX module init
-    ia32_arch_capabilities_t ia32_arch_capabilities_value = global_data_ptr->plt_common_config.ia32_arch_capabilities;
-
-    // Enumerate IA32_TSX_CTRL MSR as non-existent
-    if (!tdcs_p->executions_ctl_fields.cpuid_flags.tsx_supported)
-    {
-        ia32_arch_capabilities_value.tsx_ctrl = 0;
-    }
-    
-
-    // Virtualize as 0 all IA32_ARCH_CAPABILITIES bits that are known by the TDX module as reserved  
-    ia32_arch_capabilities_value.misc_package_ctls = 0;
-    ia32_arch_capabilities_value.energy_filtering_ctl = 0;
-    ia32_arch_capabilities_value.fb_clear = 0;
-    ia32_arch_capabilities_value.fb_clear_ctrl = 0;
-    ia32_arch_capabilities_value.rrsba = 1;
-    ia32_arch_capabilities_value.bhi_no = 0;
-    ia32_arch_capabilities_value.xapic_disable_status = 0;
-    ia32_arch_capabilities_value.overclocking_status = 0;
-    ia32_arch_capabilities_value.pbrsb_no = 0;
-    
-    // Clear the reserved bits
-    ia32_arch_capabilities_value.reserved_1 = 0;
-    ia32_arch_capabilities_value.reserved_2 = 0;
-    ia32_arch_capabilities_value.reserved_3 = 0;
-    
-    // Return the value in EDX:EAX
-    tdvps_p->guest_state.rdx = HIGH_32BITS(ia32_arch_capabilities_value.raw);
-    tdvps_p->guest_state.rax = LOW_32BITS(ia32_arch_capabilities_value.raw);
+    return TD_MSR_ACCESS_SUCCESS;
 }
 
-static void rdmsr_ia32_misc_enables(tdvps_t* tdvps_p, tdcs_t* tdcs_p)
+static td_msr_access_status_t rdmsr_ia32_misc_enables(tdvps_t* tdvps_p, tdcs_t* tdcs_p)
 {
     if (tdcs_p->executions_ctl_fields.attributes.perfmon)
     {
@@ -364,12 +298,13 @@ static void rdmsr_ia32_misc_enables(tdvps_t* tdvps_p, tdcs_t* tdcs_p)
         ia32_misc_enable.pebs_unavailable = 1;
 
         // Return the value in EDX:EAX
-        tdvps_p->guest_state.rdx = HIGH_32BITS(ia32_misc_enable.raw);
-        tdvps_p->guest_state.rax = LOW_32BITS(ia32_misc_enable.raw);
+        rdmsr_set_value_in_tdvps(tdvps_p, ia32_misc_enable.raw);
     }
+
+    return TD_MSR_ACCESS_SUCCESS;
 }
 
-static void rdmsr_ia32_perf_capabilities(tdvps_t* tdvps_p, tdcs_t* tdcs_p)
+static td_msr_access_status_t rdmsr_ia32_perf_capabilities(tdvps_t* tdvps_p, tdcs_t* tdcs_p)
 {
     if (tdcs_p->executions_ctl_fields.attributes.perfmon)
     {
@@ -377,10 +312,10 @@ static void rdmsr_ia32_perf_capabilities(tdvps_t* tdvps_p, tdcs_t* tdcs_p)
          {
              // Return the native MSR value, with bit 16 (PEBS_TO_BT) cleared
              ia32_perf_capabilities_t perf_capabilities;
-             perf_capabilities.raw = ia32_rdmsr(IA32_PERF_CAPABILITIES_MSR_ADDR);
+             perf_capabilities.raw = get_global_data()->plt_common_config.ia32_perf_capabilities.raw;
              perf_capabilities.pebs_output_pt_avail = 0;
-             tdvps_p->guest_state.rdx = perf_capabilities.raw >> 32;
-             tdvps_p->guest_state.rax = perf_capabilities.raw & BIT_MASK_32BITS;
+
+             rdmsr_set_value_in_tdvps(tdvps_p, perf_capabilities.raw);
          }
          else
          {
@@ -391,61 +326,161 @@ static void rdmsr_ia32_perf_capabilities(tdvps_t* tdvps_p, tdcs_t* tdcs_p)
     {
         UNUSED(tdcs_p);
         // Return the value 0 in EDX:EAX
-        tdvps_p->guest_state.rdx = 0ULL;
-        tdvps_p->guest_state.rax = 0ULL;
+        rdmsr_set_value_in_tdvps(tdvps_p, 0);
     }
+
+    return TD_MSR_ACCESS_SUCCESS;
 }
 
-void td_wrmsr_exit(void)
+td_msr_access_status_t td_wrmsr_exit(void)
 {
     tdx_module_local_t* tdx_local_data_ptr = get_local_data();
     tdvps_t* tdvps_p = tdx_local_data_ptr->vp_ctx.tdvps;
     tdcs_t* tdcs_p = tdx_local_data_ptr->vp_ctx.tdcs;
 
-    uint32_t msr_addr = (uint32_t)tdvps_p->guest_state.rcx;
+    uint32_t msr_addr = (uint32_t)tdvps_p->guest_state.gpr_state.rcx;
+    uint16_t vm_id = tdvps_p->management.curr_vm;
 
-    msr_exit_sanity_check(msr_addr, true, tdcs_p);
+    td_msr_access_status_t status = TD_MSR_ACCESS_SUCCESS;
+
+    status = rd_wr_msr_generic_checks(msr_addr, true, tdvps_p, vm_id);
+
+    if (status != TD_MSR_ACCESS_SUCCESS)
+    {
+        return status;
+    }
 
     switch (msr_addr)
     {
         case IA32_XSS_MSR_ADDR:
-            wrmsr_ia32_xss(tdvps_p);
+            status = wrmsr_ia32_xss(tdvps_p);
             break;
         case IA32_DEBUGCTL_MSR_ADDR:
-            wrmsr_ia32_debugctl(tdvps_p);
+            status = wrmsr_ia32_debugctl(tdvps_p);
+            break;
+        case IA32_EFER_MSR_ADDR:
+            status = wrmsr_ia32_efer(tdvps_p);
             break;
         default:
-            rd_wr_msr_generic_case(VMEXIT_REASON_MSR_WRITE, msr_addr, true, tdvps_p, tdcs_p);
+            status = rd_wr_msr_generic_case(msr_addr, true, tdcs_p);
             break;
     }
+
+    return status;
 }
 
-void td_rdmsr_exit(void)
+// Returns true if the MSR was handled, false if not in the switch case
+static bool_t rdmsr_l1_only_special_msrs(tdcs_t* tdcs_p, tdvps_t* tdvps_p, uint32_t msr_addr)
+{
+    switch (msr_addr)
+    {
+        case IA32_VMX_BASIC_MSR_ADDR:
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_basic.raw);
+            break;
+        case IA32_VMX_TRUE_PINBASED_CTLS_MSR_ADDR:
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_true_pinbased_ctls.raw);
+            break;
+        case IA32_VMX_TRUE_PROCBASED_CTLS_MSR_ADDR:
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_true_procbased_ctls.raw);
+            break;
+        case IA32_VMX_PROCBASED_CTLS2_MSR_ADDR:
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_procbased_ctls2.raw);
+            break;
+        case IA32_VMX_PROCBASED_CTLS3_MSR_ADDR:
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_procbased_ctls3);
+            break;
+        case IA32_VMX_TRUE_EXIT_CTLS_MSR_ADDR:
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_true_exit_ctls.raw);
+            break;
+        case IA32_VMX_TRUE_ENTRY_CTLS_MSR_ADDR:
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_true_entry_ctls.raw);
+            break;
+        case IA32_VMX_MISC_MSR_ADDR:
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_misc.raw);
+            break;
+        case IA32_VMX_EPT_VPID_CAP_MSR_ADDR:
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_ept_vpid_cap.raw);
+            break;
+        case IA32_VMX_CR0_FIXED0_MSR_ADDR:
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_cr0_fixed0.raw);
+            break;
+        case IA32_VMX_CR0_FIXED1_MSR_ADDR:
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_cr0_fixed1.raw);
+            break;
+        case IA32_VMX_CR4_FIXED0_MSR_ADDR:
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_cr4_fixed0.raw);
+            break;
+        case IA32_VMX_CR4_FIXED1_MSR_ADDR:
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_cr4_fixed1.raw);
+            break;
+        case IA32_VMX_VMFUNC_MSR_ADDR:
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_vmfunc);
+            break;
+        default:
+            return false;
+            break;
+    }
+
+    return true;
+}
+
+td_msr_access_status_t td_rdmsr_exit(void)
 {
     tdx_module_local_t* tdx_local_data_ptr = get_local_data();
     tdvps_t* tdvps_p = tdx_local_data_ptr->vp_ctx.tdvps;
     tdcs_t* tdcs_p = tdx_local_data_ptr->vp_ctx.tdcs;
 
-    uint32_t msr_addr = (uint32_t)tdvps_p->guest_state.rcx;
+    uint32_t msr_addr = (uint32_t)tdvps_p->guest_state.gpr_state.rcx;
+    uint16_t vm_id = tdvps_p->management.curr_vm;
 
-    msr_exit_sanity_check(msr_addr, false, tdcs_p);
+    td_msr_access_status_t status = TD_MSR_ACCESS_SUCCESS;
+
+    status = rd_wr_msr_generic_checks(msr_addr, false, tdvps_p, vm_id);
+
+    if (status != TD_MSR_ACCESS_SUCCESS)
+    {
+        return status;
+    }
 
     switch (msr_addr)
     {
         case IA32_DEBUGCTL_MSR_ADDR:
-            rdmsr_ia32_debugctl(tdvps_p);
+            status = rdmsr_ia32_debugctl(tdvps_p);
             break;
         case IA32_MISC_ENABLES_MSR_ADDR:
-            rdmsr_ia32_misc_enables(tdvps_p, tdcs_p);
+            status = rdmsr_ia32_misc_enables(tdvps_p, tdcs_p);
             break;
         case IA32_PERF_CAPABILITIES_MSR_ADDR:
-            rdmsr_ia32_perf_capabilities(tdvps_p, tdcs_p);
+            status = rdmsr_ia32_perf_capabilities(tdvps_p, tdcs_p);
             break;
         case IA32_ARCH_CAPABILITIES_MSR_ADDR:
-            rdmsr_ia32_arch_capabilities(tdvps_p, tdcs_p);
+            status = rdmsr_ia32_arch_capabilities(tdvps_p, tdcs_p);
             break;
+        case IA32_XAPIC_DISABLE_STATUS_MSR_ADDR:
+        {
+            ia32_xapic_disable_status_t ia32_xapic_disable_status = { .raw = 0 };
+            ia32_xapic_disable_status.legacy_xapic_disabled = 1;
+
+            rdmsr_set_value_in_tdvps(tdvps_p, ia32_xapic_disable_status.raw);
+            status = TD_MSR_ACCESS_SUCCESS;
+            break;
+        }
         default:
-            rd_wr_msr_generic_case(VMEXIT_REASON_MSR_READ, msr_addr, false, tdvps_p, tdcs_p);
+        {
+            if ((vm_id == 0) && (rdmsr_l1_only_special_msrs(tdcs_p, tdvps_p, msr_addr)))
+            {
+                return TD_MSR_ACCESS_SUCCESS;
+            }
+            else if ((vm_id > 0) && (msr_addr >= IA32_VMX_BASIC_MSR_ADDR) &&
+                                    (msr_addr <= IA32_VMX_PROCBASED_CTLS3_MSR_ADDR))
+            {
+                return TD_MSR_ACCESS_MSR_NON_ARCH_EXCEPTION;
+            }
+
+            status = rd_wr_msr_generic_case(msr_addr, false, tdcs_p);
             break;
+        }
     }
+
+    return status;
 }

@@ -1,9 +1,9 @@
-// Intel Proprietary 
-// 
+// Intel Proprietary
+//
 // Copyright 2021 Intel Corporation All Rights Reserved.
-// 
+//
 // Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
+//
 // The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
 // of merchantability, non-infringement, title, or fitness for a particular purpose.
 
@@ -88,8 +88,6 @@ api_error_type tdh_mng_create(uint64_t target_tdr_pa, hkid_api_input_t hkid_info
         goto EXIT;
     }
 
-    // ALL_CHECKS_PASSED:  The function is guaranteed to succeed
-
     // Clear the content of the TDR page using direct writes
     zero_area_cacheline(tdr_ptr, TDX_PAGE_SIZE_IN_BYTES);
 
@@ -98,12 +96,30 @@ api_error_type tdh_mng_create(uint64_t target_tdr_pa, hkid_api_input_t hkid_info
      * Fields which are initialized to zero are implicitly zero'd in the
      * previous state.
      */
+    // Generate a random 256-bit TD_UUID
+    if (!generate_256bit_random(&tdr_ptr->management_fields.td_uuid))
+    {
+        TDX_ERROR("Failed to generate random 256-bit UUID number\n");
+        return_val = TDX_RND_NO_ENTROPY;
+        goto EXIT;
+    }
+
+    // ALL_CHECKS_PASSED:  The function is guaranteed to succeed
+
     // Mark the HKID entry in the KOT as assigned
     global_data->kot.entries[td_hkid].state = (uint8_t)KOT_STATE_HKID_ASSIGNED;
 
     // Set HKID in the TKT entry
     tdr_ptr->key_management_fields.hkid = td_hkid;
     tdr_ptr->management_fields.lifecycle_state = TD_HKID_ASSIGNED;
+
+    tdr_ptr->td_preserving_fields.seamdb_index = global_data->seamdb_index;
+
+    for (uint32_t i = 0; i < 4; i++)
+    {
+        tdr_ptr->td_preserving_fields.seamdb_nonce.qwords[i] = global_data->seamdb_nonce.qwords[i];
+    }
+    tdr_ptr->td_preserving_fields.handoff_version = global_data->module_hv;
 
     // Set the new TDR page PAMT fields
     tdr_pamt_entry_ptr->pt = PT_TDR;

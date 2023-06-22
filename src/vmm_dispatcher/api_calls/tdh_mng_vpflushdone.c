@@ -74,9 +74,9 @@ api_error_type tdh_mng_vpflushdone(uint64_t target_tdr_pa)
 
     // Verify TD life cycle state
     if ((tdr_ptr->management_fields.lifecycle_state != TD_KEYS_CONFIGURED) &&
-       (tdr_ptr->management_fields.lifecycle_state != TD_HKID_ASSIGNED))
+        (tdr_ptr->management_fields.lifecycle_state != TD_HKID_ASSIGNED))
     {
-        TDX_ERROR("TD in incorrect life cycle state\n");
+        TDX_ERROR("Incorrect TD life cycle %d\n", tdr_ptr->management_fields.lifecycle_state);
         return_val = TDX_LIFECYCLE_STATE_INCORRECT;
         goto EXIT;
     }
@@ -88,11 +88,12 @@ api_error_type tdh_mng_vpflushdone(uint64_t target_tdr_pa)
      * At this point no new concurrent VCPU association can be done.
      * Verify that the number of associated VCPUs is 0.
      */
-    if (tdr_ptr->management_fields.init)
+    if (tdr_ptr->management_fields.num_tdcx >= MIN_NUM_TDCS_PAGES)
     {
-        // Map the TDCS structure and check the state.  No need to lock
-        tdcs_ptr = map_implicit_tdcs(tdr_ptr, TDX_RANGE_RO);
-        if (tdcs_ptr->management_fields.num_assoc_vcpus != 0)
+        // Map the TDCS structure and check the state. No need to lock
+        tdcs_ptr = map_implicit_tdcs(tdr_ptr, TDX_RANGE_RO, false);
+        if (op_state_is_any_initialized(tdcs_ptr->management_fields.op_state) &&
+            (tdcs_ptr->management_fields.num_assoc_vcpus != 0))
         {
             TDX_ERROR("TD associated vcpus is (%d) and not zero\n",
                       tdcs_ptr->management_fields.num_assoc_vcpus);

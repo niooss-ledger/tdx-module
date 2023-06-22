@@ -612,7 +612,7 @@ static api_error_type check_tdmr_available_areas(tdmr_info_entry_t tdmr_info_cop
     if (valid_rsvd_area)
     {
         available_end = tdmr_info_copy[i].tdmr_base + tdmr_info_copy[i].tdmr_size;
-        if (!is_area_in_cmr(available_start, available_end))
+        if ((available_end > available_start) && !is_area_in_cmr(available_start, available_end))
         {
             TDX_ERROR("TDMR[%d]: Non-reserved area [0x%llx - 0x%llx] is not in any CMR\n",
                     i, available_start, available_end);
@@ -756,6 +756,7 @@ api_error_type tdh_sys_config(uint64_t tdmr_info_array_pa,
     {
         TDX_ERROR("Num of initialized lps %d is smaller than total num of lps %d\n",
                     tdx_global_data_ptr->num_of_init_lps, tdx_global_data_ptr->num_of_lps);
+
         retval = TDX_SYS_CONFIG_NOT_PENDING;
         goto EXIT;
     }
@@ -833,21 +834,7 @@ api_error_type tdh_sys_config(uint64_t tdmr_info_array_pa,
     // ALL_CHECKS_PASSED:  The function is guaranteed to succeed
 
     // Complete CPUID handling
-    for (uint32_t i = 0; i < MAX_NUM_CPUID_LOOKUP; i++)
-    {
-        for (uint32_t j = 0; j < 4; j++)
-        {
-            uint32_t cpuid_value = tdx_global_data_ptr->cpuid_values[i].values.values[j];
-
-            // Clear the bits that will be later virtualized as FIXED0 or DYNAMIC
-            cpuid_value &= ~cpuid_lookup[i].fixed0_or_dynamic.values[j];
-
-            // Set to 1 any bits that will be later virtualized as FIXED1
-            cpuid_value |= cpuid_lookup[i].fixed1.values[j];
-
-            tdx_global_data_ptr->cpuid_values[i].values.values[j] = cpuid_value;
-        }
-    }
+    complete_cpuid_handling(tdx_global_data_ptr);
 
     // Prepare state variables for TDHSYSKEYCONFIG
     tdx_global_data_ptr->pkg_config_bitmap = 0ULL;

@@ -1,9 +1,9 @@
-// Intel Proprietary 
-// 
+// Intel Proprietary
+//
 // Copyright 2021 Intel Corporation All Rights Reserved.
-// 
+//
 // Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
+//
 // The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
 // of merchantability, non-infringement, title, or fitness for a particular purpose.
 
@@ -50,6 +50,7 @@ static api_error_type tdh_mem_rd_wr(uint64_t gpa, uint64_t target_tdr_pa,
     ia32e_sept_t          sept_entry_copy;              // Cached SEPT entry of the page
     ept_level_t           sept_level_entry = LVL_PT;    // SEPT entry level of the page - Try 4K level
     bool_t                sept_locked_flag = false;     // Indicate SEPT is locked
+    bool_t                septe_locked_flag = false;    // Indicate SEPT entry is locked
 
     api_error_type        return_val = UNINITIALIZE_ERROR;
 
@@ -77,15 +78,15 @@ static api_error_type tdh_mem_rd_wr(uint64_t gpa, uint64_t target_tdr_pa,
         goto EXIT;
     }
 
-    // Check the TD state
-    if ((return_val = check_td_in_correct_build_state(tdr_ptr)) != TDX_SUCCESS)
+    // Map the TDCS structure and check the state
+    return_val = check_state_map_tdcs_and_lock(tdr_ptr, TDX_RANGE_RW, TDX_LOCK_SHARED,
+                                               false, write ? TDH_MEM_WR_LEAF : TDH_MEM_RD_LEAF, &tdcs_ptr);
+
+    if (return_val != TDX_SUCCESS)
     {
-        TDX_ERROR("TD is not in build state - error = %lld\n", return_val);
+        TDX_ERROR("State check or TDCS lock failure - error = %llx\n", return_val);
         goto EXIT;
     }
-
-    // Map the TDCS structure and check the state. No need to lock
-    tdcs_ptr = map_implicit_tdcs(tdr_ptr, TDX_RANGE_RW);
 
     if (!tdcs_ptr->executions_ctl_fields.attributes.debug)
     {
@@ -101,45 +102,55 @@ static api_error_type tdh_mem_rd_wr(uint64_t gpa, uint64_t target_tdr_pa,
         goto EXIT;
     }
 
+    if (acquire_sharex_lock(&tdcs_ptr->executions_ctl_fields.secure_ept_lock, TDX_LOCK_SHARED) != LOCK_RET_SUCCESS)
+    {
+        return_val = api_error_with_operand_id(TDX_OPERAND_BUSY, OPERAND_ID_SEPT_TREE);
+        TDX_ERROR("Failed to acquire SEPT tree lock");
+        goto EXIT;
+    }
+    sept_locked_flag = true;
+
     // Check GPA, lock SEPT and walk to find entry
-    return_val = lock_sept_check_and_walk_private_gpa(tdcs_ptr,
-                                                      OPERAND_ID_RCX,
-                                                      page_gpa,
-                                                      tdr_ptr->key_management_fields.hkid,
-                                                      TDX_LOCK_SHARED,
-                                                      &sept_entry_ptr,
-                                                      &sept_level_entry,
-                                                      &sept_entry_copy,
-                                                      &sept_locked_flag);
+    return_val = check_and_walk_private_gpa_to_leaf(tdcs_ptr,
+                                                    OPERAND_ID_RCX,
+                                                    page_gpa,
+                                                    tdr_ptr->key_management_fields.hkid,
+                                                    &sept_entry_ptr,
+                                                    &sept_level_entry,
+                                                    &sept_entry_copy);
 
-    if (return_val == api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RCX) ||
-            return_val == api_error_with_operand_id(TDX_OPERAND_BUSY, OPERAND_ID_SEPT))
+    if (return_val != TDX_SUCCESS)
     {
-        TDX_ERROR("Failed on GPA check or SEPT lock - error = %llx\n", return_val);
+        if (return_val == api_error_with_operand_id(TDX_EPT_WALK_FAILED, OPERAND_ID_RCX))
+        {
+            // Update output register operands
+            return_val = api_error_with_operand_id(TDX_EPT_ENTRY_NOT_PRESENT, OPERAND_ID_RCX);
+            set_arch_septe_details_in_vmm_regs(sept_entry_copy, sept_level_entry, local_data_ptr);
+        }
+
+        TDX_ERROR("Failed on GPA check, SEPT lock or walk - error = %llx\n", return_val);
         goto EXIT;
     }
 
-    /*
-     * Walk failed only if it did not find a leaf entry.
-     * If we did find a leaf entry, we don't care if it's at 4K, 2M or 1G level.
-     **/
-    if (return_val == api_error_with_operand_id(TDX_EPT_WALK_FAILED, OPERAND_ID_RCX) &&
-            !is_ept_leaf_entry(&sept_entry_copy, sept_level_entry))
+    // Lock the SEPT entry in memory
+    return_val = sept_lock_acquire_host(sept_entry_ptr);
+    if (TDX_SUCCESS!= return_val)
     {
-        // Update output register operands
+        return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
         set_arch_septe_details_in_vmm_regs(sept_entry_copy, sept_level_entry, local_data_ptr);
-        TDX_ERROR("Failed on SEPT walk - error = %llx\n", return_val);
+        TDX_ERROR("Failed on SEPT host-side lock attempt\n");
         goto EXIT;
     }
+    septe_locked_flag = true;
 
+    // Read the SEPT entry (again after locking)
+    sept_entry_copy = *sept_entry_ptr;
 
-    // Verify the Secure EPT entry state
-    if (get_sept_entry_state(&sept_entry_copy, sept_level_entry) != SEPTE_PRESENT)
+    if (!sept_state_is_seamcall_leaf_allowed(write ? TDH_MEM_WR_LEAF : TDH_MEM_RD_LEAF, sept_entry_copy))
     {
-        // Update output register operands
+        return_val = api_error_with_operand_id(TDX_EPT_ENTRY_STATE_INCORRECT, OPERAND_ID_RCX);
         set_arch_septe_details_in_vmm_regs(sept_entry_copy, sept_level_entry, local_data_ptr);
-        return_val = api_error_with_operand_id(TDX_EPT_ENTRY_NOT_PRESENT, OPERAND_ID_RCX);
-        TDX_ERROR("EPT entry is not present %llx\n", return_val);
+        TDX_ERROR("TDH_MEM_RW/WR is not allowed in current SEPT entry state - 0x%llx\n", sept_entry_copy.raw);
         goto EXIT;
     }
 
@@ -172,6 +183,11 @@ EXIT:
         free_la(tdr_ptr);
     }
 
+    if (septe_locked_flag)
+    {
+        sept_lock_release(sept_entry_ptr);
+    }
+
     if (sept_locked_flag)
     {
         release_sharex_lock_sh(&tdcs_ptr->executions_ctl_fields.secure_ept_lock);
@@ -183,6 +199,7 @@ EXIT:
 
     if (tdcs_ptr != NULL)
     {
+        release_sharex_lock_hp_sh(&tdcs_ptr->management_fields.op_state_lock);
         free_la(tdcs_ptr);
     }
 

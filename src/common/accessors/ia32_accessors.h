@@ -22,6 +22,8 @@
 #include "x86_defs/mktme.h"
 #include "x86_defs/x86_defs.h"
 
+#include "exception_handling/exception_handling_consts.h"
+
 /**
  * @brief Invalidate TLB entries by calling INVLPG instruction
  * @param addr
@@ -124,6 +126,23 @@ _STATIC_INLINE_ void ia32_wrmsr(uint64_t addr, uint64_t value)
     _ASM_VOLATILE_ ("wrmsr" : : "a"((uint32_t)value), "d"((uint32_t)(value >> 32)), "c"(addr));
 }
 
+// A non-zero value will return in case of success.
+// In case of #GP a zero value will be returned in RSI/fault_indicator
+// In case of #GP, MSR(NON_FAULTING_MSR_ADDR) (0x8B) will be written with 0 value,
+// so the value of it should be preserved before calling this function, and restored after
+_STATIC_INLINE_ uint64_t ia32_safe_wrmsr(uint64_t addr, uint64_t value)
+{
+    uint64_t fault_indicator;
+
+    _ASM_VOLATILE_ ("movq $" STR(FAULT_SAFE_MAGIC_INDICATOR) ", %%rsi \n"
+                    "wrmsr \n"
+                            : "=S"(fault_indicator)
+                            : "a"((uint32_t)value), "d"((uint32_t)(value >> 32)),
+                              "c"(addr));
+
+    return fault_indicator;
+}
+
 _STATIC_INLINE_ void ia32_out16(uint16_t port, uint16_t val)
 {
     _ASM_VOLATILE_ ("outw %0,%w1" : : "a" (val), "dN" (port));
@@ -148,13 +167,30 @@ _STATIC_INLINE_ uint8_t ia32_in8(uint16_t port)
     return v;
 }
 
-_STATIC_INLINE_ bool_t ia32_rdrand(ia32_rflags_t* rflags, uint64_t* rand)
+_STATIC_INLINE_ bool_t ia32_rdrand(uint64_t* rand)
 {
+    ia32_rflags_t rflags = { .raw = 0 };
+
     _ASM_VOLATILE_ ("rdrand %0 \n"
                     "pushfq; popq %1\n"
-                    : "=r"(*rand) , "=r"(rflags->raw));
+                    : "=r"(*rand) , "=r"(rflags.raw));
 
-    if (!rflags->cf)
+    if (!rflags.cf)
+    {
+        return false;
+    }
+    return true;
+}
+
+_STATIC_INLINE_ bool_t ia32_rdseed(uint64_t* rand)
+{
+    ia32_rflags_t rflags = { .raw = 0 };
+
+    _ASM_VOLATILE_ ("rdseed %0 \n"
+                    "pushfq; popq %1\n"
+                    : "=r"(*rand) , "=r"(rflags.raw));
+
+    if (!rflags.cf)
     {
         return false;
     }
@@ -238,6 +274,24 @@ _STATIC_INLINE_ void ia32_xrstors(const void* xsave_area, uint64_t xfam)
         :
         : "m"(*(uint64_t*)xsave_area), "a"((uint32_t)xfam), "d"((uint32_t)(xfam >> 32))
         : "memory");
+}
+
+// A non-zero value will return in case of success.
+// In case of #GP a zero value will be returned in RSI/fault_indicator
+_STATIC_INLINE_ uint64_t ia32_safe_xrstors(const void* xsave_area, uint64_t xfam)
+{
+    uint64_t fault_indicator;
+
+    _ASM_VOLATILE_ ("movq $" STR(FAULT_SAFE_MAGIC_INDICATOR) ", %%rsi \n"
+                    "xrstors %1 \n"
+                            : "=S"(fault_indicator)
+                            : "m"(*(uint64_t*)xsave_area), "a"((uint32_t)xfam), "d"((uint32_t)(xfam >> 32)),
+                              "c"(0) // indicate the compiler not to use RCX, because in case of #GP
+                                     // XRSTORS will be retried with modified RCX (value 0x8b)
+                                     // - same #GP flow is used for WRMSR handling/retrying
+                            : "memory");
+
+    return fault_indicator;
 }
 
 _STATIC_INLINE_ void ia32_load_cr2(uint64_t cr2)
@@ -324,33 +378,6 @@ _STATIC_INLINE_ uint64_t ia32_store_dr6(void)
     return dr6;
 }
 
-
-
-
-
-
-/** WRF/GSBASE & RDF/GSBASE
- *
- * Intrinsics:
- * WRFSBASE: void _writefsbase_u32( unsigned int );
- * WRFSBASE: _writefsbase_u64( unsigned __int64 );
- * WRGSBASE: void _writegsbase_u32( unsigned int );
- * WRGSBASE: _writegsbase_u64( unsigned __int64 );
- *
- * RDFSBASE: unsigned int _readfsbase_u32(void );
- * RDFSBASE: unsigned __int64 _readfsbase_u64(void );
- * RDGSBASE: unsigned int _readgsbase_u32(void );
- * RDGSBASE: unsigned __int64 _readgsbase_u64(void );
- */
-
-
-/*
-_STATIC_INLINE_ void ia32_pause( void )
-{
-	_ASM_VOLATILE_ ("pause" ) ;
-}
-*/
-
 /**
  * Atomic operations
  */
@@ -420,6 +447,14 @@ _STATIC_INLINE_ uint16_t _xchg_16b(uint16_t *mem, uint16_t quantum)
     return quantum;
 }
 
+_STATIC_INLINE_ uint32_t _xchg_32b(uint32_t *mem, uint32_t quantum)
+{
+    //according to SDM, XCHG on memory operand is automatically uses the processor's locking protocol
+    //regardless of LOCK prefix
+    _ASM_VOLATILE_ ("xchgl %2, %0" : "=m" ( *mem ), "=a"(quantum) : "a"(quantum) : "memory");
+    return quantum;
+}
+
 _STATIC_INLINE_ uint16_t _lock_xadd_16b(uint16_t *mem, uint16_t quantum)
 {
     _ASM_VOLATILE_ ("lock; xaddw %2, %0" : "=m" ( *mem ), "=a"(quantum) : "a"(quantum) : "memory", "cc");
@@ -436,6 +471,26 @@ _STATIC_INLINE_ uint64_t _lock_xadd_64b(uint64_t *mem, uint64_t quantum)
 {
     _ASM_VOLATILE_ ("lock; xaddq %2, %0" : "=m" ( *mem ), "=a"(quantum) : "a"(quantum) : "memory", "cc");
     return quantum;
+}
+
+_STATIC_INLINE_ void _lock_or_16b(uint16_t *mem, uint16_t quantum)
+{
+    _ASM_VOLATILE_ ("lock; orw %1, %0" : "=m" ( *mem ) : "a"(quantum) : "memory");
+}
+
+_STATIC_INLINE_ void _lock_and_8b(uint8_t *mem, uint8_t quantum)
+{
+    _ASM_VOLATILE_ ("lock; andb %1, %0" : "=m" ( *mem ) : "a"(quantum) : "memory");
+}
+
+_STATIC_INLINE_ void _lock_and_16b(uint16_t *mem, uint16_t quantum)
+{
+    _ASM_VOLATILE_ ("lock; andw %1, %0" : "=m" ( *mem ) : "a"(quantum) : "memory");
+}
+
+_STATIC_INLINE_ void _lock_xor_16b(uint16_t *mem, uint16_t quantum)
+{
+    _ASM_VOLATILE_ ("lock; xorw %1, %0" : "=m" ( *mem ) : "a"(quantum) : "memory");
 }
 
 _STATIC_INLINE_ bool_t _lock_bts_32b(volatile uint32_t* mem, uint32_t bit)
@@ -470,29 +525,33 @@ _STATIC_INLINE_ bool_t _lock_btr_64b(volatile uint64_t* mem, uint64_t bit)
     return result;
 }
 
-_STATIC_INLINE_ uint64_t bit_scan_forward64(uint64_t mask)
+_STATIC_INLINE_ bool_t bit_scan_forward64(uint64_t mask, uint64_t* lsb_position)
 {
-    tdx_debug_assert(mask != 0);
-
-    uint64_t lsb_position;
     _ASM_VOLATILE_ ("bsfq %1, %0 \n"
-                        :"=r"(lsb_position)
+                        :"=r"(*lsb_position)
                         :"r"(mask)
                         :"cc");
 
-    return lsb_position;
+    return (mask != 0);
 }
 
-_STATIC_INLINE_ uint64_t bit_scan_reverse64(uint64_t value)
+_STATIC_INLINE_ bool_t bit_scan_reverse32(uint32_t value, uint32_t* msb_position)
 {
-    tdx_debug_assert(value != 0);
 
-    uint64_t msb_position;
-    _ASM_VOLATILE_ ("bsrq %1, %0 \n"
-                            :"=r"(msb_position)
+    _ASM_VOLATILE_ ("bsrl %1, %0 \n"
+                            :"=r"(*msb_position)
                             :"r"(value)
                             :"cc");
-    return msb_position;
+    return (value != 0);
+}
+
+_STATIC_INLINE_ bool_t bit_scan_reverse64(uint64_t value, uint64_t* msb_position)
+{
+    _ASM_VOLATILE_ ("bsrq %1, %0 \n"
+                            :"=r"(*msb_position)
+                            :"r"(value)
+                            :"cc");
+    return (value != 0);
 }
 
 _STATIC_INLINE_ void bts_32b(volatile uint32_t* mem, uint32_t bit)
@@ -578,19 +637,9 @@ _STATIC_INLINE_ void load_xmms_from_buffer(const uint128_t xmms[16])
         : : "r"(xmms));
 }
 
-_STATIC_INLINE_ void ia32_swapgs(uint64_t value)
+_STATIC_INLINE_ void atomic_mem_write_64b(uint64_t* mem, uint64_t val)
 {
-    /**
-     * rdgsbase saves the current GS.base (local data struct) into rax
-     * then the value is loaded the value that should go into kernel gs base msr to gs.base
-     * and at the end wrgsbase saves rax back into the GS.base
-     */
-    _ASM_VOLATILE_ ("rdgsbase %%rax\n"
-                    "wrgsbase %0\n"
-                    "swapgs\n"
-                    "wrgsbase %%rax\n"
-                    : : "r"(value) : "rax");
-
+    _ASM_VOLATILE_ ("movq %0, (%1)" : : "r" (val), "r" (mem) : "memory");
 }
 
 #endif /* SRC_COMMON_ACCESSORS_IA32_ACCESSORS_H_ */

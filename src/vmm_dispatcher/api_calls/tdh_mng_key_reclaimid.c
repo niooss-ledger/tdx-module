@@ -25,13 +25,10 @@
 
 api_error_type tdh_mng_key_reclaimid(uint64_t target_tdr_pa)
 {
+    // TDH.MNG.KEY.RECLAIMID is provided for backward compatibility.  It does not do
+    //   anything except returning a constant TDX_SUCCESS status.
 
     UNUSED(target_tdr_pa);
-
-    /**
-     *  TDH.MNG.KEY.RECLAIMID is provided for backward compatibility.
-     *  It does not do anything except returning a constant TDX_SUCCESS status.
-     */
 
     return TDX_SUCCESS;
 }

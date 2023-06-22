@@ -19,7 +19,6 @@
 #define _ASM_VOLATILE_ __asm__ volatile
 #define _ASM_          __asm__
 
-
 #ifndef NULL
 #define NULL            ((void*)0)
 #endif
@@ -51,6 +50,8 @@
 #define offsetof(type, field)   (uint64_t)&(((type *)0)->field)
 #endif
 
+#define sizeof_field(type, field)    sizeof(((type *)0)->field)
+
 #define PACKED                  __attribute__((__packed__))
 
 #define RARE_COND(cond)             __builtin_expect((cond), 0)
@@ -58,5 +59,7 @@
 #define IF_RARE(rare_condition)     if ( RARE_COND(rare_condition) )
 #define IF_COMMON(common_condition) if ( COMMON_COND(common_condition) )
 
+#define __STR(x)        #x
+#define STR(x)          __STR(x)
 
 #endif /* SRC_COMMON_TDX_BASIC_DEFS_H_ */

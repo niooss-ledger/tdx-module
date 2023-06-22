@@ -28,13 +28,13 @@ typedef int32_t crypto_api_error;
 #define SIZE_OF_SHA384_HASH_IN_QWORDS 6
 #define SIZE_OF_SHA384_HASH_IN_BYTES (SIZE_OF_SHA384_HASH_IN_QWORDS << 3)
 
-#define HASH_METHOD_BUFFER_SIZE       128
+#define HASH_METHOD_BUFFER_SIZE       64
 #define SIZE_OF_SHA384_CTX_BUFFER     256
 
 typedef struct hash_method_s
 {
     uint8_t hash_method_buffer[HASH_METHOD_BUFFER_SIZE];
-    bool_t  is_initialized;
+    bool_t is_initialized;
 } hash_method_t;
 
 typedef union measurement_u
@@ -51,9 +51,10 @@ tdx_static_assert(sizeof(measurement_t) == SIZE_OF_SHA384_HASH_IN_BYTES, measure
  */
 typedef struct sha384_ctx_s
 {
+    uint64_t last_init_seamdb_index;
     uint8_t buffer[SIZE_OF_SHA384_CTX_BUFFER];
 } sha384_ctx_t;
-
+tdx_static_assert(sizeof(sha384_ctx_t) == (SIZE_OF_SHA384_CTX_BUFFER + 8), sha384_ctx_t);
 
 /**
  * @struct sha384_128B_block_t
@@ -122,22 +123,6 @@ crypto_api_error sha384_update_128B(sha384_ctx_t * ctx,
  * @return Success or Error type
  */
 crypto_api_error sha384_finalize(sha384_ctx_t * ctx, uint64_t * hash);
-
-
-/**
- * @brief Non-incremental SHA-384 hash. Receives num_of_blocks of 128 byte and calculates the hash
- *
- * @note
- *
- * @param blocks Blocks to process in the SHA384 hash (each of size 128 byte)
- * @param num_of_blocks Number of blocks in the blocks array
- * @param hash Result of SHA384 hash
- *
- * @return Success or Error type
- */
-crypto_api_error sha384_generate_hash_128B(const sha384_128B_block_t * blocks,
-                                           uint32_t num_of_blocks,
-                                           uint64_t * hash);
 
 
 /**

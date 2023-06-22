@@ -71,15 +71,11 @@ api_error_type tdh_phymem_page_reclaim(uint64_t page_pa)
     }
 
     // Walk and locate the leaf PAMT entry
-    reclaimed_page_pamt_entry_ptr =  pamt_walk(reclaimed_page_pa,
-                                               reclaimed_page_pamt_block,
-                                               TDX_LOCK_EXCLUSIVE,
-                                               &reclaimed_page_leaf_size,
-                                               false);
-    if (reclaimed_page_pamt_entry_ptr == NULL)
+    if ((return_val = pamt_walk(reclaimed_page_pa, reclaimed_page_pamt_block, TDX_LOCK_EXCLUSIVE,
+                                &reclaimed_page_leaf_size, false, false, &reclaimed_page_pamt_entry_ptr)) != TDX_SUCCESS)
     {
         TDX_ERROR("Failed to PAMT walk to entry - PAMT is locked\n");
-        return_val = api_error_with_operand_id(TDX_OPERAND_BUSY, OPERAND_ID_RCX);
+        return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
         goto EXIT;
     }
     page_owner_pa = get_pamt_entry_owner(reclaimed_page_pamt_entry_ptr);
@@ -89,7 +85,7 @@ api_error_type tdh_phymem_page_reclaim(uint64_t page_pa)
     if ((reclaimed_page_pamt_entry_ptr->pt == PT_NDA) ||
         (reclaimed_page_pamt_entry_ptr->pt == PT_RSVD))
     {
-        TDX_ERROR("Page to reclaim is NDA or reserved\n");
+        TDX_WARN("Page to reclaim is NDA or reserved\n");
         return_val = api_error_with_operand_id(TDX_PAGE_METADATA_INCORRECT, OPERAND_ID_RCX);
         goto EXIT;
     }
@@ -130,13 +126,13 @@ api_error_type tdh_phymem_page_reclaim(uint64_t page_pa)
         // Verify that the TD is in teardown state
         if (tdr_ptr->management_fields.lifecycle_state != TD_TEARDOWN)
         {
-            TDX_ERROR("TD life cycle state is not in teardown\n");
+            TDX_ERROR("TD lifecycle state is not in teardown\n");
             return_val = TDX_LIFECYCLE_STATE_INCORRECT;
             goto EXIT;
         }
 
         // Atomically decrement TDR child count by the amount of reclaimed 4KB pages
-        _lock_xadd_64b(&tdr_ptr->management_fields.chldcnt, -(1 << (9 * reclaimed_page_leaf_size)));
+        (void)_lock_xadd_64b(&tdr_ptr->management_fields.chldcnt, -(1 << (9 * reclaimed_page_leaf_size)));
     }
     else // Reclaimed page is TDR
     {
@@ -147,7 +143,7 @@ api_error_type tdh_phymem_page_reclaim(uint64_t page_pa)
         // Verify that the TD is in teardown state
         if (tdr_ptr->management_fields.lifecycle_state != TD_TEARDOWN)
         {
-            TDX_ERROR("TD life cycle state is not in teardown\n");
+            TDX_ERROR("TD lifecycle state is not in teardown\n");
             return_val = TDX_LIFECYCLE_STATE_INCORRECT;
             goto EXIT;
         }

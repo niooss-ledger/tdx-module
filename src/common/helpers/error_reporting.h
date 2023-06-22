@@ -25,14 +25,13 @@ void tdx_arch_fatal_error(void);
 #define FATAL_ERROR()       {\
                                 TDX_ERROR("Architectural fatal error at line: %d , in file %s\n", __LINE__, __FILENAME__);\
                                 tdx_arch_fatal_error();\
-                            };
+                            }
 
 //Runtime (includes product-build) Assertion
-#define tdx_sanity_check(cond, source_id, code) if (!(cond)) {\
+#define tdx_sanity_check(cond, source_id, code) IF_RARE (!(cond)) {\
                                                     TDX_ERROR("Runtime panic at line: %d , in file %s\n", __LINE__, __FILENAME__);\
                                                     tdx_report_error_and_halt(source_id, code);\
-                                                };
-
+                                                }
 
 // SCEC - Sanity Check Error Code
 #define SCEC_LOCK_SOURCE               0x0001
@@ -44,6 +43,7 @@ void tdx_arch_fatal_error(void);
 #define SCEC_TD_DISPATCHER_SOURCE      0x0007
 #define SCEC_VMM_DISPATCHER_SOURCE     0x0008
 #define SCEC_TDEXIT_SOURCE             0x0009
+#define SCEC_METADATA_HANDLER_SOURCE   0x000A
 #define SCEC_TDCALL_SOURCE(n)          (0xA000 | ((n) & 0xFF))
 #define SCEC_SEAMCALL_SOURCE(n)        (0xB000 | ((n) & 0xFF))
 #define SCEC_CANARY_CORRUPT_SOURCE     0xC000

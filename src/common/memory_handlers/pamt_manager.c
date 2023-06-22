@@ -175,20 +175,27 @@ void pamt_init(pamt_block_t* pamt_block, uint64_t num_4k_entries, tdmr_entry_t *
     pamt_nodes_init(start_pamt_4k_p, end_pamt_4k_p, pamt_block->pamt_1gb_p, PAMT_4K_ENTRIES_IN_1GB, tdmr_entry);
 }
 
-pamt_entry_t* pamt_walk(pa_t pa, pamt_block_t pamt_block, lock_type_t leaf_lock_type,
-                        page_size_t* leaf_size, bool_t walk_to_leaf_size)
+api_error_code_e pamt_walk(pa_t pa, pamt_block_t pamt_block, lock_type_t leaf_lock_type,
+                           page_size_t* leaf_size, bool_t walk_to_leaf_size, bool_t is_guest,
+                           pamt_entry_t** pamt_entry)
 {
     pamt_entry_t* pamt_1gb = map_pa_with_global_hkid(pamt_block.pamt_1gb_p, TDX_RANGE_RW);
     pamt_entry_t* pamt_2mb = map_pa_with_global_hkid(&pamt_block.pamt_2mb_p[pa.pamt_2m.idx], TDX_RANGE_RW);
     pamt_entry_t* pamt_4kb = map_pa_with_global_hkid(&pamt_block.pamt_4kb_p[pa.pamt_4k.idx], TDX_RANGE_RW);
 
     pamt_entry_t* ret_entry_pp = NULL;
-    pamt_entry_t* ret_entry_lp = NULL;
 
     page_size_t target_size = walk_to_leaf_size ? *leaf_size : PT_4KB;
 
+    api_error_code_e retval = UNINITIALIZE_ERROR;
+
+    *pamt_entry = NULL;
+
+    // Exclusive mode is not supported in guest-side calls
+    tdx_debug_assert(!(is_guest && (leaf_lock_type == TDX_LOCK_EXCLUSIVE)));
+
     // Acquire PAMT 1GB entry lock as shared
-    if (acquire_sharex_lock_sh(&pamt_1gb->entry_lock) != LOCK_RET_SUCCESS)
+    if ((retval = acquire_sharex_lock_hp(&pamt_1gb->entry_lock, TDX_LOCK_SHARED, is_guest)) != TDX_SUCCESS)
     {
         goto EXIT;
     }
@@ -197,7 +204,8 @@ pamt_entry_t* pamt_walk(pa_t pa, pamt_block_t pamt_block, lock_type_t leaf_lock_
     if ((pamt_1gb->pt == PT_REG) || (target_size == PT_1GB))
     {
         // Promote PAMT lock to exclusive if needed
-        if ((leaf_lock_type == TDX_LOCK_EXCLUSIVE) && !promote_sharex_lock(&pamt_1gb->entry_lock))
+        if ((leaf_lock_type == TDX_LOCK_EXCLUSIVE) &&
+            ((retval = promote_sharex_lock_hp(&pamt_1gb->entry_lock)) != TDX_SUCCESS))
         {
             goto EXIT_FAILURE_RELEASE_ROOT;
         }
@@ -209,7 +217,7 @@ pamt_entry_t* pamt_walk(pa_t pa, pamt_block_t pamt_block, lock_type_t leaf_lock_
     }
 
     // Acquire PAMT 2MB entry lock as shared
-    if (acquire_sharex_lock_sh(&pamt_2mb->entry_lock) != LOCK_RET_SUCCESS)
+    if ((retval = acquire_sharex_lock_hp(&pamt_2mb->entry_lock, TDX_LOCK_SHARED, is_guest)) != TDX_SUCCESS)
     {
         goto EXIT_FAILURE_RELEASE_ROOT;
     }
@@ -218,7 +226,8 @@ pamt_entry_t* pamt_walk(pa_t pa, pamt_block_t pamt_block, lock_type_t leaf_lock_
     if ((pamt_2mb->pt == PT_REG) || (target_size == PT_2MB))
     {
         // Promote PAMT lock to exclusive if needed
-        if ((leaf_lock_type == TDX_LOCK_EXCLUSIVE) && !promote_sharex_lock(&pamt_2mb->entry_lock))
+        if ((leaf_lock_type == TDX_LOCK_EXCLUSIVE) &&
+            ((retval = promote_sharex_lock_hp(&pamt_2mb->entry_lock)) != TDX_SUCCESS))
         {
             goto EXIT_FAILURE_RELEASE_ALL;
         }
@@ -230,7 +239,7 @@ pamt_entry_t* pamt_walk(pa_t pa, pamt_block_t pamt_block, lock_type_t leaf_lock_
     }
 
     // Acquire PAMT 4KB entry lock as shared/exclusive based on the lock flag
-    if (acquire_sharex_lock(&pamt_4kb->entry_lock, leaf_lock_type) != LOCK_RET_SUCCESS)
+    if ((retval = acquire_sharex_lock_hp(&pamt_4kb->entry_lock, leaf_lock_type, is_guest)) != TDX_SUCCESS)
     {
         goto EXIT_FAILURE_RELEASE_ALL;
     }
@@ -242,10 +251,10 @@ pamt_entry_t* pamt_walk(pa_t pa, pamt_block_t pamt_block, lock_type_t leaf_lock_
 
 EXIT_FAILURE_RELEASE_ALL:
     // Release PAMT 2MB shared lock
-    release_sharex_lock_sh(&pamt_2mb->entry_lock);
+    release_sharex_lock_hp_sh(&pamt_2mb->entry_lock);
 EXIT_FAILURE_RELEASE_ROOT:
     // Release PAMT 1GB shared lock
-    release_sharex_lock_sh(&pamt_1gb->entry_lock);
+    release_sharex_lock_hp_sh(&pamt_1gb->entry_lock);
 
 EXIT:
     free_la(pamt_1gb);
@@ -254,11 +263,11 @@ EXIT:
 
     if (ret_entry_pp != NULL)
     {
-        ret_entry_lp = map_pa_with_global_hkid(ret_entry_pp,
+        *pamt_entry = map_pa_with_global_hkid(ret_entry_pp,
                 (leaf_lock_type == TDX_LOCK_EXCLUSIVE) ? TDX_RANGE_RW : TDX_RANGE_RO);
     }
 
-    return ret_entry_lp;
+    return retval;
 }
 
 void pamt_unwalk(pa_t pa, pamt_block_t pamt_block, pamt_entry_t* pamt_entry_p,
@@ -271,20 +280,20 @@ void pamt_unwalk(pa_t pa, pamt_block_t pamt_block, pamt_entry_t* pamt_entry_p,
     switch (leaf_size)
     {
         case PT_4KB:
-            release_sharex_lock(&pamt_4kb->entry_lock, leaf_lock_type);
-            release_sharex_lock_sh(&pamt_2mb->entry_lock);
-            release_sharex_lock_sh(&pamt_1gb->entry_lock);
+            release_sharex_lock_hp(&pamt_4kb->entry_lock, leaf_lock_type);
+            release_sharex_lock_hp_sh(&pamt_2mb->entry_lock);
+            release_sharex_lock_hp_sh(&pamt_1gb->entry_lock);
 
             break;
 
         case PT_2MB:
-            release_sharex_lock(&pamt_2mb->entry_lock, leaf_lock_type);
-            release_sharex_lock_sh(&pamt_1gb->entry_lock);
+            release_sharex_lock_hp(&pamt_2mb->entry_lock, leaf_lock_type);
+            release_sharex_lock_hp_sh(&pamt_1gb->entry_lock);
 
             break;
 
         case PT_1GB:
-            release_sharex_lock(&pamt_1gb->entry_lock, leaf_lock_type);
+            release_sharex_lock_hp(&pamt_1gb->entry_lock, leaf_lock_type);
 
             break;
 
@@ -302,21 +311,28 @@ void pamt_unwalk(pa_t pa, pamt_block_t pamt_block, pamt_entry_t* pamt_entry_p,
 
 }
 
-bool_t pamt_promote(pa_t pa, page_size_t new_leaf_size, pamt_block_t pamt_block)
+api_error_code_e pamt_promote(pa_t pa, page_size_t new_leaf_size)
 {
     pamt_entry_t* promoted_pamt_entry = NULL;
     pamt_entry_t* pamt_entry_children_pa = NULL;
     pamt_entry_t* pamt_entry_children_la = NULL;
-    bool_t status = false;
+    pamt_block_t pamt_block;
+    api_error_code_e retval = UNINITIALIZE_ERROR;
 
     tdx_sanity_check((new_leaf_size == PT_2MB) || (new_leaf_size == PT_1GB), SCEC_PAMT_MANAGER_SOURCE, 3);
+
+    // Get PAMT block of the merge page address (should never fail)
+    if (!pamt_get_block(pa, &pamt_block))
+    {
+        FATAL_ERROR();
+    }
 
     if (new_leaf_size == PT_2MB)
     {
         promoted_pamt_entry = map_pa_with_global_hkid(&pamt_block.pamt_2mb_p[pa.pamt_2m.idx], TDX_RANGE_RW);
         pamt_entry_children_pa = &pamt_block.pamt_4kb_p[pa.pamt_4k.idx];
     }
-    else if (new_leaf_size == PT_1GB)
+    else // No other case except PT_1GB here, enforced by sanity check above
     {
         promoted_pamt_entry = map_pa_with_global_hkid(pamt_block.pamt_1gb_p, TDX_RANGE_RW);
         pamt_entry_children_pa = &pamt_block.pamt_2mb_p[pa.pamt_2m.idx];
@@ -325,7 +341,7 @@ bool_t pamt_promote(pa_t pa, page_size_t new_leaf_size, pamt_block_t pamt_block)
     tdx_sanity_check(promoted_pamt_entry->pt == PT_NDA, SCEC_PAMT_MANAGER_SOURCE, 4);
 
     // Acquire exclusive lock on the promoted entry
-    if (acquire_sharex_lock_ex(&promoted_pamt_entry->entry_lock) != LOCK_RET_SUCCESS)
+    if ((retval = acquire_sharex_lock_hp_ex(&promoted_pamt_entry->entry_lock, false)) != TDX_SUCCESS)
     {
         goto EXIT;
     }
@@ -366,31 +382,38 @@ bool_t pamt_promote(pa_t pa, page_size_t new_leaf_size, pamt_block_t pamt_block)
     }
 
     // Release previously acquired exclusive lock
-    release_sharex_lock_ex(&promoted_pamt_entry->entry_lock);
+    release_sharex_lock_hp_ex(&promoted_pamt_entry->entry_lock);
 
-    status = true;
+    retval = TDX_SUCCESS;
 
 EXIT:
     free_la(promoted_pamt_entry);
 
-    return status;
+    return retval;
 }
 
-bool_t pamt_demote(pa_t pa, page_size_t leaf_size, pamt_block_t pamt_block)
+api_error_code_e pamt_demote(pa_t pa, page_size_t leaf_size)
 {
     pamt_entry_t* demoted_pamt_entry = NULL;
     pamt_entry_t* pamt_entry_children_pa = NULL;
     pamt_entry_t* pamt_entry_children_la = NULL;
-    bool_t status = false;
+    pamt_block_t pamt_block;
+    api_error_code_e retval = UNINITIALIZE_ERROR;
 
     tdx_sanity_check((leaf_size == PT_2MB) || (leaf_size == PT_1GB), SCEC_PAMT_MANAGER_SOURCE, 7);
+
+    // Get PAMT block (should never fail)
+    if (!pamt_get_block(pa, &pamt_block))
+    {
+        FATAL_ERROR();
+    }
 
     if (leaf_size == PT_2MB)
     {
         demoted_pamt_entry = map_pa_with_global_hkid(&pamt_block.pamt_2mb_p[pa.pamt_2m.idx], TDX_RANGE_RW);
         pamt_entry_children_pa = &pamt_block.pamt_4kb_p[pa.pamt_4k.idx];
     }
-    else if (leaf_size == PT_1GB)
+    else // No other case except PT_1GB here, enforced by sanity check above
     {
         demoted_pamt_entry = map_pa_with_global_hkid(pamt_block.pamt_1gb_p, TDX_RANGE_RW);
         pamt_entry_children_pa = &pamt_block.pamt_2mb_p[pa.pamt_2m.idx];
@@ -399,7 +422,7 @@ bool_t pamt_demote(pa_t pa, page_size_t leaf_size, pamt_block_t pamt_block)
     tdx_sanity_check(demoted_pamt_entry->pt == PT_REG, SCEC_PAMT_MANAGER_SOURCE, 8);
 
     // Acquire exclusive lock on the demoted entry
-    if (acquire_sharex_lock_ex(&demoted_pamt_entry->entry_lock) != LOCK_RET_SUCCESS)
+    if ((retval = acquire_sharex_lock_hp_ex(&demoted_pamt_entry->entry_lock, false)) != TDX_SUCCESS)
     {
         goto EXIT;
     }
@@ -424,6 +447,7 @@ bool_t pamt_demote(pa_t pa, page_size_t leaf_size, pamt_block_t pamt_block)
             // Copy the leaf entry metadata to its 512 child entries
             pamt_entry_children_la[j].pt = demoted_pamt_entry->pt;
             pamt_entry_children_la[j].owner = demoted_pamt_entry->owner;
+            pamt_entry_children_la[j].bepoch.raw = 0;
         }
 
         free_la(pamt_entry_children_la);
@@ -433,14 +457,14 @@ bool_t pamt_demote(pa_t pa, page_size_t leaf_size, pamt_block_t pamt_block)
     demoted_pamt_entry->pt = PT_NDA;
 
     // Release previously acquired exclusive lock
-    release_sharex_lock_ex(&demoted_pamt_entry->entry_lock);
+    release_sharex_lock_hp_ex(&demoted_pamt_entry->entry_lock);
 
-    status = true;
+    retval = TDX_SUCCESS;
 
 EXIT:
 
     free_la(demoted_pamt_entry);
-    return status;
+    return retval;
 
 }
 
@@ -476,22 +500,26 @@ pamt_entry_t* pamt_implicit_get(pa_t pa, page_size_t leaf_size)
     return pamt_entry_p;
 }
 
-pamt_entry_t* pamt_implicit_get_and_lock(pa_t pa, page_size_t leaf_size, lock_type_t leaf_lock_type)
+api_error_code_e pamt_implicit_get_and_lock(pa_t pa, page_size_t leaf_size, lock_type_t leaf_lock_type,
+                                            pamt_entry_t** pamt_entry)
 {
-    pamt_entry_t* pamt_entry = pamt_implicit_get(pa, leaf_size);
+    api_error_code_e errc;
+    pamt_entry_t* tmp_pamt_entry = pamt_implicit_get(pa, leaf_size);
 
-    if (acquire_sharex_lock(&pamt_entry->entry_lock, leaf_lock_type) != LOCK_RET_SUCCESS)
+    if ((errc = acquire_sharex_lock_hp(&tmp_pamt_entry->entry_lock, leaf_lock_type, false)) != TDX_SUCCESS)
     {
-        free_la(pamt_entry);
-        return NULL;
+        free_la(tmp_pamt_entry);
+        *pamt_entry = NULL;
+        return errc;
     }
 
-    return pamt_entry;
+    *pamt_entry = tmp_pamt_entry;
+    return TDX_SUCCESS;
 }
 
 void pamt_implicit_release_lock(pamt_entry_t* pamt_entry, lock_type_t leaf_lock_type)
 {
-    release_sharex_lock(&pamt_entry->entry_lock, leaf_lock_type);
+    release_sharex_lock_hp(&pamt_entry->entry_lock, leaf_lock_type);
 
     free_la(pamt_entry);
 }

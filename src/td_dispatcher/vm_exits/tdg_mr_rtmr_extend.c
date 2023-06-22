@@ -63,12 +63,11 @@ api_error_type tdg_mr_rtmr_extend(uint64_t extension_data_gpa, uint64_t index)
                                                (void**)&second_hash_extended_mr);
     if (retval != TDX_SUCCESS)
     {
-        if (retval == TDX_OPERAND_INVALID)
-        {
-            TDX_ERROR("GPA is not valid = 0x%llx\n", extension_data_gpa);
-            retval = api_error_with_operand_id(TDX_OPERAND_INVALID,OPERAND_ID_RCX);
-            goto EXIT;
-        }
+        tdx_debug_assert(retval == TDX_OPERAND_INVALID);
+
+        TDX_ERROR("GPA is not valid = 0x%llx\n", extension_data_gpa);
+        retval = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RCX);
+        goto EXIT;
     }
 
     // Copy the second hash in the extended array
@@ -86,10 +85,10 @@ api_error_type tdg_mr_rtmr_extend(uint64_t extension_data_gpa, uint64_t index)
     }
 
     // Acquire exclusive access to TDCS.RTMR
-    if (acquire_sharex_lock_ex(&tdcs_p->measurement_fields.rtmr_lock) != LOCK_RET_SUCCESS)
+    if ((retval = acquire_sharex_lock_hp_ex(&tdcs_p->measurement_fields.rtmr_lock, true)) != TDX_SUCCESS)
     {
         TDX_ERROR("Couldn't acquire RTMR lock\n");
-        retval = api_error_with_operand_id(TDX_OPERAND_BUSY, OPERAND_ID_RTMR);
+        retval = api_error_with_operand_id(retval, OPERAND_ID_RTMR);
         goto EXIT;
     }
 
@@ -119,13 +118,16 @@ api_error_type tdg_mr_rtmr_extend(uint64_t extension_data_gpa, uint64_t index)
         FATAL_ERROR();
     }
 
+    // Since an RTMR is updated, mark the last calculated TEEINFOHASH as invalid
+    tdcs_p->measurement_fields.last_teeinfo_hash_valid = false;
+
     retval = TDX_SUCCESS;
 
 EXIT:
 
     if (rtmr_locked_flag)
     {
-        release_sharex_lock_ex(&tdcs_p->measurement_fields.rtmr_lock);
+        release_sharex_lock_hp_ex(&tdcs_p->measurement_fields.rtmr_lock);
     }
     if(second_hash_extended_mr != NULL)
     {

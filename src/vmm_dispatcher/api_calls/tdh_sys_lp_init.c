@@ -1,9 +1,9 @@
-// Intel Proprietary 
-// 
+// Intel Proprietary
+//
 // Copyright 2021 Intel Corporation All Rights Reserved.
-// 
+//
 // Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
+//
 // The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
 // of merchantability, non-infringement, title, or fitness for a particular purpose.
 
@@ -34,11 +34,39 @@
 
 _STATIC_INLINE_ api_error_type check_msrs(tdx_module_global_t* tdx_global_data_ptr)
 {
+    // Check Capabilities MSRs to have the same values as sampled during TDHSYSINIT
 
-    // Compare IA32_TSC_ADJUST to the value sampled on TDHSYSINIT
-    if (ia32_rdmsr(IA32_TSC_ADJ_MSR_ADDR) != tdx_global_data_ptr->plt_common_config.ia32_tsc_adjust)
+    if (ia32_rdmsr(IA32_CORE_CAPABILITIES) !=
+            tdx_global_data_ptr->plt_common_config.ia32_core_capabilities.raw)
     {
-        return api_error_with_operand_id(TDX_INCONSISTENT_MSR, IA32_TSC_ADJ_MSR_ADDR);
+        return api_error_with_operand_id(TDX_INCONSISTENT_MSR, IA32_CORE_CAPABILITIES);
+    }
+
+    if (ia32_rdmsr(IA32_ARCH_CAPABILITIES_MSR_ADDR) !=
+            tdx_global_data_ptr->plt_common_config.ia32_arch_capabilities.raw)
+    {
+        return api_error_with_operand_id(TDX_INCONSISTENT_MSR, IA32_ARCH_CAPABILITIES_MSR_ADDR);
+    }
+
+    if (tdx_global_data_ptr->plt_common_config.ia32_arch_capabilities.tsx_ctrl)
+    {
+        if (ia32_rdmsr(IA32_TSX_CTRL_MSR_ADDR) !=
+                tdx_global_data_ptr->plt_common_config.ia32_tsx_ctrl.raw)
+        {
+            return api_error_with_operand_id(TDX_INCONSISTENT_MSR, IA32_TSX_CTRL_MSR_ADDR);
+        }
+    }
+
+    if (ia32_rdmsr(IA32_MISC_PACKAGE_CTLS_MSR_ADDR) !=
+            tdx_global_data_ptr->plt_common_config.ia32_misc_package_ctls.raw)
+    {
+        return api_error_with_operand_id(TDX_INCONSISTENT_MSR, IA32_MISC_PACKAGE_CTLS_MSR_ADDR);
+    }
+
+    if (ia32_rdmsr(IA32_XAPIC_DISABLE_STATUS_MSR_ADDR) !=
+            tdx_global_data_ptr->plt_common_config.ia32_xapic_disable_status.raw)
+    {
+        return api_error_with_operand_id(TDX_INCONSISTENT_MSR, IA32_XAPIC_DISABLE_STATUS_MSR_ADDR);
     }
 
     return TDX_SUCCESS;
@@ -93,7 +121,8 @@ _STATIC_INLINE_ api_error_type check_smrr_smrr2_config(tdx_module_global_t* tdx_
 
 _STATIC_INLINE_ api_error_type compare_cpuid_configuration(
         tdx_module_global_t* tdx_global_data_ptr,
-        tdx_module_local_t *tdx_local_data_ptr)
+        tdx_module_local_t *tdx_local_data_ptr,
+        bool_t* tsx_ctrl_modified_flag)
 {
 
     //Check consistency with global configuration
@@ -101,6 +130,28 @@ _STATIC_INLINE_ api_error_type compare_cpuid_configuration(
     cpuid_config_t tmp_cpuid_config;
     cpuid_config_t tmp_verify_same_mask;
     cpuid_config_t pl_verify_same_mask;
+
+    platform_common_config_t* msr_values_ptr = &tdx_global_data_ptr->plt_common_config;
+
+    ia32_tsx_ctrl_t tsx_ctrl = { .raw = msr_values_ptr->ia32_tsx_ctrl.raw };
+    if (msr_values_ptr->ia32_arch_capabilities.tsx_ctrl)
+    {
+        if (tsx_ctrl.tsx_cpuid_clear)
+        {
+            // TSX_CPUID_CLEAR forces CPUID(7,0).EBX bits 4 and 11 to 0.
+            // In order to get their real values, clear this bit.
+            // It will be restored later, after we sample CPUID.
+            tsx_ctrl.tsx_cpuid_clear = 0;
+            ia32_wrmsr(IA32_TSX_CTRL_MSR_ADDR, tsx_ctrl.raw);
+            *tsx_ctrl_modified_flag = true;
+        }
+    }
+
+    // Boot NT4 bit should not be set
+    if ((ia32_rdmsr(IA32_MISC_ENABLES_MSR_ADDR) & MISC_EN_BOOT_NT4_BIT ) != 0)
+    {
+        return TDX_BOOT_NT4_SET;
+    }
 
     for (uint32_t i = 0; i < MAX_NUM_CPUID_LOOKUP; i++)
     {
@@ -137,15 +188,6 @@ _STATIC_INLINE_ api_error_type compare_cpuid_configuration(
         if ((tmp_cpuid_config.leaf_subleaf.leaf == CPUID_GET_TOPOLOGY_LEAF) &&
             (tmp_cpuid_config.leaf_subleaf.subleaf == 0))
         {
-            /* Update maximum APIC ID in the platform.
-             * In places where we need to used the APIC in xAPIC mode,
-             * maximum APIC ID must be lower than 256.
-            */
-            if (tdx_global_data_ptr->max_x2apic_id < tmp_cpuid_config.values.edx)
-            {
-                tdx_global_data_ptr->max_x2apic_id = tmp_cpuid_config.values.edx;
-            }
-
             tdx_local_data_ptr->lp_info.core =
                     (tmp_cpuid_config.values.edx >> tdx_global_data_ptr->x2apic_core_id_shift_count) &
                     tdx_global_data_ptr->x2apic_core_id_mask;
@@ -159,6 +201,12 @@ _STATIC_INLINE_ api_error_type compare_cpuid_configuration(
             }
         }
 
+    }
+
+    // Compare IA32_TSC_ADJUST to the value sampled on TDHSYSINIT
+    if (ia32_rdmsr(IA32_TSC_ADJ_MSR_ADDR) != tdx_global_data_ptr->plt_common_config.ia32_tsc_adjust)
+    {
+        return api_error_with_operand_id(TDX_INCONSISTENT_MSR, IA32_TSC_ADJ_MSR_ADDR);
     }
 
     return TDX_SUCCESS;
@@ -209,6 +257,12 @@ _STATIC_INLINE_ api_error_type compare_vmx_msrs(tdx_module_global_t* tdx_global_
     if (tmp_msr != pl_msr_values_ptr->ia32_vmx_true_entry_ctls.raw)
     {
         return api_error_with_operand_id(TDX_INCONSISTENT_MSR, IA32_VMX_TRUE_ENTRY_CTLS_MSR_ADDR);
+    }
+
+    tmp_msr = ia32_rdmsr(IA32_VMX_MISC_MSR_ADDR);
+    if (tmp_msr != pl_msr_values_ptr->ia32_vmx_misc.raw)
+    {
+        return api_error_with_operand_id(TDX_INCONSISTENT_MSR, IA32_VMX_MISC_MSR_ADDR);
     }
 
     tmp_msr = ia32_rdmsr(IA32_VMX_EPT_VPID_CAP_MSR_ADDR);
@@ -283,18 +337,19 @@ _STATIC_INLINE_ api_error_type compare_key_management_config(tdx_module_global_t
 }
 
 _STATIC_INLINE_ api_error_type check_enumeration_and_compare_configuration(
-        tdx_module_global_t* tdx_global_data_ptr)
+        tdx_module_global_t* tdx_global_data_ptr,
+        bool_t* tsx_ctrl_modified_flag)
 {
 
     tdx_module_local_t *tdx_local_data_ptr = get_local_data();
     api_error_type err;
 
-    if ((err = compare_cpuid_configuration(tdx_global_data_ptr, tdx_local_data_ptr)) != TDX_SUCCESS)
+    if ((err = check_msrs(tdx_global_data_ptr)) != TDX_SUCCESS)
     {
         return err;
-    }    
+    }
 
-    if ((err = check_msrs(tdx_global_data_ptr)) != TDX_SUCCESS)
+    if ((err = compare_cpuid_configuration(tdx_global_data_ptr, tdx_local_data_ptr, tsx_ctrl_modified_flag)) != TDX_SUCCESS)
     {
         return err;
     }
@@ -315,10 +370,10 @@ _STATIC_INLINE_ api_error_type check_enumeration_and_compare_configuration(
     /*---------------------------------------------------
         Check Performance Monitoring
       ---------------------------------------------------*/
-    if ((err = check_perf_msrs()) != TDX_SUCCESS)
+    if (ia32_rdmsr(IA32_PERF_CAPABILITIES_MSR_ADDR) !=
+            tdx_global_data_ptr->plt_common_config.ia32_perf_capabilities.raw)
     {
-        TDX_ERROR("Check of IA32 PERF MSRs failed\n");
-        return err;
+        return api_error_with_operand_id(TDX_INCONSISTENT_MSR, IA32_PERF_CAPABILITIES_MSR_ADDR);
     }
 
     if ((err = compare_key_management_config(tdx_global_data_ptr)) != TDX_SUCCESS)
@@ -331,7 +386,7 @@ _STATIC_INLINE_ api_error_type check_enumeration_and_compare_configuration(
 
 _STATIC_INLINE_ void increment_num_of_lps(tdx_module_global_t* tdx_global_data_ptr)
 {
-    _lock_xadd_32b(&tdx_global_data_ptr->num_of_init_lps, 1);
+    (void)_lock_xadd_32b(&tdx_global_data_ptr->num_of_init_lps, 1);
 }
 
 _STATIC_INLINE_ void tdx_local_init(tdx_module_local_t* tdx_local_data_ptr,
@@ -346,26 +401,28 @@ _STATIC_INLINE_ void tdx_local_init(tdx_module_local_t* tdx_local_data_ptr,
     /**
      * Calc LPID from local_data_ptr
      */
-    tdx_local_data_ptr->lp_info.lp_id = (uint32_t)(((uint64_t) tdx_local_data_ptr
-            - sysinfo_table->data_rgn_base) / LOCAL_DATA_SIZE_PER_LP);
+    tdx_local_data_ptr->lp_info.lp_id = (uint32_t)get_current_thread_num(sysinfo_table, tdx_local_data_ptr);
 
     uint64_t last_page_addr = sysinfo_table->data_rgn_base + sysinfo_table->data_rgn_size - _4KB;
     ia32_vmwrite(VMX_HOST_FS_BASE_ENCODE, last_page_addr);
+
+    tdx_local_data_ptr->vp_ctx.active_vmcs = ACTIVE_VMCS_NONE;
+
+    // Read the LP-dependant host state from the VMCS and store it locally
+    uint64_t val;
+    ia32_vmread(VMX_HOST_RSP_ENCODE, &val);
+    tdx_local_data_ptr->host_rsp = val;
+
+    ia32_vmread(VMX_HOST_SSP_ENCODE, &val);
+    tdx_local_data_ptr->host_ssp = val;
+
+    ia32_vmread(VMX_HOST_GS_BASE_ENCODE, &val);
+    tdx_local_data_ptr->host_gs_base = val;
 
     tdx_local_data_ptr->lp_is_init = true;
 
     // Mark the current LP as initialized
     increment_num_of_lps(tdx_global_data_ptr);
-}
-
-_STATIC_INLINE_ bool_t is_seamreport_available(void)
-{
-    seam_ops_capabilities_t caps = {.raw = ia32_seamops_capabilities()};
-    if (caps.seamreport != 0)
-    {
-        return true;
-    }
-    return false;
 }
 
 api_error_type tdh_sys_lp_init(void)
@@ -374,8 +431,6 @@ api_error_type tdh_sys_lp_init(void)
     bool_t tmp_global_lock_acquired = false;
     tdx_module_global_t* tdx_global_data_ptr = get_global_data();
     tdx_module_local_t* tdx_local_data_ptr = get_local_data();
-
-    ia32_tsx_ctrl_t tsx_ctrl = {.raw = 0};
 
     api_error_type retval = TDX_SYS_BUSY;
 
@@ -414,82 +469,28 @@ api_error_type tdh_sys_lp_init(void)
     if (!lfsr_init_seed (&lfsr_value))
     {
         TDX_ERROR("LFSR initialization failed\n");
-        retval = TDX_SYS_BUSY;
+        retval = TDX_RND_NO_ENTROPY;
         goto EXIT;
     }
     tdx_local_data_ptr->single_step_def_state.lfsr_value = lfsr_value;
 
-    /* Do a global EPT flush.  This is required to help ensure security in case of
+    /* Do a global EPT flush.  This is required to guarantee security in case of
        a TDX-SEAM module update. */
     const ept_descriptor_t zero_descriptor = { 0 };
-    ia32_invept(&zero_descriptor, INVEPT_TYPE_2);
+    ia32_invept(&zero_descriptor, INVEPT_GLOBAL);
 
-    //Verify that SEAMREPORT is available
-    if (!is_seamreport_available())
+    // Verify SEAM capabilities consistency
+    seam_ops_capabilities_t caps = { .raw = ia32_seamops_capabilities() };
+
+    if (tdx_global_data_ptr->seam_capabilities.raw != caps.raw)
     {
-        TDX_ERROR("SEAMREPORT instruction is not enabled\n");
-        retval = TDX_SEAMREPORT_NOT_AVAILABLE;
+        TDX_ERROR("SEAM capabilities are inconsistent 0x%llx/0x%llx\n",
+                tdx_global_data_ptr->seam_capabilities.raw, caps.raw);
+        retval = TDX_INCOMPATIBLE_SEAM_CAPABILITIES;
         goto EXIT;
     }
 
-    /** 
-     * Check Capabilities MSRs to have the same values as sampled during TDHSYSINIT
-     */ 
-    if (ia32_rdmsr(IA32_CORE_CAPABILITIES) !=
-            tdx_global_data_ptr->plt_common_config.ia32_core_capabilities.raw)
-    {
-        TDX_ERROR("The check of CORE_CAPABILITIES MSR's value failed\n");
-        retval =  api_error_with_operand_id(TDX_INCONSISTENT_MSR, IA32_CORE_CAPABILITIES);
-        goto EXIT;
-    }
-
-    if (ia32_rdmsr(IA32_ARCH_CAPABILITIES_MSR_ADDR) !=
-            tdx_global_data_ptr->plt_common_config.ia32_arch_capabilities.raw)
-    {
-        TDX_ERROR("The check of ARCH_CAPABILITIES MSR's value failed\n");
-        retval =  api_error_with_operand_id(TDX_INCONSISTENT_MSR, IA32_ARCH_CAPABILITIES_MSR_ADDR);
-        goto EXIT;
-    }
-    
-    if (tdx_global_data_ptr->plt_common_config.ia32_arch_capabilities.tsx_ctrl)
-    {
-        
-        if (ia32_rdmsr(IA32_TSX_CTRL_MSR_ADDR) !=
-                tdx_global_data_ptr->plt_common_config.ia32_tsx_ctrl.raw)
-        {
-            TDX_ERROR("The check of TSX_CTRL MSR's value failed\n");
-            retval =  api_error_with_operand_id(TDX_INCONSISTENT_MSR, IA32_TSX_CTRL_MSR_ADDR);
-            goto EXIT;
-        }
-    }
-
-    /**
-     *  Clear IA32_TSX_CTRL.TSX_CPUID_CLEAR to allow sampling the real values
-     *  of CPUID(7,0).EBX bits 4 and 11.
-     */
-    if (tdx_global_data_ptr->plt_common_config.ia32_arch_capabilities.tsx_ctrl)
-    {
-        tsx_ctrl.raw = tdx_global_data_ptr->plt_common_config.ia32_tsx_ctrl.raw;
-        if (tsx_ctrl.tsx_cpuid_clear == 1)
-        {
-            /*  TSX_CPUID_CLEAR forces CPUID(7,0).EBX bits 4 and 11 to 0.  In order
-             *  to get their real values, clear this bit.  
-             *  It will be restored later, after we sample CPUID.
-             */
-            tsx_ctrl.tsx_cpuid_clear = 0;
-            ia32_wrmsr(IA32_TSX_CTRL_MSR_ADDR, tsx_ctrl.raw);
-            tsx_ctrl_modified_flag = true;
-        }
-    }
-
-    // Boot NT4 bit should not be set
-    if ((ia32_rdmsr(IA32_MISC_ENABLES_MSR_ADDR) & MISC_EN_BOOT_NT4_BIT ) != 0)
-    {
-        retval = TDX_BOOT_NT4_SET;
-        goto EXIT;
-    }
-
-    if ((retval = check_enumeration_and_compare_configuration(tdx_global_data_ptr)) != TDX_SUCCESS)
+    if ((retval = check_enumeration_and_compare_configuration(tdx_global_data_ptr, &tsx_ctrl_modified_flag)) != TDX_SUCCESS)
     {
         TDX_ERROR("comparing LP configuration with platform failed\n");
         goto EXIT;

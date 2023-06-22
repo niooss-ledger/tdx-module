@@ -26,7 +26,13 @@ OBJ_DIR_NAME := obj
 
 
 # Source directories
-SRC_DIRS := include include/auto_gen src/common src/common/accessors src/common/crypto src/common/data_structures src/common/debug src/common/helpers src/common/memory_handlers src/common/x86_defs src/td_dispatcher src/td_dispatcher/vm_exits src/td_transitions src/vmm_dispatcher src/vmm_dispatcher/api_calls
+SRC_DIRS := include include/auto_gen src/common src/common/accessors src/common/crypto \
+			src/common/data_structures src/common/debug src/common/helpers src/common/memory_handlers \
+			src/common/metadata_handlers src/common/x86_defs src/td_dispatcher src/td_dispatcher/vm_exits \
+			src/td_transitions src/vmm_dispatcher src/vmm_dispatcher/api_calls \
+			src/common/exception_handling src/td_dispatcher/vm_exits_l2 \
+			src/vmm_dispatcher/migration_api_calls
+
 SRC_DIRS := $(foreach dir,$(SRC_DIRS),$(PROJ_DIR)/$(dir))
 
 
@@ -48,7 +54,7 @@ __ASM_OBJECTS = $(patsubst %.S, %.o, $(notdir $(ASM_SRC_FILES)))
 # Libraries
 CRYPTO_LIB_BUILD_FLAVOR := RELEASE
 ifndef CRYPTO_LIB_VERSION
-CRYPTO_LIB_VERSION      := 2021.4
+CRYPTO_LIB_VERSION      := 2021.7.1
 endif
 CRYPTO_LIB_MAIN_DIR     := $(PROJ_DIR)/libs/ipp/ipp-crypto-ippcp_$(CRYPTO_LIB_VERSION)
 CRYPTO_LIB_SRC_DIR      := $(CRYPTO_LIB_MAIN_DIR)/sources
@@ -70,4 +76,3 @@ SCRIPT := $(PROJ_DIR)/tools/tdx_auto_gen_headers/tdx_gen_headers.py
 ARCHITECTURE_FILES_PATH = $(PROJ_DIR)/tools/tdx_auto_gen_headers/architecture_files
 AUTO_GEN_PATH := $(PROJ_DIR)/include/auto_gen
 ARCHITECTURE_REPOSITORY_CLONE_PATH = $(PROJ_DIR)/tdx-flow-code
-

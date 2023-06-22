@@ -16,13 +16,15 @@
 #define SRC_TD_TRANSITIONS_TD_EXIT_STEPPING_H_
 
 #include "auto_gen/tdx_error_codes_defs.h"
+#include "data_structures/td_control_structures.h"
 
 typedef enum {
     FILTER_OK_CONTINUE,
     FILTER_OK_RESUME_TD,
+    FILTER_OK_NOTIFY_EPS_FAULT,
     FILTER_FAIL_TDEXIT_WRONG_APIC_MODE,
     FILTER_FAIL_TDENTER_EPFS,
-    FILTER_FAIL_TDENTER_SEPT_BUSY,
+    FILTER_FAIL_SEPT_TREE_BUSY,
 } stepping_filter_e;
 
 #define STEPPING_EPF_THRESHOLD 6   // Threshold of confidence in detecting EPT fault-based stepping in progress
@@ -48,12 +50,27 @@ stepping_filter_e vmexit_stepping_filter(
  * @param tdvps_p
  * @param tdr_p
  * @param tdcs_p
- * @param is_sept_locked
+ * @param is_sept_tree_locked
  *
  * @return
  */
 stepping_filter_e td_entry_stepping_filter(pa_t* faulting_gpa, tdvps_t* tdvps_p, tdr_t* tdr_p, tdcs_t* tdcs_p,
-                                           bool_t* is_sept_locked);
+                                           bool_t* is_sept_tree_locked);
 
+/**
+ * @brief .
+ *
+ * @param last_exit_qualification
+ * @param tdvps_p
+ * @return
+ */
+bool_t can_inject_epf_ve(vmx_exit_qualification_t last_exit_qualification, tdvps_t* tdvps_p);
+
+/**
+ * @brief .
+ *
+ * @param gpa
+ */
+void td_exit_epf_stepping_log(pa_t gpa);
 
 #endif /* SRC_TD_TRANSITIONS_TD_EXIT_STEPPING_H_ */

@@ -71,12 +71,24 @@ typedef struct PACKED sysinfo_table_s
     uint64_t keyhole_edit_rgn_size; /**< Size of Keyhole Edit Region in bytes */
     uint64_t num_stack_pages;       /**< Data Stack size per thread unit=(# 4K pages) – 1 */
     uint64_t num_tls_pages;         /**< TLS size per thread - unit=(# 4K pages) – 1 */
-    uint64_t shutdown_host_rip;     /**< RIP to program into SEAM_CVP on shutdown */
-    uint8_t reserved_3[1936];       /**< Reserved */
+    uint16_t module_hv;             /**< The native handoff version that this TDX module should support */
+    uint16_t min_update_hv;         /**< The minimum handoff version that this TDX module should support */
+    bool_t   no_downgrade;          /**< A boolean flag that indicates whether this TDX module should disallow downgrades */
+    uint8_t  reserved_3[1];         /**< Reserved */
+    uint16_t num_handoff_pages;     /**< The number of 4KB pages (minus 1) allocated at the beginning of the data region for handoff data. */
+    uint8_t  reserved_4[1936];
 
 } sysinfo_table_t;
 tdx_static_assert(sizeof(sysinfo_table_t) == TDX_PAGE_SIZE_IN_BYTES, sysinfo_table_t);
 
+typedef struct handoff_data_header_s
+{
+    bool_t   valid;
+    uint8_t  reserved;
+    uint16_t hv;
+    uint32_t size;
+} handoff_data_header_t;
+tdx_static_assert(sizeof(handoff_data_header_t) == 8, handoff_data_header_t);
 
 
 #endif /* SRC_COMMON_DATA_STRUCTURES_LOADER_DATA_H_ */

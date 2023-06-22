@@ -63,6 +63,12 @@ tdx_tdexit_entry_point:
     // Protection against speculative attacks on GPRs
     lfence
 
+    // Choose which dispatcher we want to call based on current TD VM,
+    // stored in local data before the TD entry
+    movq %gs:TDX_LOCAL_DATA_CURRENT_TD_VM_ID_OFFSET, %rax
+    test %rax, %rax
+    jnz l2_dispatcher
+
     /**
      * Call the VMM API dispatcher
      */
@@ -70,6 +76,15 @@ tdx_tdexit_entry_point:
      
     /**
      * Unreachable code.  panic. 
+     */
+    ud2
+
+l2_dispatcher:
+
+    callq tdx_td_l2_dispatcher
+
+    /**
+     * Unreachable code.  panic.
      */
     ud2
 

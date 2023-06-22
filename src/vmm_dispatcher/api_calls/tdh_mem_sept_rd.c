@@ -23,6 +23,7 @@
 #include "accessors/ia32_accessors.h"
 #include "accessors/data_accessors.h"
 
+#define READ_L2_ATTRIBUTES_FLAG             BIT(0)
 
 api_error_type tdh_mem_sept_rd(page_info_api_input_t gpa_page_info, uint64_t target_tdr_pa)
 {
@@ -44,11 +45,16 @@ api_error_type tdh_mem_sept_rd(page_info_api_input_t gpa_page_info, uint64_t tar
     ia32e_sept_t          sept_entry_copy;              // Cached SEPT entry of the page
     ept_level_t           sept_level_entry = gpa_mappings.level; // SEPT entry level of the page
     bool_t                sept_locked_flag = false;     // Indicate SEPT is locked
+    bool_t                septe_locked_flag = false;    // Indicate SEPT entry is locked
+
+    bool_t                read_l2_attributes = false;
 
     api_error_type        return_val = UNINITIALIZE_ERROR;
 
 
-    tdr_pa.raw = target_tdr_pa;
+    read_l2_attributes = ((target_tdr_pa & READ_L2_ATTRIBUTES_FLAG) != 0);
+
+    tdr_pa.raw = target_tdr_pa & ~READ_L2_ATTRIBUTES_FLAG;
 
     // By default, no extended error code is returned
     local_data_ptr->vmm_regs.rcx = 0ULL;
@@ -70,40 +76,32 @@ api_error_type tdh_mem_sept_rd(page_info_api_input_t gpa_page_info, uint64_t tar
         goto EXIT;
     }
 
-    // Check the TD state
-    if ((return_val = check_td_in_correct_build_state(tdr_ptr)) != TDX_SUCCESS)
+    // Map the TDCS structure and check the state
+    return_val = check_state_map_tdcs_and_lock(tdr_ptr, TDX_RANGE_RW, TDX_LOCK_SHARED,
+                                               false, TDH_MEM_SEPT_RD_LEAF, &tdcs_ptr);
+
+    if (return_val != TDX_SUCCESS)
     {
-        TDX_ERROR("TD is not in build state - error = %llx\n", return_val);
+        TDX_ERROR("State check or TDCS lock failure - error = %llx\n", return_val);
         goto EXIT;
     }
 
-    // Map the TDCS structure and check the state.  No need to lock
-    tdcs_ptr = map_implicit_tdcs(tdr_ptr, TDX_RANGE_RW);
-
-    // Verify that GPA mapping input reserved fields equal zero
-    if (!is_reserved_zero_in_mappings(gpa_mappings))
+    // Read of L2 attributes is only allowed in debug mode
+    if (read_l2_attributes && !tdcs_ptr->executions_ctl_fields.attributes.debug)
     {
-        TDX_ERROR("Reserved fields in GPA mappings are not zero\n");
+        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RDX);
+        TDX_ERROR("Read of L2 attributes is only allowed in debug mode\n");
+        goto EXIT;
+    }
+
+    if (!verify_page_info_input(gpa_mappings, LVL_PT, tdcs_ptr->executions_ctl_fields.eptp.fields.ept_pwl))
+    {
+        TDX_ERROR("Input GPA page info (0x%llx) is not valid\n", gpa_mappings.raw);
         return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RCX);
         goto EXIT;
     }
-    page_gpa.page_4k_num = gpa_mappings.gpa;
 
-    // Verify mapping level input is valid
-    if (gpa_mappings.level > tdcs_ptr->executions_ctl_fields.eptp.fields.ept_pwl)
-    {
-        TDX_ERROR("Input GPA level (=%d) is not valid\n", gpa_mappings.level);
-        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RCX);
-        goto EXIT;
-    }
-
-    // Check the page GPA is aligned to its level
-    if (!is_gpa_aligned(gpa_mappings))
-    {
-        TDX_ERROR("Page GPA is not level (=%llx) aligned\n", gpa_mappings.level);
-        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RCX);
-        goto EXIT;
-    }
+    page_gpa = page_info_to_pa(gpa_mappings);
 
     // Check GPA, lock SEPT and walk to find entry
     return_val = lock_sept_check_and_walk_private_gpa(tdcs_ptr,
@@ -116,24 +114,67 @@ api_error_type tdh_mem_sept_rd(page_info_api_input_t gpa_page_info, uint64_t tar
                                                       &sept_entry_copy,
                                                       &sept_locked_flag);
 
-    if (return_val == TDX_SUCCESS || return_val == api_error_with_operand_id(TDX_EPT_WALK_FAILED, OPERAND_ID_RCX))
-    {
-        set_arch_septe_details_in_vmm_regs(sept_entry_copy, sept_level_entry, local_data_ptr);
-    }
-
     if (return_val != TDX_SUCCESS)
     {
+        if (return_val == api_error_with_operand_id(TDX_EPT_WALK_FAILED, OPERAND_ID_RCX))
+        {
+            set_arch_septe_details_in_vmm_regs(sept_entry_copy, sept_level_entry, local_data_ptr);
+        }
         TDX_ERROR("Failed on GPA check, SEPT lock or walk - error = %llx\n", return_val);
         goto EXIT;
     }
 
+    // Lock the SEPT entry
+    return_val = sept_lock_acquire_host(sept_entry_ptr);
+    if (TDX_SUCCESS != return_val)
+    {
+        return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
+        set_arch_septe_details_in_vmm_regs(sept_entry_copy, sept_level_entry, local_data_ptr);
+        TDX_ERROR("Failed on SEPT host-side lock attempt\n");
+        goto EXIT;
+    }
+    septe_locked_flag = true;
+
+    // Read the SEPT entry after being locked
+    sept_entry_copy.raw = sept_entry_ptr->raw;
+
+    if (read_l2_attributes)
+    {
+        gpa_attr_t gpa_attr = { .raw = 0 };
+
+        for (uint16_t vm_id = 1; vm_id <= tdcs_ptr->management_fields.num_l2_vms; vm_id++)
+        {
+            if (!is_sept_free(&sept_entry_copy) && sept_state_is_aliased(sept_entry_copy, vm_id))
+            {
+                ia32e_sept_t* l2_sept_entry_ptr = NULL;
+
+                if (l2_sept_walk(tdr_ptr, tdcs_ptr, vm_id, page_gpa,
+                                 &sept_level_entry, &l2_sept_entry_ptr) == TDX_SUCCESS)
+                {
+                    // Get the L2 attributes. L2 SEPT entry does not hold a BLOCKEDW indication
+                    // of its own, so provide it based on the L1 state.
+                    gpa_attr.attr_arr[vm_id] = l2_sept_get_gpa_attr(l2_sept_entry_ptr,
+                            sept_state_is_any_blockedw(sept_entry_copy));
+                }
+
+                free_la(l2_sept_entry_ptr);
+            }
+        }
+
+        // Return the L2 attributes in R8
+        local_data_ptr->vmm_regs.r8 = gpa_attr.raw;
+    }
+
+    // Update Secure EPT arch entry values in RCX and RDX
+    set_arch_septe_details_in_vmm_regs(sept_entry_copy, sept_level_entry, local_data_ptr);
+
 EXIT:
 
-    if (tdr_locked_flag)
+    if (septe_locked_flag)
     {
-        pamt_unwalk(tdr_pa, tdr_pamt_block, tdr_pamt_entry_ptr, TDX_LOCK_SHARED, PT_4KB);
-        free_la(tdr_ptr);
+        sept_lock_release(sept_entry_ptr);
     }
+
     if (sept_locked_flag)
     {
         release_sharex_lock_sh(&tdcs_ptr->executions_ctl_fields.secure_ept_lock);
@@ -142,9 +183,17 @@ EXIT:
             free_la(sept_entry_ptr);
         }
     }
+
     if (tdcs_ptr != NULL)
     {
+        release_sharex_lock_hp_sh(&tdcs_ptr->management_fields.op_state_lock);
         free_la(tdcs_ptr);
+    }
+
+    if (tdr_locked_flag)
+    {
+        pamt_unwalk(tdr_pa, tdr_pamt_block, tdr_pamt_entry_ptr, TDX_LOCK_SHARED, PT_4KB);
+        free_la(tdr_ptr);
     }
 
     return return_val;

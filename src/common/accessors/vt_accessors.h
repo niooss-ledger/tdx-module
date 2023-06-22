@@ -1,9 +1,9 @@
-// Intel Proprietary 
-// 
+// Intel Proprietary
+//
 // Copyright 2021 Intel Corporation All Rights Reserved.
-// 
+//
 // Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
+//
 // The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
 // of merchantability, non-infringement, title, or fitness for a particular purpose.
 
@@ -21,6 +21,8 @@
 #include "x86_defs/vmcs_defs.h"
 #include "ia32_accessors.h"
 #include "helpers/error_reporting.h"
+#include "tdx_api_defs.h"
+#include "auto_gen/tdx_error_codes_defs.h"
 
 typedef uint64_t vmcs_ptr_t;
 
@@ -198,42 +200,37 @@ _STATIC_INLINE_ void ia32_invept(const ept_descriptor_t * ept_descriptor, uint64
 }
 
 /**
- * SEAM ACCESSOR
+ * @brief Invalidate translations based on VPID
+ *        INVVPID can only fail if the provided GPA is not canonical.
+ *        Other failure cases should not happen.
+ *
+ * @param invvpid_descriptor
+ * @param instruction
+ *
+ * @return Success status of INVVPID instruction
  */
-
-_STATIC_INLINE_ void ia32_seamret(uint64_t errorcode) {
-	_ASM_VOLATILE_ (
-#ifdef SEAM_INSTRUCTIONS_SUPPORTED_IN_COMPILER
-			"seamret;"
-#else
-			".byte 0x66; .byte 0x0F; .byte 0x01; .byte 0xCD;"
-#endif
-			::"a"(errorcode):);
-}
-
-_STATIC_INLINE_ void ia32_seamops_seamreport(void* report_struct_la,
-                                             void* report_data_la,
-                                             void* tee_info_hash_la,
-                                             uint32_t report_type)
+_STATIC_INLINE_ bool_t ia32_invvpid(const invvpid_descriptor_t * invvpid_descriptor, invvpid_type_t instruction)
 {
-    uint64_t leaf = 1; // for SEAMREPORT
     ia32_rflags_t rflags;
     _ASM_VOLATILE_ (
-            "movq %3, %%r8\n"
-            "movq %4, %%r9\n"
-#ifdef SEAM_INSTRUCTIONS_SUPPORTED_IN_COMPILER
-            "seamops;"
-#else
-            ".byte 0x66; .byte 0x0F; .byte 0x01; .byte 0xCE;"
-#endif
+            "invvpid %1,%2\n"
             "pushfq\n"
             "popq %0"
             : "=r"(rflags.raw)
-            :"a"(leaf), "c"(report_struct_la), "r"(report_data_la), "r"(tee_info_hash_la), "d"(report_type)
-            :"memory", "cc", "r8", "r9");
+            : "m"(*invvpid_descriptor), "r"((uint64_t)instruction)
+            :"memory", "cc");
 
-    tdx_sanity_check((rflags.cf == 0 && rflags.zf == 0), SCEC_VT_ACCESSORS_SOURCE, 4);
+    bool_t is_success = (rflags.cf == 0 && rflags.zf == 0);
+    bool_t vmfail_valid = (rflags.cf == 0 && rflags.zf == 1);
+
+    tdx_sanity_check((is_success || vmfail_valid), SCEC_VT_ACCESSORS_SOURCE, 3);
+
+    return is_success;
 }
+
+/**
+ * SEAM ACCESSORS
+ */
 
 _STATIC_INLINE_ uint64_t ia32_seamops_capabilities(void)
 {
@@ -250,6 +247,102 @@ _STATIC_INLINE_ uint64_t ia32_seamops_capabilities(void)
             :"memory", "cc");
 
     return capabilities;
+}
+
+#define SEAMOPS_SUCCESS                    0
+#define SEAMOPS_INPUT_ERROR                1
+#define SEAMOPS_ENTROPY_ERROR              2
+#define SEAMOPS_DATABASE_ERROR             3
+#define SEAMOPS_INVALID_CPUSVN             4
+#define SEAMOPS_INVALID_REPORTMACSTRUCT    5
+
+#define SEAMOPS_CAPABILITIES_LEAF          0
+#define SEAMOPS_SEAMREPORT_LEAF            1
+#define SEAMOPS_SEAMDB_CLEAR_LEAF          2
+#define SEAMOPS_SEAMDB_INSERT_LEAF         3
+#define SEAMOPS_SEAMDB_GETREF_LEAF         4
+#define SEAMOPS_SEAMDB_REPORT_LEAF         5
+#define SEAMOPS_SEAMVERIFYREPORT_LEAF      6
+
+#define TD_PRESERVING_CAPABILITIES     BITS(SEAMOPS_SEAMDB_REPORT_LEAF, SEAMOPS_SEAMDB_GETREF_LEAF)
+
+_STATIC_INLINE_ uint64_t ia32_seamops_seamdb_getref(uint64_t* last_entry, uint256_t* last_entry_nonce,
+                                                    uint64_t* seamdb_size)
+{
+    uint64_t leaf = SEAMOPS_SEAMDB_GETREF_LEAF;
+    uint64_t result;
+
+    _ASM_VOLATILE_ (
+#ifdef SEAM_INSTRUCTIONS_SUPPORTED_IN_COMPILER
+            "seamops;"
+#else
+            ".byte 0x66; .byte 0x0F; .byte 0x01; .byte 0xCE;"
+#endif
+            "movq %%r10, %1;"
+            "movq %%r11, %2;"
+            "movq %%r12, %3;"
+            "movq %%r13, %4;"
+            "movq %%r14, %5;"
+            "movq %%r15, %6;"
+
+            :"=a"(result), "=r"(*last_entry),   "=r"(last_entry_nonce->qwords[0]),
+             "=r"(last_entry_nonce->qwords[1]), "=r"(last_entry_nonce->qwords[2]),
+             "=r"(last_entry_nonce->qwords[3]), "=r"(*seamdb_size)
+            :"a"(leaf)
+            :"memory", "cc", "r10", "r11", "r12", "r13", "r14", "r15");
+
+    return result;
+}
+
+_STATIC_INLINE_ uint64_t ia32_seamops_seamdb_report(void* report_struct_la,
+                                                    void* report_data_la,
+                                                    void* tee_info_hash_la,
+                                                    uint32_t report_type,
+                                                    uint64_t entry_idx,
+                                                    uint256_t* entry_nonce)
+{
+    uint64_t leaf = SEAMOPS_SEAMDB_REPORT_LEAF;
+    uint64_t result;
+
+    _ASM_VOLATILE_ (
+            "movq %4,  %%r8\n"
+            "movq %5,  %%r9\n"
+            "movq %6,  %%r10\n"
+
+            "movq (%7),      %%r11\n"
+            "movq 0x8(%7),   %%r12\n"
+            "movq 0x10(%7),  %%r13\n"
+            "movq 0x18(%7),  %%r14\n"
+#ifdef SEAM_INSTRUCTIONS_SUPPORTED_IN_COMPILER
+            "seamops;"
+#else
+            ".byte 0x66; .byte 0x0F; .byte 0x01; .byte 0xCE;"
+#endif
+            :"=a"(result)
+            :"a"(leaf), "c"(report_struct_la), "d"(report_type),
+             "r"(report_data_la), "r"(tee_info_hash_la), "r"(entry_idx),
+             "r"(entry_nonce)
+            :"memory", "cc", "r8", "r9", "r10", "r11", "r12", "r13", "r14");
+
+    return result;
+}
+
+_STATIC_INLINE_ uint64_t ia32_seamops_seamverify_report(const report_mac_struct_t *report_mac)
+{
+    uint64_t leaf = SEAMOPS_SEAMVERIFYREPORT_LEAF;
+    uint64_t result;
+
+        _ASM_VOLATILE_ (
+#ifdef SEAM_INSTRUCTIONS_SUPPORTED_IN_COMPILER
+            "seamops;"
+#else
+            ".byte 0x66; .byte 0x0F; .byte 0x01; .byte 0xCE;"
+#endif
+            :"=a"(result)
+            :"a"(leaf), "b"(report_mac)
+            :"memory", "cc");
+
+    return result;
 }
 
 #endif /* SRC_COMMON_ACCESSORS_VT_ACCESSORS_H_ */

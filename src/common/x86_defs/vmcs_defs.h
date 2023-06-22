@@ -29,30 +29,30 @@ typedef enum
        UNKNOWN:  Mask of "Fixed" and "Reserved" bits, whos values are
                  set during TDHSYSINIT
     */
-    PINBASED_CTLS_INIT       = 0x00000029,
-    PINBASED_CTLS_VARIABLE   = 0x00000080,
-    PINBASED_CTLS_UNKNOWN    = 0xFFFFFF16,
+    PINBASED_CTLS_INIT         = 0x00000029,
+    PINBASED_CTLS_VARIABLE     = 0x00000080,
+    PINBASED_CTLS_UNKNOWN      = 0xFFFFFF16,
 
-    PROCBASED_CTLS_INIT      = 0xB1220488,
-    PROCBASED_CTLS_VARIABLE  = 0x00400800,
-    PROCBASED_CTLS_UNKNOWN   = 0x04046173,
+    PROCBASED_CTLS_INIT        = 0x91220088,
+    PROCBASED_CTLS_VARIABLE    = 0x20400C00,
+    PROCBASED_CTLS_UNKNOWN     = 0x04046173,
 
-    PROCBASED_CTLS2_INIT     = 0x133CB3FA,
-    PROCBASED_CTLS2_VARIABLE = 0xCC000400,
-    PROCBASED_CTLS2_UNKNOWN  = 0x00000000,
+    PROCBASED_CTLS2_INIT       = 0x133CB3FA,
+    PROCBASED_CTLS2_VARIABLE   = 0xCC000400,
+    PROCBASED_CTLS2_UNKNOWN    = 0x00000000,
 
     // Note that PROCBASED_CTLS3 enumerates 64 bits
-    PROCBASED_CTLS3_INIT     = 0x0000000000000000,
-    PROCBASED_CTLS3_VARIABLE = 0x0000000000000020,
-    PROCBASED_CTLS3_UNKNOWN  = 0xFFFFFFFFFFFFFFC0,
+    PROCBASED_CTLS3_INIT       = 0x0000000000000000,
+    PROCBASED_CTLS3_VARIABLE   = 0x00000000000000A0,
+    PROCBASED_CTLS3_UNKNOWN    = 0xFFFFFFFFFFFFFF40,
 
-    EXIT_CTLS_INIT           = 0x1F3C8204,
-    EXIT_CTLS_VARIABLE       = 0x40001000,
-    EXIT_CTLS_UNKNOWN        = 0x80036DFB,
+    EXIT_CTLS_INIT             = 0x1F3C8204,
+    EXIT_CTLS_VARIABLE         = 0x40001000,
+    EXIT_CTLS_UNKNOWN          = 0x00036DFB,
 
-    ENTRY_CTLS_INIT          = 0x003EC004,
-    ENTRY_CTLS_VARIABLE      = 0x00402200,
-    ENTRY_CTLS_UNKNOWN       = 0xFF8011FB,
+    ENTRY_CTLS_INIT            = 0x003EC004,
+    ENTRY_CTLS_VARIABLE        = 0x00402200,
+    ENTRY_CTLS_UNKNOWN         = 0xFF8011FB,
 
     /* TD VMCS Guest CR0 and CR4
     */
@@ -63,16 +63,68 @@ typedef enum
     CR4_READ_SHADOW          = 0x0000000000000040,
 } td_vmcs_ctl_values_e;
 
+typedef enum
+{
+    /* L2 VMCS Controls:
+       INIT:     Initial value
+       VARIABLE: Mask of bits that can be set to 0 or 1
+       UNKNOWN:  Mask of "Fixed" and "Reserved" bits, whos values are
+                 set during TDHSYSINIT
+    */
+    PINBASED_CTLS_L2_INIT         = 0x00000029,
+    PINBASED_CTLS_L2_VARIABLE     = 0x00000000,
+    PINBASED_CTLS_L2_UNKNOWN      = 0xFFFFFF16,
+    PINBASED_CTLS_L1_WR_MASK      = 0x00000000,
+
+    PROCBASED_CTLS_L2_INIT        = 0x91220088,
+    PROCBASED_CTLS_L2_VARIABLE    = 0x68F81E04,
+    PROCBASED_CTLS_L2_UNKNOWN     = 0x04046173,
+    PROCBASED_CTLS_L1_WR_MASK     = 0x48F99A04,
+
+    PROCBASED_CTLS2_L2_INIT       = 0x1338B3FA,
+    PROCBASED_CTLS2_L2_VARIABLE   = 0x0C513F0C,
+    PROCBASED_CTLS2_L2_UNKNOWN    = 0x00000000,
+    PROCBASED_CTLS2_L1_WR_MASK    = 0x0C513F0C,
+
+    // Note that PROCBASED_CTLS3 enumerates 64 bits
+    PROCBASED_CTLS3_L2_INIT       = 0x0000000000000000,
+    PROCBASED_CTLS3_L2_VARIABLE   = 0x00000000000000AE,
+    PROCBASED_CTLS3_L2_UNKNOWN    = 0xFFFFFFFFFFFFFF40,
+    PROCBASED_CTLS3_L1_WR_MASK    = 0x000000000000000E,
+
+    EXIT_CTLS_L2_INIT             = 0x1F3C8204,
+    EXIT_CTLS_L2_VARIABLE         = 0x40001000,
+    EXIT_CTLS_L2_UNKNOWN          = 0x00036DFB,
+    EXIT_CTLS_L1_WR_MASK          = 0x00000000,
+
+    ENTRY_CTLS_L2_INIT            = 0x003EC004,
+    ENTRY_CTLS_L2_VARIABLE        = 0x00402200,
+    ENTRY_CTLS_L2_UNKNOWN         = 0xFF8011FB,
+    ENTRY_CTLS_L1_WR_MASK         = 0x00000200,
+
+    /* L2 VMCS Guest CR0 and CR4
+    */
+    GUEST_CR0_L2_INIT             = 0x00000021,
+    GUEST_CR0_L2_VARIABLE         = 0x000000008005001F,
+    CR0_READ_L2_SHADOW            = 0x0000000000000021,
+    CR0_L1_VMM_WRITE_MASK         = 0x000000008005001F,
+
+    GUEST_CR4_L2_INIT             = 0x00002040,
+    GUEST_CR4_L2_VARIABLE         = 0x0000000003FF1FBF,
+    CR4_READ_L2_SHADOW            = 0x0000000000000040,
+    CR4_L1_VMM_WRITE_MASK         = 0x0000000003FF1FBF
+} td_l2_vmcs_ctl_values_e;
+
 // additional td_vmcs_ctl_values - 64bit
-static const uint64_t IA32_VMX_EPT_VPID_CAP_MASK = 0x061340C0;
+static const uint64_t IA32_VMX_EPT_VPID_CAP_MASK  = 0x10106334041;
 
 typedef union vmcs_revision_u
 {
     struct
     {
         uint32_t
-            vmcs_revision_identifier       : 31,             // [30:0]
-            shadow_vmcs_indicator          : 1;             //  [31]
+            vmcs_revision_identifier       : 31,            // [30:0]
+            shadow_vmcs_indicator          : 1;             // [31]
     };
     uint32_t raw;
 } vmcs_revision_t;
@@ -93,6 +145,7 @@ tdx_static_assert(sizeof(vmcs_header_t) == 8, vmcs_header_t);
 #define IA32_VMX_PROCBASED_CTLS_MSR_ADDR      0x482
 #define IA32_VMX_EXIT_CTLS_MSR_ADDR           0x483
 #define IA32_VMX_ENTRY_CTLS_MSR_ADDR          0x484
+#define IA32_VMX_MISC_MSR_ADDR                0x485
 #define IA32_VMX_EPT_VPID_CAP_MSR_ADDR        0x48C
 #define IA32_VMX_CR0_FIXED0_MSR_ADDR          0x486
 #define IA32_VMX_CR0_FIXED1_MSR_ADDR          0x487
@@ -103,6 +156,7 @@ tdx_static_assert(sizeof(vmcs_header_t) == 8, vmcs_header_t);
 #define IA32_VMX_TRUE_PROCBASED_CTLS_MSR_ADDR 0x48E
 #define IA32_VMX_TRUE_EXIT_CTLS_MSR_ADDR      0x48F
 #define IA32_VMX_TRUE_ENTRY_CTLS_MSR_ADDR     0x490
+#define IA32_VMX_VMFUNC_MSR_ADDR              0x491
 #define IA32_VMX_PROCBASED_CTLS3_MSR_ADDR     0x492
 
 #define EPT_VPID_CAP_ALLOW_EXECUTE_ONLY       0x1
@@ -115,104 +169,30 @@ typedef struct ALIGN(16) ept_descriptor_s
 } ept_descriptor_t;
 tdx_static_assert(sizeof(ept_descriptor_t) == 16, ept_descriptor_t);
 
-#define INVEPT_TYPE_1 1
-#define INVEPT_TYPE_2 2
+#define INVEPT_SINGLE_CONTEXT 1
+#define INVEPT_GLOBAL         2
 
-typedef union
+typedef struct ALIGN(16) invvpid_descriptor_s
 {
-    struct
+    union
     {
-        uint32_t reserved_0                      : 1;  // bit 0
-        uint32_t reserved_1                      : 1;  // bit 1
-        uint32_t interrupt_window_exiting        : 1;  // bit 2
-        uint32_t use_tsc_offsetting              : 1;  // bit 3
-        uint32_t reserved_2                      : 1;  // bit 4
-        uint32_t reserved_3                      : 1;  // bit 5
-        uint32_t reserved_4                      : 1;  // bit 6
-        uint32_t hlt_exiting                     : 1;  // bit 7
-        uint32_t reserved_5                      : 1;  // bit 8
-        uint32_t invlpg_exiting                  : 1;  // bit 9
-        uint32_t mwait_exiting                   : 1;  // bit 10
-        uint32_t rdpmc_exiting                   : 1;  // bit 11
-        uint32_t rdtsc_exiting                   : 1;  // bit 12
-        uint32_t reserved_6                      : 1;  // bit 13
-        uint32_t reserved_7                      : 1;  // bit 14
-        uint32_t cr3_load_exiting                : 1;  // bit 15
-        uint32_t cr3_store_exiting               : 1;  // bit 16
-        uint32_t activate_tertiary_controls      : 1;  // bit 17
-        uint32_t reserved_8                      : 1;  // bit 18
-        uint32_t cr8_load_exiting                : 1;  // bit 19
-        uint32_t cr8_store_exiting               : 1;  // bit 20
-        uint32_t use_tpr_shadow                  : 1;  // bit 21
-        uint32_t nmi_window_exiting              : 1;  // bit 22
-        uint32_t mov_dr_exiting                  : 1;  // bit 23
-        uint32_t uncondditional_io_exiting       : 1;  // bit 24
-        uint32_t use_io_bitmaps                  : 1;  // bit 25
-        uint32_t reserved_9                      : 1;  // bit 26
-        uint32_t monitor_trap_flag               : 1;  // bit 27
-        uint32_t use_msr_bitmaps                 : 1;  // bit 28
-        uint32_t monitor_exiting                 : 1;  // bit 29
-        uint32_t pause_exiting                   : 1;  // bit 30
-        uint32_t activate_secondary_controls     : 1;  // bit 31
+        struct
+        {
+            uint16_t vpid;
+            uint16_t reserved[3];
+        };
+        uint64_t raw_low;
     };
-    uint64_t raw;
-} vmcs_procbased_ctls_t;
-tdx_static_assert(sizeof(vmcs_procbased_ctls_t) == 8, vmcs_procbased_ctls_t);
+    uint64_t la;
+} invvpid_descriptor_t;
 
-typedef union
+typedef enum invvpid_type_e
 {
-    struct
-    {
-        uint32_t virt_apic                       : 1;  // Bit 0
-        uint32_t en_ept                          : 1;  // Bit 1
-        uint32_t descriptor_table_exit           : 1;  // Bit 2
-        uint32_t en_rdtscp                       : 1;  // Bit 3
-        uint32_t virt_2apic_mode                 : 1;  // Bit 4
-        uint32_t en_vpid                         : 1;  // Bit 5
-        uint32_t wbinvd_exiting                  : 1;  // Bit 6
-        uint32_t unrestricted_guest              : 1;  // Bit 7
-        uint32_t apic_reg_virtualization         : 1;  // Bit 8
-        uint32_t virtual_interrupt               : 1;  // Bit 9
-        uint32_t pause_loop                      : 1;  // Bit 10
-        uint32_t rdrand                          : 1;  // Bit 11
-        uint32_t en_invpcid                      : 1;  // Bit 12
-        uint32_t en_vm_func                      : 1;  // Bit 13
-        uint32_t vmcs_shadowing                  : 1;  // Bit 14
-        uint32_t en_encls                        : 1;  // Bit 15
-        uint32_t rdseed                          : 1;  // Bit 16
-        uint32_t en_pml                          : 1;  // Bit 17
-        uint32_t ept_vaiolation_ve               : 1;  // Bit 18
-        uint32_t conceal_vmx                     : 1;  // Bit 19
-        uint32_t en_xsaves_xstors                : 1;  // Bit 20
-        uint32_t pasid_translation               : 1;  // Bit 21
-        uint32_t execute_control_ept             : 1;  // Bit 22
-        uint32_t en_spp                          : 1;  // Bit 23
-        uint32_t pt2gpa                          : 1;  // Bit 24
-        uint32_t tsc_scaling                     : 1;  // Bit 25
-        uint32_t en_guest_wait_pause             : 1;  // Bit 26
-        uint32_t en_pconfig                      : 1;  // Bit 27
-        uint32_t en_enclv_exiting                : 1;  // Bit 28
-        uint32_t en_epc_virt                     : 1;  // Bit 29
-        uint32_t buslock_detect                  : 1;  // Bit 30
-        uint32_t en_no_commit                    : 1;  // Bit 31
-    };
-    uint32_t raw;
-} vmcs_procbased_ctls2_t;
-
-typedef union
-{
-    struct
-    {
-        uint64_t loadiwkey_exiting              : 1;  // Bit 0
-        uint64_t enable_hlat                    : 1;  // Bit 1
-        uint64_t ept_paging_write_control       : 1;  // Bit 2
-        uint64_t guest_paging_verification      : 1;  // Bit 3
-        uint64_t ipi_virtualization             : 1;  // Bit 4
-        uint64_t gpaw                           : 1;  // Bit 5
-        uint64_t reserved                       : 58; // Bits 6-63
-    };
-    uint64_t raw;
-} vmcs_procbased_ctls3_t;
+    INVVPID_INDIVIDUAL_ADDRESS              = 0,
+    INVVPID_SINGLE_CONTEXT                  = 1,
+    INVVPID_ALL_CONTEXTS                    = 2,
+    INVVPID_SINGLE_CONTEXT_RETAINING_GLOBAL = 3
+} invvpid_type_t;
 
 typedef union
 {
@@ -299,8 +279,12 @@ typedef enum {
     VMEXIT_REASON_XSAVES_INSTRUCTION                     = 63,
     VMEXIT_REASON_XRSTORS_INSTRUCTION                    = 64,
     VMEXIT_REASON_PCONFIG                                = 65,
+    VMEXIT_REASON_SPP_INDUCED                            = 66,
+    VMEXIT_REASON_UMWAIT                                 = 67,
+    VMEXIT_REASON_TPAUSE                                 = 68,
     VMEXIT_REASON_LOADIWK_INSTRUCTION                    = 69,
     VMEXIT_REASON_ENCLV_INSTRUCTION                      = 70,
+    VMEXIT_REASON_SGX_CONFLICT                           = 71,
     VMEXIT_REASON_ENQCMD_PASID_TRANSLATION_FAILURE       = 72,
     VMEXIT_REASON_ENQCMDS_PASID_TRANSLATION_FAILURE      = 73,
     VMEXIT_REASON_BUS_LOCK                               = 74,
@@ -382,13 +366,13 @@ typedef union vmx_exit_qualification_s {
 
     struct
     {
-        uint64_t cr_num         : 4;
-        uint64_t access_type    : 2;
-        uint64_t lmsw_op_type   : 1;
-        uint64_t reserved0      : 1;
-        uint64_t mov_cr_gpr     : 4;
-        uint64_t reserved1      : 4;
-        uint64_t lmsw_src_data  : 16;
+        uint64_t cr_num         : 4;  // Bits 0-3
+        uint64_t access_type    : 2;  // Bits 4-5
+        uint64_t lmsw_op_type   : 1;  // Bit 6
+        uint64_t reserved0      : 1;  // Bit 7
+        uint64_t mov_cr_gpr     : 4;  // Bits 8-11
+        uint64_t reserved1      : 4;  // Bits 12-15
+        uint64_t lmsw_src_data  : 16; // Bits 16-31
         uint64_t reserved2      : 32;
     } cr_access;
 
@@ -412,8 +396,12 @@ tdx_static_assert(sizeof(vmx_exit_qualification_t) == 8, vmx_exit_qualification_
 
 typedef enum vmx_eeq_type_e
 {
-    VMX_EEQ_NONE = 0,
-    VMX_EEQ_ACCEPT = 1
+    VMX_EEQ_NONE                         = 0,
+    VMX_EEQ_ACCEPT                       = 1,
+    VMX_EEQ_GPA_DETAILS                  = 2,
+    VMX_EEQ_TD_ENTRY_MSR_LOAD_FAILURE    = 3,
+    VMX_EEQ_TD_ENTRY_XSTATE_LOAD_FAILURE = 4,
+    VMX_EEQ_ATTR_WR                      = 5
 } vmx_eeq_type_t;
 
 typedef union vmx_ext_exit_qual_u
@@ -435,7 +423,11 @@ typedef union seam_ops_capabilities_s {
     {
         uint64_t capabilities  : 1; // 0
         uint64_t seamreport    : 1; // 1
-        uint64_t reserved      : 62; // 2-63
+        uint64_t seamdb_clear  : 1; // 2
+        uint64_t seamdb_insert : 1; // 3
+        uint64_t seamdb_getref : 1; // 4
+        uint64_t seamdb_report : 1; // 5
+        uint64_t reserved      : 58; // 6-63
     };
     uint64_t  raw;
 } seam_ops_capabilities_t;
@@ -499,48 +491,107 @@ typedef union
         uint32_t process_posted_interrupts       : 1;
         uint32_t reserved_2                      : 24;
     };
-    uint32_t raw;
+    uint64_t raw;
 } vmx_pinbased_ctls_t;
-tdx_static_assert(sizeof(vmx_pinbased_ctls_t) == 4, vmx_pinbased_ctls_t);
+tdx_static_assert(sizeof(vmx_pinbased_ctls_t) == 8, vmx_pinbased_ctls_t);
 
 typedef union
 {
     struct
     {
-        uint64_t virtualize_apic_access          : 1;  // bit 0
-        uint64_t enable_ept                      : 1;  // bit 1
-        uint64_t descriptor_table_exiting        : 1;  // bit 2
-        uint64_t enable_rdtscp                   : 1;  // bit 3
-        uint64_t virtualize_x2apic_mode          : 1;  // bit 4
-        uint64_t enable_vpid                     : 1;  // bit 5
-        uint64_t wbinvd_exiting                  : 1;  // bit 6
-        uint64_t unrestricted_guest              : 1;  // bit 7
-        uint64_t apic_register_virtualization    : 1;  // bit 8
-        uint64_t virtual_interrupt_delivery      : 1;  // bit 9
-        uint64_t pause_loop_exiting              : 1;  // bit 10
-        uint64_t rdrand_exiting                  : 1;  // bit 11
-        uint64_t enable_invpcid                  : 1;  // bit 12
-        uint64_t enable_vm_functions             : 1;  // bit 13
-        uint64_t vmcs_shadowing                  : 1;  // bit 14
-        uint64_t enable_encls_exiting            : 1;  // bit 15
-        uint64_t rdseed_exiting                  : 1;  // bit 16
-        uint64_t enable_pml                      : 1;  // bit 17
-        uint64_t ept_violation_ve                : 1;  // bit 18
-        uint64_t conceal_vmx_fmpt                : 1;  // bit 19
-        uint64_t enable_xsaves_xrstors           : 1;  // bit 20
-        uint64_t reserved_0                      : 1;  // bit 21
-        uint64_t ept_mode_based_execution_control: 1;  // bit 22
-        uint64_t ept_sub_page_write_permissions  : 1;  // bit 23
-        uint64_t intel_pt_uses_gpa               : 1;  // bit 24
-        uint64_t use_tsc_scaling                 : 1;  // bit 25
-        uint64_t enable_user_wait_and_pause      : 1;  // bit 26
-        uint64_t reserved_1                      : 1;  // bit 27
-        uint64_t enable_enclv_exiting            : 1;  // bit 28
-        uint64_t reserved_2                      : 35;  // bits 29-63
+        uint32_t reserved_0                      : 1;  // bit 0
+        uint32_t reserved_1                      : 1;  // bit 1
+        uint32_t interrupt_window_exiting        : 1;  // bit 2
+        uint32_t use_tsc_offsetting              : 1;  // bit 3
+        uint32_t reserved_2                      : 1;  // bit 4
+        uint32_t reserved_3                      : 1;  // bit 5
+        uint32_t reserved_4                      : 1;  // bit 6
+        uint32_t hlt_exiting                     : 1;  // bit 7
+        uint32_t reserved_5                      : 1;  // bit 8
+        uint32_t invlpg_exiting                  : 1;  // bit 9
+        uint32_t mwait_exiting                   : 1;  // bit 10
+        uint32_t rdpmc_exiting                   : 1;  // bit 11
+        uint32_t rdtsc_exiting                   : 1;  // bit 12
+        uint32_t reserved_6                      : 1;  // bit 13
+        uint32_t reserved_7                      : 1;  // bit 14
+        uint32_t cr3_load_exiting                : 1;  // bit 15
+        uint32_t cr3_store_exiting               : 1;  // bit 16
+        uint32_t activate_tertiary_controls      : 1;  // bit 17
+        uint32_t reserved_8                      : 1;  // bit 18
+        uint32_t cr8_load_exiting                : 1;  // bit 19
+        uint32_t cr8_store_exiting               : 1;  // bit 20
+        uint32_t use_tpr_shadow                  : 1;  // bit 21
+        uint32_t nmi_window_exiting              : 1;  // bit 22
+        uint32_t mov_dr_exiting                  : 1;  // bit 23
+        uint32_t uncondditional_io_exiting       : 1;  // bit 24
+        uint32_t use_io_bitmaps                  : 1;  // bit 25
+        uint32_t reserved_9                      : 1;  // bit 26
+        uint32_t monitor_trap_flag               : 1;  // bit 27
+        uint32_t use_msr_bitmaps                 : 1;  // bit 28
+        uint32_t monitor_exiting                 : 1;  // bit 29
+        uint32_t pause_exiting                   : 1;  // bit 30
+        uint32_t activate_secondary_controls     : 1;  // bit 31
+    };
+    uint64_t raw;
+} vmx_procbased_ctls_t;
+tdx_static_assert(sizeof(vmx_procbased_ctls_t) == 8, vmx_procbased_ctls_t);
+
+typedef union
+{
+    struct
+    {
+        uint32_t virt_apic                       : 1;  // Bit 0
+        uint32_t en_ept                          : 1;  // Bit 1
+        uint32_t descriptor_table_exit           : 1;  // Bit 2
+        uint32_t en_rdtscp                       : 1;  // Bit 3
+        uint32_t virt_2apic_mode                 : 1;  // Bit 4
+        uint32_t en_vpid                         : 1;  // Bit 5
+        uint32_t wbinvd_exiting                  : 1;  // Bit 6
+        uint32_t unrestricted_guest              : 1;  // Bit 7
+        uint32_t apic_reg_virtualization         : 1;  // Bit 8
+        uint32_t virtual_interrupt               : 1;  // Bit 9
+        uint32_t pause_loop                      : 1;  // Bit 10
+        uint32_t rdrand                          : 1;  // Bit 11
+        uint32_t en_invpcid                      : 1;  // Bit 12
+        uint32_t en_vm_func                      : 1;  // Bit 13
+        uint32_t vmcs_shadowing                  : 1;  // Bit 14
+        uint32_t en_encls                        : 1;  // Bit 15
+        uint32_t rdseed                          : 1;  // Bit 16
+        uint32_t en_pml                          : 1;  // Bit 17
+        uint32_t ept_vaiolation_ve               : 1;  // Bit 18
+        uint32_t conceal_vmx                     : 1;  // Bit 19
+        uint32_t en_xsaves_xstors                : 1;  // Bit 20
+        uint32_t pasid_translation               : 1;  // Bit 21
+        uint32_t execute_control_ept             : 1;  // Bit 22
+        uint32_t en_spp                          : 1;  // Bit 23
+        uint32_t pt2gpa                          : 1;  // Bit 24
+        uint32_t tsc_scaling                     : 1;  // Bit 25
+        uint32_t en_guest_wait_pause             : 1;  // Bit 26
+        uint32_t en_pconfig                      : 1;  // Bit 27
+        uint32_t en_enclv_exiting                : 1;  // Bit 28
+        uint32_t en_epc_virt                     : 1;  // Bit 29
+        uint32_t buslock_detect                  : 1;  // Bit 30
+        uint32_t notification_exiting            : 1;  // Bit 31
     };
     uint64_t raw;
 } vmx_procbased_ctls2_t;
 tdx_static_assert(sizeof(vmx_procbased_ctls2_t) == 8, vmx_pinbased_ctls_t);
+
+typedef union
+{
+    struct
+    {
+        uint64_t loadiwkey_exiting              : 1;  // Bit 0
+        uint64_t enable_hlat                    : 1;  // Bit 1
+        uint64_t ept_paging_write_control       : 1;  // Bit 2
+        uint64_t guest_paging_verification      : 1;  // Bit 3
+        uint64_t ipi_virtualization             : 1;  // Bit 4
+        uint64_t gpaw                           : 1;  // Bit 5
+        uint64_t reserved                       : 58; // Bits 6-63
+    };
+    uint64_t raw;
+} vmx_procbased_ctls3_t;
+tdx_static_assert(sizeof(vmx_procbased_ctls3_t) == 8, vmx_procbased_ctls3_t);
 
 typedef union vmx_guest_inter_state_u
 {
@@ -561,10 +612,11 @@ typedef union guest_interrupt_status_u
 {
     struct
     {
-        uint8_t rvi;
-        uint8_t svi;
+        uint64_t rvi      : 8;
+        uint64_t svi      : 8;
+        uint64_t reserved : 48;
     };
-    uint16_t raw;
+    uint64_t raw;
 }guest_interrupt_status_t;
 
 
@@ -588,13 +640,36 @@ typedef union vmx_instruction_info_u
 #define WRITE_BITMAP_FOR_LOW_MSR_OFFSET  (_1KB*2*8) // 2048 bytes in bits
 #define WRITE_BITMAP_FOR_HIGH_MSR_OFFSET (_1KB*3*8) // 3072 bytes in bits
 
-#define HIGH_MSR_START                   (BITS(31,30))       // 0xC000000
-#define HIGH_MSR_MASK                    (~(HIGH_MSR_START)) // ~0xC000000
+#define HIGH_MSR_START                   ((uint32_t)BITS(31,30))       // 0xC0000000
+#define HIGH_MSR_MASK                    ((uint32_t)~(HIGH_MSR_START)) // ~0xC0000000 (0x3FFFFFFFF)
 
 
 #define POSTED_INTERRUPT_NOTFICATION_VECTOR_INIT    0xFFFF  // Initial (illegal) value
 #define POSTED_INTERRUPT_NOTFICATION_VECTOR_MIN     0
 #define POSTED_INTERRUPT_NOTFICATION_VECTOR_MAX     255
+
+#define PID_BIT_SIZE                    512
+#define PID_PIR_BITS                    256
+#define PID_PIR_DWORDS                  (PID_PIR_BITS / (sizeof(uint32_t) * 8))
+
+typedef union posted_intr_descriptor_u
+{
+    PACKED struct
+    {
+        uint32_t pir[PID_PIR_DWORDS];
+        union
+        {
+            struct
+            {
+                uint8_t outstanding_notification : 1,
+                        _reserved                : 7;
+            };
+            uint8_t on_byte;
+        };
+    };
+    uint64_t raw[8];
+} posted_intr_descriptor_t;
+tdx_static_assert(sizeof(posted_intr_descriptor_t) == (PID_BIT_SIZE / 8), posted_intr_descriptor_t);
 
 #define VMX_GUEST_ES_SELECTOR_ENCODE  0x0800ULL
 #define VMX_GUEST_ES_ARBYTE_ENCODE  0x4814ULL
@@ -628,7 +703,7 @@ typedef union vmx_instruction_info_u
 #define VMX_GUEST_GS_ARBYTE_ENCODE  0x481EULL
 #define VMX_GUEST_GS_LIMIT_ENCODE  0x480AULL
 #define VMX_GUEST_GS_BASE_ENCODE  0x6810ULL
-#define VMX_RSVD_32_BIT_CONTROL_ENCODE  0x4024ULL
+#define VMX_NOTIFY_WINDOW_ENCODE  0x4024ULL
 #define VMX_GUEST_GDTR_LIMIT_ENCODE  0x4810ULL
 #define VMX_GUEST_GDTR_BASE_ENCODE  0x6816ULL
 #define VMX_RSVD_32_BIT_GUEST_STATE_ENCODE  0x4830ULL
@@ -821,5 +896,8 @@ typedef union vmx_instruction_info_u
 #define VMX_NO_COMMIT_THRESHOLD_ENCODE  0x4024
 #define VMX_GUEST_LBR_CTL_FULL_ENCODE  0x2816
 #define VMX_GUEST_PKRS_FULL_ENCODE  0x2818
+#define VMX_HLATP_FULL_ENCODE  0x2040
+#define VMX_IA32_SPEC_CTRL_MASK 0x204A
+#define VMX_IA32_SPEC_CTRL_SHADOW 0x204C
 
 #endif /* SRC_COMMON_X86_DEFS_VMCS_DEFS_H_ */

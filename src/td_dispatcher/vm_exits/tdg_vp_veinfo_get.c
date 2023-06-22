@@ -28,11 +28,11 @@ api_error_type tdg_vp_veinfo_get(void)
     api_error_type return_val = TDX_OPERAND_INVALID;
 
     // Initialize output registers to default values
-    local_data_ptr->vp_ctx.tdvps->guest_state.rcx = 0;
-    local_data_ptr->vp_ctx.tdvps->guest_state.rdx = 0;
-    local_data_ptr->vp_ctx.tdvps->guest_state.r8 = 0;
-    local_data_ptr->vp_ctx.tdvps->guest_state.r9 = 0;
-    local_data_ptr->vp_ctx.tdvps->guest_state.r10 = 0;
+    local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.rcx = 0;
+    local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.rdx = 0;
+    local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.r8 = 0;
+    local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.r9 = 0;
+    local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.r10 = 0;
 
     // Check that VE_INFO has valid contents
     if (local_data_ptr->vp_ctx.tdvps->ve_info.valid == 0)
@@ -43,11 +43,11 @@ api_error_type tdg_vp_veinfo_get(void)
     }
     
     // Retrieve the data from the VE_INFO and put into output registers
-    local_data_ptr->vp_ctx.tdvps->guest_state.rcx = (uint64_t)local_data_ptr->vp_ctx.tdvps->ve_info.exit_reason;
-    local_data_ptr->vp_ctx.tdvps->guest_state.rdx = local_data_ptr->vp_ctx.tdvps->ve_info.exit_qualification;
-    local_data_ptr->vp_ctx.tdvps->guest_state.r8 = local_data_ptr->vp_ctx.tdvps->ve_info.gla;
-    local_data_ptr->vp_ctx.tdvps->guest_state.r9 = local_data_ptr->vp_ctx.tdvps->ve_info.gpa;
-    local_data_ptr->vp_ctx.tdvps->guest_state.r10 = local_data_ptr->vp_ctx.tdvps->ve_info.inst_len_and_info;
+    local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.rcx = (uint64_t)local_data_ptr->vp_ctx.tdvps->ve_info.exit_reason;
+    local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.rdx = local_data_ptr->vp_ctx.tdvps->ve_info.exit_qualification;
+    local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.r8 = local_data_ptr->vp_ctx.tdvps->ve_info.gla;
+    local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.r9 = local_data_ptr->vp_ctx.tdvps->ve_info.gpa;
+    local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.r10 = local_data_ptr->vp_ctx.tdvps->ve_info.inst_len_and_info;
 
     // Mark VE info as free
     local_data_ptr->vp_ctx.tdvps->ve_info.valid = 0ULL;

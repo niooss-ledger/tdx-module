@@ -1,9 +1,9 @@
-// Intel Proprietary 
-// 
+// Intel Proprietary
+//
 // Copyright 2021 Intel Corporation All Rights Reserved.
-// 
+//
 // Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
+//
 // The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
 // of merchantability, non-infringement, title, or fitness for a particular purpose.
 
@@ -78,18 +78,20 @@ void td_ept_misconfiguration_exit(vm_vmexit_exit_reason_t vm_exit_reason)
     }
 }
 
-void td_cr_access_exit(vmx_exit_qualification_t vm_exit_qualification)
+// CR0 bits that can be modified by LMSW
+// For L2, only PE, MP, EM and TD bits can be modified
+#define CR0_L1_LMSW_MASK 0xEULL
+
+bool_t td_cr_access_exit(vmx_exit_qualification_t vm_exit_qualification)
 {
     uint64_t   value;
     ia32_cr0_t cr0;
-    ia32_cr4_t cr4;
+    cr_write_status_e status = CR_ACCESS_SUCCESS;
 
     tdx_module_local_t* tdx_local_data_ptr = get_local_data();
-    tdx_module_global_t* tdx_global_data_ptr = get_global_data();
 
     tdvps_t* tdvps_p = tdx_local_data_ptr->vp_ctx.tdvps;
     tdcs_t* tdcs_p = tdx_local_data_ptr->vp_ctx.tdcs;
-    platform_common_config_t* msr_values_ptr = &tdx_global_data_ptr->plt_common_config;
 
     switch (vm_exit_qualification.cr_access.access_type)
     {
@@ -100,9 +102,8 @@ void td_cr_access_exit(vmx_exit_qualification_t vm_exit_qualification)
             }
             else
             {
-                value = tdvps_p->guest_state.gprs[vm_exit_qualification.cr_access.mov_cr_gpr];
+                value = tdvps_p->guest_state.gpr_state.gprs[vm_exit_qualification.cr_access.mov_cr_gpr];
             }
-
 
             switch (vm_exit_qualification.cr_access.cr_num)
             {
@@ -110,131 +111,30 @@ void td_cr_access_exit(vmx_exit_qualification_t vm_exit_qualification)
                     // MOV to CR0
                     // All valid cases of accessing CR0 are controlled by the CR0 guest/host mask
                     // and CR0 read shadow fields of the TD VMCS, and do not cause a VM exit.
-
-                    cr0.raw = value;
-
-                    // If the guest attempted to write natively invalid values, inject a #GP(0)
-                    ia32_cr0_t cr0_fixed0;
-                    cr0_fixed0.raw = msr_values_ptr->ia32_vmx_cr0_fixed0.raw;
-                    cr0_fixed0.pe = 0;
-                    cr0_fixed0.pg = 0;
-
-                    if ((~cr0.raw & cr0_fixed0.raw) ||
-                        (cr0.raw & ~msr_values_ptr->ia32_vmx_cr0_fixed1.raw))
-                    {
-                        TDX_LOG("MOV to CR0 - attempt to write invalid values (0x%lx) - #GP", value);
-                        inject_gp(0);
-                        return;
-                    }
-
-                    // The combination CR0.PE == 0 and CR0.PG == 1 is architecturally illegal
-                    if ((cr0.pe == 0) && (cr0.pg == 1))
-                    {
-                        TDX_LOG("MOV to CR0 - use illegal combination (0x%lx) - #GP", value);
-                        inject_gp(0);
-                        return;
-                    }
-
-                    // If the guest attempted to clear CR0.WP while CR4.CET is 1, throw a #GP(0)
-                    ia32_vmread(VMX_GUEST_CR4_ENCODE, &(cr4.raw));
-                    if ((cr4.cet == 1) && (cr0.wp == 0))
-                    {
-                        TDX_LOG("MOV to CR0 - illegal attempt to clear bit (0x%lx) - #GP", value);
-                        inject_gp(0);
-                        return;
-                    }
-
-                    //  If the guest attempted to change any CR0 bit that is owned by TDX-SEAM
-                    if ((cr0.pe == 0) ||
-                        (cr0.ne == 0) ||
-                        (cr0.nw == 1) ||
-                        (cr0.cd == 1) ||
-                        (cr0.reserved_3 != 0))
-                    {
-                        TDX_LOG("MOV to CR0 - other case (0x%lx) - #VE", value);
-                        tdx_inject_ve(VMEXIT_REASON_CR_ACCESS, vm_exit_qualification.raw, tdvps_p, 0, 0);
-                        return;
-                    }
-
-                    /* Update the value of guest CR0.
-                     * Values of bits 28-19, 17 and 15-6 left as they were before.
-                     */
-                    cr0.raw &= ~(uint64_t)CR0_IGNORED_MASK;
-                    uint64_t guest_cr0;
-                    ia32_vmread(VMX_GUEST_CR0_ENCODE, &guest_cr0);
-                    cr0.raw |= guest_cr0 & (uint64_t)CR0_IGNORED_MASK;
-                    ia32_vmwrite(VMX_GUEST_CR0_ENCODE, cr0.raw);
-
-
+                    status = write_guest_cr0(value, false);
                     break;
 
                 case 4:
                     // MOV to CR4
                     // All valid cases of accessing CR4 are controlled by the CR4 guest/host mask
                     // and CR4 read shadow fields of the TD VMCS, and do not cause a VM exit.
-
-                    cr4.raw = value;
-
-                    // If the guest attempted to write natively invalid values, inject a #GP(0)
-                    ia32_cr4_t cr4_fixed0;
-                    cr4_fixed0.raw = msr_values_ptr->ia32_vmx_cr4_fixed0.raw;
-                    cr4_fixed0.vmxe = 0;
-                    if ((~cr4.raw & cr4_fixed0.raw) ||
-                        (cr4.raw & ~msr_values_ptr->ia32_vmx_cr4_fixed1.raw))
-                    {
-                        TDX_LOG("MOV to CR4 - attempt to write invalid values (0x%lx) - #GP", value);
-                        inject_gp(0);
-                        return;
-                    }
-
-                    // If the guest attempted to set bits for features that are not enabled by XFAM,
-                    //   inject a #GP(0)
-                    ia32_xcr0_t cur_xfam;
-                    cur_xfam.raw = tdvps_p->management.xfam;
-                    if (((cur_xfam.pk == 0) && (cr4.pke == 1)) ||
-                        (((cur_xfam.cet_s == 0) || (cur_xfam.cet_u == 0)) && (cr4.cet == 1)) ||
-                        ((cur_xfam.uli == 0) && (cr4.uie == 1)))
-                    {
-                        TDX_LOG("MOV to CR4 - attempt to write features not enabled by XFAM (0x%lx) - #GP", value);
-                        inject_gp(0);
-                        return;
-                    }
-
-                    // If the guest attempted to set bits for features that are not enabled by ATTRIBUTES,
-                    // inject a #GP(0)
-                    if (cr4.keylocker == 1)
-                    {
-                        TDX_LOG("MOV to CR4 - keylocker not supported (0x%lx) - #GP", value);
-                        inject_gp(0);
-                        return;
-                    }
-
-                    if ((tdcs_p->executions_ctl_fields.attributes.pks == 0) && (cr4.pks == 1))
-                    {
-                        TDX_LOG("MOV to CR4 - PKS not supported (0x%lx) - #GP", value);
-                        inject_gp(0);
-                        return;
-                    }
-
-                    // If the guest attempted to set CR4.CET while CR0.WP is 0, throw a #GP(0)
-                    ia32_vmread(VMX_GUEST_CR0_ENCODE, &(cr0.raw));
-                    if ((cr4.cet == 1) && (cr0.wp == 0))
-                    {
-                        TDX_LOG("MOV to CR4 - illegal attempt to clear bit (0x%lx) - #GP", value);
-                        inject_gp(0);
-                        return;
-                    }
-
-                    // In all other cases, inject a #VE
-                    TDX_LOG("MOV to CR4 - other case (0x%lx) - #VE", value);
-                    tdx_inject_ve(VMEXIT_REASON_CR_ACCESS, vm_exit_qualification.raw, tdvps_p, 0, 0);
-
+                    status = write_guest_cr4(value, tdcs_p, tdvps_p);
                     break;
 
                 default:
                     // VM exits due to other CR accesses are not expected
-                    // Fatal error:
-                    FATAL_ERROR();
+                    return false;
+            }
+
+            if (status == CR_ACCESS_GP)
+            {
+                inject_gp(0);
+                return true;
+            }
+            else if (status == CR_ACCESS_NON_ARCH)
+            {
+                tdx_inject_ve(VMEXIT_REASON_CR_ACCESS, vm_exit_qualification.raw, tdvps_p, 0, 0);
+                return true;
             }
 
             break;
@@ -250,17 +150,19 @@ void td_cr_access_exit(vmx_exit_qualification_t vm_exit_qualification)
             value = vm_exit_qualification.cr_access.lmsw_src_data;
             ia32_vmread(VMX_GUEST_CR0_ENCODE, &cr0.raw);
 
-            ia32_vmwrite(VMX_GUEST_CR0_ENCODE, (value & 0xEULL) | (cr0.raw & ~0xEULL));
+            // L1 is assumed to never run in real mode
+            tdx_sanity_check(cr0.pe == 1, SCEC_TDEXIT_SOURCE, 3);
+
+            ia32_vmwrite(VMX_GUEST_CR0_ENCODE, (value & CR0_L1_LMSW_MASK) | (cr0.raw & ~CR0_L1_LMSW_MASK));
 
             break;
 
         default:
             // VM exits due to other access types (MOV from CR, CLTS) are not expected
-            // Fatal error
-
-            FATAL_ERROR();
+            return false;
     }
 
+    return true;
 }
 
 void td_exception_or_nmi_exit(vm_vmexit_exit_reason_t vm_exit_reason,
@@ -276,7 +178,7 @@ void td_exception_or_nmi_exit(vm_vmexit_exit_reason_t vm_exit_reason,
     else if (vm_exit_inter_info.vector == E_MC)
     {
         // This exit was due to a #MC, disable the TD
-        async_tdexit_to_vmm(TDX_NON_RECOVERABLE_TD_FATAL, vm_exit_reason,
+        async_tdexit_to_vmm(TDX_NON_RECOVERABLE_TD_NON_ACCESSIBLE, vm_exit_reason,
                             vm_exit_qualification.raw, 0, 0, vm_exit_inter_info.raw);
     }
     else if (get_local_data()->vp_ctx.tdcs->executions_ctl_fields.attributes.debug)
@@ -330,13 +232,33 @@ void tdx_ept_misconfig_exit_to_vmm(pa_t gpa)
 void tdx_inject_ve(uint32_t vm_exit_reason, uint64_t exit_qualification, tdvps_t* tdvps_p,
         uint64_t gpa, uint64_t gla)
 {
+    bool_t ve_info_mapped = false;
+    tdvps_ve_info_t* ve_info_p;
+
+    // Before we inject a #VE, reinject IDT vectoring events that happened during VM exit, if any
+#ifdef L2_VE_SUPPORT
+    if (tdvps_p->management.curr_vm != 0)
+    {
+        reinject_idt_vectoring_event();
+
+        ve_info_p = map_pa((void*)tdvps_p->management.ve_info_hpa[vm_id], TDX_RANGE_RW);
+        ve_info_mapped = true;
+    }
+    else
+#else
+    tdx_debug_assert(tdvps_p->management.curr_vm == 0);
+#endif
+    {
+        ve_info_p = &tdvps_p->ve_info;
+    }
+
     // TDX-SEAM first checks VE_INFO.VALID to make sure VE_INFO does not contain information that
     // hasn’t been read yet using TDGVPVEINFOGET.
     // - If VE_INFO.VALID is 0, it copies the exit reason and exit qualification from the
     //   TD VMCS to VE_INFO, and injects a #VE to the guest TD, as described in ‎16.4.2.4.
     // - If VE_INFO.VALID is not 0, it injects a #GP(0) to the guest TD.
 
-    if (tdvps_p->ve_info.valid == 0)
+    if (ve_info_p->valid == 0)
     {
         uint64_t eptp_index;
         uint64_t length, info;
@@ -345,15 +267,15 @@ void tdx_inject_ve(uint32_t vm_exit_reason, uint64_t exit_qualification, tdvps_t
         ia32_vmread(VMX_VM_EXIT_INSTRUCTION_LENGTH_ENCODE, &length);
         ia32_vmread(VMX_VM_EXIT_INSTRUCTION_INFO_ENCODE, &info);
 
-        tdvps_p->ve_info.exit_reason = vm_exit_reason;
-        tdvps_p->ve_info.exit_qualification = exit_qualification;
-        tdvps_p->ve_info.gla = gla;
-        tdvps_p->ve_info.gpa = gpa;
-        tdvps_p->ve_info.eptp_index = (uint16_t)eptp_index;
-        tdvps_p->ve_info.instruction_length = (uint32_t)length;
-        tdvps_p->ve_info.instruction_info = (uint32_t)info;
+        ve_info_p->exit_reason = vm_exit_reason;
+        ve_info_p->exit_qualification = exit_qualification;
+        ve_info_p->gla = gla;
+        ve_info_p->gpa = gpa;
+        ve_info_p->eptp_index = (uint16_t)eptp_index;
+        ve_info_p->instruction_length = (uint32_t)length;
+        ve_info_p->instruction_info = (uint32_t)info;
 
-        tdvps_p->ve_info.valid = (uint32_t)VE_INFO_CONTENTS_VALID;
+        ve_info_p->valid = (uint32_t)VE_INFO_CONTENTS_VALID;
 
         inject_ve();
     }
@@ -367,12 +289,17 @@ void tdx_inject_ve(uint32_t vm_exit_reason, uint64_t exit_qualification, tdvps_t
     ia32_vmread(VMX_GUEST_RFLAGS_ENCODE, &rflags.raw);
     rflags.rf = 1;
     ia32_vmwrite(VMX_GUEST_RFLAGS_ENCODE, rflags.raw);
+
+    if (ve_info_mapped)
+    {
+        free_la(ve_info_p);
+    }
 }
 
 void td_nmi_exit(tdx_module_local_t* tdx_local_data_ptr)
 {
     vmx_entry_inter_info_t vm_entry_inter_info;
-    vmcs_procbased_ctls_t vm_procbased_ctls;
+    vmx_procbased_ctls_t vm_procbased_ctls;
 
     if (tdx_local_data_ptr->vp_ctx.tdvps->management.pend_nmi &&
             tdx_local_data_ptr->vp_ctx.tdvps->ve_info.valid == 0)
@@ -397,3 +324,36 @@ void td_nmi_exit(tdx_module_local_t* tdx_local_data_ptr)
     ia32_vmwrite(VMX_VM_EXECUTION_CONTROL_PROC_BASED_ENCODE, vm_procbased_ctls.raw);
 }
 
+void async_tdexit_ept_violation(pa_t gpa, ept_level_t req_level, ia32e_sept_t sept_entry,
+                                ept_level_t ept_level, ia32e_sept_t* sept_entry_ptr, vmx_eeq_type_t eeq_type)
+{
+    vmx_ext_exit_qual_t eeq = {.raw = 0};
+    tdaccept_vmx_eeq_info_t eeq_info = {.raw = 0};
+
+    vmx_exit_qualification_t exit_qual = { .raw = 0 };
+
+    // TDG.MEM.PAGE.ACCEPT and TDG.MEM.PAGE.ATTR.WR are both write operations
+    exit_qual.ept_violation.data_write             = 1;
+    exit_qual.ept_violation.gpa_readable           = sept_entry.r;
+    exit_qual.ept_violation.gpa_writeable          = sept_entry.w;
+    exit_qual.ept_violation.gpa_executable         = sept_entry.x;
+    exit_qual.ept_violation.gpa_exec_for_ring3_lin = 0; // MBEC is not enabled for L1
+
+    eeq_info.req_sept_level = req_level;
+    eeq_info.err_sept_level = ept_level;
+    eeq_info.err_sept_state = sept_get_arch_state(sept_entry);
+    eeq_info.err_sept_is_leaf = is_secure_ept_leaf_entry(&sept_entry);
+
+    eeq.type = eeq_type;
+    eeq.info = eeq_info.raw;
+
+    if (sept_entry_ptr != NULL)
+    {
+        free_la(sept_entry_ptr);
+    }
+
+    vm_vmexit_exit_reason_t vm_exit_reason = {.raw = 0};
+    vm_exit_reason.basic_reason = VMEXIT_REASON_EPT_VIOLATION;
+
+    tdx_ept_violation_exit_to_vmm(gpa, vm_exit_reason, exit_qual.raw, eeq.raw);
+}

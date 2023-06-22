@@ -20,6 +20,8 @@
 #include "x86_defs/vmcs_defs.h"
 #include "x86_defs/x86_defs.h"
 #include "data_structures/tdx_tdvps.h"
+#include "td_transitions/td_exit_stepping.h"
+#include "data_structures/tdx_local_data.h"
 
 
 /**
@@ -35,6 +37,23 @@ __attribute__((visibility("hidden"))) void tdx_tdexit_entry_point(void);
 void tdx_failed_vmentry(void);
 #endif
 
+/**
+ * @brief Common prologue flow for L1 and L2 TD dispatchers
+ *
+ * @param local_data - TDX module local data
+ * @param vm_id - Current VM id. Should be 0 (zero) if called from L1 TD dispatcher
+ * @param vm_exit_reason - Returns the value of VM_EXIT_REASON
+ * @param vm_exit_qualification - Returns the value of VM_EXIT_QUALIFICATION
+ * @param vm_exit_inter_info - Returns the value of VM_EXIT_INTER_INFO
+ *
+ * @return Stepping filter result
+ */
+stepping_filter_e tdx_td_l1_l2_dispatcher_common_prologue(
+        tdx_module_local_t* local_data,
+        uint16_t vm_id,
+        vm_vmexit_exit_reason_t* vm_exit_reason,
+        vmx_exit_qualification_t* vm_exit_qualification,
+        vmx_exit_inter_info_t* vm_exit_inter_info);
 
 /**
  * @brief Dispatcher for TD side VM Exits
@@ -45,7 +64,6 @@ void tdx_failed_vmentry(void);
  */
 void tdx_td_dispatcher(void);
 
-
 /**
  * @brief Restores TDVPS registers state to local data and call the exit point to return to TD
  *
@@ -53,7 +71,7 @@ void tdx_td_dispatcher(void);
  *
  * @return None
  */
-void tdx_return_to_td(bool_t launch_state);
+void tdx_return_to_td(bool_t launch_state, bool_t called_from_tdenter, gprs_state_t* gpr_state);
 
 /**
  * @brief If we got here and BUS_LOCK_PREEMPTED is still set, it means that a bus lock preemption
@@ -65,18 +83,40 @@ void tdx_return_to_td(bool_t launch_state);
  *
  * @return None
  */
-void bus_lock_exit ( void );
+void bus_lock_exit(void);
 
 /**
- * @brief Check if VM exit handler injected an HW exception into the TD.
- *        If the TD is debuggable and execption bitmap bit v is set, then TD Exit with a
-          synthetic EXCEPTION_OR_NMI exit reason.
+ * @brief Checks if we are returning to debug TD, and there's pending VOE that is also
+ *        set in the configured TD exception bitmap. In that case do async TD-exit to VMM.
  *
  * @note
  *
  * @return None
  */
-void check_hw_exception( void );
+void check_pending_voe_on_debug_td_return(void);
+
+/**
+ * @brief Perform a generic VE exit - injecting a VE to the currently running TD
+ *
+ * @param vm_exit_reason
+ * @param exit_qualification
+ */
+void td_generic_ve_exit(vm_vmexit_exit_reason_t vm_exit_reason, uint64_t exit_qualification);
+
+/**
+ * @brief Handler for all TDCALLs
+ *
+ * @param tdx_local_data_ptr - Pointer to local data
+ * @param interrupt_occurred - Return a flag whether a hardware interrupt occurred during execution of
+ *          one of the TDCALL leaves. Currently applicable for TDG.MEM.ACCEPT only.
+ */
+void td_call(tdx_module_local_t* tdx_local_data_ptr, bool_t* interrupt_occurred);
+
+/**
+ * @brief Dispatcher for TD side L2 VM Exits
+ */
+void tdx_td_l2_dispatcher(void);
+
 
 /**
  * @brief Exit point returning to TD from TDX module
@@ -85,7 +125,7 @@ void check_hw_exception( void );
  *
  * @return None
  */
-__attribute__((visibility("hidden"))) void tdx_tdentry_to_td(bool_t launch_state, tdvps_guest_state_t* guest_state_ptr);
+__attribute__((visibility("hidden"))) void tdx_tdentry_to_td(bool_t launch_state, gprs_state_t* gpr_state);
 
 
 

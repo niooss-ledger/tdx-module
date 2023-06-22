@@ -47,7 +47,6 @@ api_error_type tdh_mem_page_add(page_info_api_input_t gpa_page_info,
     ia32e_sept_t        * page_sept_entry_ptr = NULL;   // SEPT entry of the page
     ia32e_sept_t          page_sept_entry_copy;         // Cached SEPT entry of the page
     ept_level_t           page_level_entry = gpa_mappings.level; // SEPT entry level of the page
-    bool_t                sept_locked_flag = false;     // Indicate SEPT is locked
 
     // New TD private page variables
     pa_t                  td_page_pa;                // Physical address of the new TD page
@@ -89,89 +88,62 @@ api_error_type tdh_mem_page_add(page_info_api_input_t gpa_page_info,
         goto EXIT;
     }
 
-    // Check the TD state
-    if ((return_val = check_td_in_correct_build_state(tdr_ptr)) != TDX_SUCCESS)
-    {
-        TDX_ERROR("TD is not in build state - error = %llx\n", return_val);
-        goto EXIT;
-    }
+    // Map the TDCS structure and check the state
+    return_val = check_state_map_tdcs_and_lock(tdr_ptr, TDX_RANGE_RW, TDX_LOCK_NO_LOCK,
+                                               false, TDH_MEM_PAGE_ADD_LEAF, &tdcs_ptr);
 
-    // Map the TDCS structure and check the state.  No need to lock
-    tdcs_ptr = map_implicit_tdcs(tdr_ptr, TDX_RANGE_RW);
-    if (tdcs_ptr->management_fields.finalized)
-    {
-        TDX_ERROR("TD is already finalized\n");
-        return_val = TDX_TD_FINALIZED;
-        goto EXIT;
-    }
-
-    // Verify that GPA mapping input reserved fields equal zero
-    if (!is_reserved_zero_in_mappings(gpa_mappings))
-    {
-        TDX_ERROR("Reserved fields in GPA mappings are not zero\n");
-        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RCX);
-        goto EXIT;
-    }
-    page_gpa.page_4k_num = gpa_mappings.gpa;
-
-    // Verify mapping level input is valid
-    if (gpa_mappings.level != LVL_PT)
-    {
-        TDX_ERROR("Input GPA level (=%d) is not valid\n", gpa_mappings.level);
-        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RCX);
-        goto EXIT;
-    }
-
-    // Check the page GPA is page aligned
-    if (!is_addr_aligned_pwr_of_2(page_gpa.raw, TDX_PAGE_SIZE_IN_BYTES))
-    {
-        TDX_ERROR("Page GPA is not page (=%llx) aligned\n", TDX_PAGE_SIZE_IN_BYTES);
-        return_val = api_error_with_operand_id(TDX_OPERAND_ADDR_RANGE_ERROR, OPERAND_ID_RCX);
-        goto EXIT;
-    }
-
-    // Check GPA, lock SEPT and walk to find entry
-    return_val = lock_sept_check_and_walk_private_gpa(tdcs_ptr,
-                                                      OPERAND_ID_RCX,
-                                                      page_gpa,
-                                                      tdr_ptr->key_management_fields.hkid,
-                                                      TDX_LOCK_EXCLUSIVE,
-                                                      &page_sept_entry_ptr,
-                                                      &page_level_entry,
-                                                      &page_sept_entry_copy,
-                                                      &sept_locked_flag);
     if (return_val != TDX_SUCCESS)
     {
-        if (return_val == api_error_with_operand_id(TDX_EPT_WALK_FAILED, OPERAND_ID_RCX))
-        {
-            // Update output register operands
-            set_arch_septe_details_in_vmm_regs(page_sept_entry_copy, page_level_entry, local_data_ptr);
-        }
-
-        TDX_ERROR("Failed on GPA check, SEPT lock or walk - error = %llx\n", return_val);
+        TDX_ERROR("State check or TDCS lock failure - error = %llx\n", return_val);
         goto EXIT;
     }
 
-    // Verify the parent entry located for new TD page is FREE
-    if (get_sept_entry_state(&page_sept_entry_copy, page_level_entry) != SEPTE_FREE)
+    if (!verify_page_info_input(gpa_mappings, LVL_PT, LVL_PT))
     {
-        TDX_ERROR("SEPT entry of GPA is not free\n");
-        return_val = api_error_with_operand_id(TDX_EPT_ENTRY_NOT_FREE, OPERAND_ID_RCX);
+        TDX_ERROR("Input GPA page info (0x%llx) is not valid\n", gpa_mappings.raw);
+        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RCX);
         goto EXIT;
     }
 
-    // Verify the source physical address is page aligned
-    if (!is_addr_aligned_pwr_of_2(source_pa.raw, TDX_PAGE_SIZE_IN_BYTES))
+    page_gpa = page_info_to_pa(gpa_mappings);
+
+    // SEPT tree is implicitly locked in exclusive mode, since TDR is exclusively locked
+    // Check GPA
+    if (!check_gpa_validity(page_gpa, tdcs_ptr->executions_ctl_fields.gpaw, PRIVATE_ONLY))
     {
-        TDX_ERROR("Source physical address is not page (=%llx) aligned\n", TDX_PAGE_SIZE_IN_BYTES);
-        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_R9);
+        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RCX);
+        TDX_ERROR("Failed on GPA check - error = 0x%llx\n", return_val);
         goto EXIT;
     }
 
-    // Verify the source physical address is canonical and shared
-    if ((return_val = shared_hpa_check(source_pa, TDX_PAGE_SIZE_IN_BYTES)) != TDX_SUCCESS)
+    // SEPT and walk to find entry
+    return_val = walk_private_gpa(tdcs_ptr, page_gpa, tdr_ptr->key_management_fields.hkid,
+                                  &page_sept_entry_ptr, &page_level_entry, &page_sept_entry_copy);
+
+    if (return_val != TDX_SUCCESS)
     {
-        TDX_ERROR("Failed on source shared HPA check - error = %llx\n", return_val);
+        return_val = api_error_with_operand_id(TDX_EPT_WALK_FAILED, OPERAND_ID_RCX);
+        // Update output register operands
+        set_arch_septe_details_in_vmm_regs(page_sept_entry_copy, page_level_entry, local_data_ptr);
+        TDX_ERROR("Failed on SEPT walk - error = %llx\n", return_val);
+        goto EXIT;
+    }
+
+    // SEPT tree is implicitly locked in exclusive mode, since TDR is exclusively locked
+    page_sept_entry_copy = *page_sept_entry_ptr;
+
+    if (!sept_state_is_seamcall_leaf_allowed(TDH_MEM_PAGE_ADD_LEAF, page_sept_entry_copy))
+    {
+        return_val = api_error_with_operand_id(TDX_EPT_ENTRY_STATE_INCORRECT, OPERAND_ID_RCX);
+        set_arch_septe_details_in_vmm_regs(page_sept_entry_copy, page_level_entry, local_data_ptr);
+        TDX_ERROR("TDH_MEM_PAGE_ADD is not allowed in current SEPT entry state - 0x%llx\n", page_sept_entry_copy.raw);
+        goto EXIT;
+    }
+
+    // Verify the source physical address is aligned, canonical and shared
+    if ((return_val = shared_hpa_check_with_pwr_2_alignment(source_pa, TDX_PAGE_SIZE_IN_BYTES)) != TDX_SUCCESS)
+    {
+        TDX_ERROR("Failed on source shared HPA 0x%llx check\n", source_pa.raw);
         return_val = api_error_with_operand_id(return_val, OPERAND_ID_R9);
         goto EXIT;
     }
@@ -201,7 +173,8 @@ api_error_type tdh_mem_page_add(page_info_api_input_t gpa_page_info,
     cache_aligned_copy_direct((uint64_t)source_page_ptr, (uint64_t)td_page_ptr, TDX_PAGE_SIZE_IN_BYTES);
 
     // Update the parent EPT entry with the new TD page HPA and SEPT_PRESENT state
-    map_sept_leaf(page_sept_entry_ptr, td_page_pa, false, true);
+    sept_set_leaf_unlocked_entry(page_sept_entry_ptr, SEPT_PERMISSIONS_RWX, td_page_pa, SEPT_STATE_MAPPED_MASK,
+                                 (bool_t)tdcs_ptr->executions_ctl_fields.attributes.sept_ve_disable);
 
     /**
      *  Update the TD measurements with the API string and page GPA
@@ -240,34 +213,31 @@ api_error_type tdh_mem_page_add(page_info_api_input_t gpa_page_info,
     // Update the new Secure EPT page’s PAMT entry
     td_page_pamt_entry_ptr->pt = PT_REG;
     set_pamt_entry_owner(td_page_pamt_entry_ptr, tdr_pa);
+    td_page_pamt_entry_ptr->bepoch.raw = 0;  // Setting BEPOCH to 0 is required to avoid confusion during page export
 
 EXIT:
     // Release all acquired locks and free keyhole mappings
-    if (tdr_locked_flag)
-    {
-        pamt_unwalk(tdr_pa, tdr_pamt_block, tdr_pamt_entry_ptr, TDX_LOCK_EXCLUSIVE, PT_4KB);
-        free_la(tdr_ptr);
-    }
-    if (sept_locked_flag)
-    {
-        release_sharex_lock_ex(&tdcs_ptr->executions_ctl_fields.secure_ept_lock);
-        if (page_sept_entry_ptr != NULL)
-        {
-            free_la(page_sept_entry_ptr);
-        }
-    }
-    if (tdcs_ptr != NULL)
-    {
-        free_la(tdcs_ptr);
-    }
     if (td_page_locked_flag)
     {
         pamt_unwalk(td_page_pa, td_page_pamt_block, td_page_pamt_entry_ptr, TDX_LOCK_EXCLUSIVE, PT_4KB);
         free_la(td_page_ptr);
     }
+    if (page_sept_entry_ptr != NULL)
+    {
+        free_la(page_sept_entry_ptr);
+    }
     if (source_page_ptr != NULL)
     {
         free_la(source_page_ptr);
+    }
+    if (tdcs_ptr != NULL)
+    {
+        free_la(tdcs_ptr);
+    }
+    if (tdr_locked_flag)
+    {
+        pamt_unwalk(tdr_pa, tdr_pamt_block, tdr_pamt_entry_ptr, TDX_LOCK_EXCLUSIVE, PT_4KB);
+        free_la(tdr_ptr);
     }
     return return_val;
 }

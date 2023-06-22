@@ -1,9 +1,9 @@
-// Intel Proprietary 
-// 
+// Intel Proprietary
+//
 // Copyright 2021 Intel Corporation All Rights Reserved.
-// 
+//
 // Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
+//
 // The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
 // of merchantability, non-infringement, title, or fitness for a particular purpose.
 
@@ -52,8 +52,10 @@ void td_rdpmc_exit(vm_vmexit_exit_reason_t vm_exit_reason, uint64_t  vm_exit_qua
  * @brief Handler for CR access exit
  *
  * @param vm_exit_qualification
+ *
+ * @return In case the operation is unexpected for a production TD, return value is false
  */
-void td_cr_access_exit(vmx_exit_qualification_t vm_exit_qualification);
+bool_t td_cr_access_exit(vmx_exit_qualification_t vm_exit_qualification);
 
 /**
  * @brief Handler for Exception/NMI exit
@@ -66,18 +68,26 @@ void td_exception_or_nmi_exit(vm_vmexit_exit_reason_t vm_exit_reason,
                               vmx_exit_qualification_t vm_exit_qualification,
                               vmx_exit_inter_info_t vm_exit_inter_info);
 
+typedef enum td_msr_access_status_e
+{
+    TD_MSR_ACCESS_SUCCESS,
+    TD_MSR_ACCESS_GP,                     // #GP(0)
+    TD_MSR_ACCESS_MSR_NON_ARCH_EXCEPTION, // Non-architectural exception. Injected to the TD as #VE
+    TD_MSR_ACCESS_L2_TO_L1_EXIT           // In case when RD/WRMSR was handled for L2, and a bit was set in shadow bitmap
+} td_msr_access_status_t;
+
 /**
  * @brief Handler for RDMSR exit
  *
  */
-void td_rdmsr_exit(void);
+td_msr_access_status_t td_rdmsr_exit(void);
 
 
 /**
  * @brief Handler for WRMSR exit
  *
  */
-void td_wrmsr_exit(void);
+td_msr_access_status_t td_wrmsr_exit(void);
 
 
 // VM-transitions and injections helper flows
@@ -117,5 +127,20 @@ void tdx_inject_ve(uint32_t vm_exit_reason, uint64_t exit_qualification, tdvps_t
  * @param tdx_local_data_ptr - pointer to local data
  */
 void td_nmi_exit(tdx_module_local_t* tdx_local_data_ptr);
+
+/**
+ * @brief Do an asynchronous TD exit due to an EPT violation, with extended exit qualification
+ *        detailing requested vs. actual SEPT information.
+ *        Used by TDG.MEM.PAGE.ACCEPT and TDG.MEM.PAGE.ATTR.WR.
+ *
+ * @param gpa - faulting GPA to report
+ * @param req_level - level that was requested
+ * @param sept_entry - failing SEPT entry copy
+ * @param ept_level - actual failed level
+ * @param sept_entry_ptr - failing SEPT entry pointer - will be freed if not NULL
+ * @param eeq_type - Extended exit qualification type
+ */
+void async_tdexit_ept_violation(pa_t gpa, ept_level_t req_level, ia32e_sept_t sept_entry,
+                                ept_level_t ept_level, ia32e_sept_t* sept_entry_ptr, vmx_eeq_type_t eeq_type);
 
 #endif /* SRC_TD_DISPATCHER_VM_EXITS_TD_VMEXIT_H_ */

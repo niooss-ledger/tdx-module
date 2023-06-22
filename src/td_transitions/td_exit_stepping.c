@@ -71,11 +71,6 @@ static bool_t is_code_breakpoint_on_next_rip(uint64_t guest_rip)
     return false;
 }
 
-static bool_t is_epf_exiting(vm_vmexit_exit_reason_t vm_exit_reason)
-{
-    return vm_exit_reason.basic_reason == VMEXIT_REASON_EPT_VIOLATION;
-}
-
 static bool_t is_nmi_exiting(vm_vmexit_exit_reason_t vm_exit_reason, vmx_exit_inter_info_t vm_exit_inter_info)
 {
     return ((vm_exit_reason.basic_reason == VMEXIT_REASON_EXCEPTION_OR_NMI) &&
@@ -106,28 +101,25 @@ static bool_t is_smi_not_msmi_exiting(vm_vmexit_exit_reason_t vm_exit_reason,
 
 static void set_mtf(uint32_t enable)
 {
-    vmcs_procbased_ctls_t vm_procbased_ctls;
+    vmx_procbased_ctls_t vm_procbased_ctls;
     ia32_vmread(VMX_VM_EXECUTION_CONTROL_PROC_BASED_ENCODE, &vm_procbased_ctls.raw);
     vm_procbased_ctls.monitor_trap_flag = enable;
     ia32_vmwrite(VMX_VM_EXECUTION_CONTROL_PROC_BASED_ENCODE, vm_procbased_ctls.raw);
 }
 
-static void set_movss_blocking(vmx_guest_inter_state_t guest_inter_state, uint32_t enable)
+static void set_movss_blocking(vmx_guest_inter_state_t guest_inter_state)
 {
-    if (enable)
-    {
-        set_guest_pde_bs();
-    }
+    set_guest_pde_bs();
 
-    guest_inter_state.blocking_by_mov_ss = enable;
+    guest_inter_state.blocking_by_mov_ss = 1;
     ia32_vmwrite(VMX_GUEST_INTERRUPTIBILITY_ENCODE, guest_inter_state.raw);
 }
 
 static uint64_t vcpu_rip_delta(tdx_module_local_t* local_data_p, uint64_t guest_rip)
 {
-    return (guest_rip > local_data_p->single_step_def_state.last_epf_guest_rip)?
-        guest_rip - local_data_p->single_step_def_state.last_epf_guest_rip:
-        local_data_p->single_step_def_state.last_epf_guest_rip - guest_rip;
+    return (guest_rip > local_data_p->single_step_def_state.guest_rip_on_tdentry)?
+        guest_rip - local_data_p->single_step_def_state.guest_rip_on_tdentry:
+        local_data_p->single_step_def_state.guest_rip_on_tdentry - guest_rip;
 }
 
 static uint64_t vcpu_tsc_delta(tdx_module_local_t* local_data_p)
@@ -153,8 +145,7 @@ static bool_t is_epf_expected(tdr_t* tdr_p, tdcs_t* tdcs_p, pa_t gpa)
     return ((walk_result != EPT_WALK_SUCCESS) && (walk_result != EPT_WALK_CONVERTIBLE_VIOLATION));
 }
 
-
-static bool_t can_inject_epf_ve(vmx_exit_qualification_t last_exit_qualification, tdvps_t* tdvps_p)
+bool_t can_inject_epf_ve(vmx_exit_qualification_t last_exit_qualification, tdvps_t* tdvps_p)
 {
     vmx_guest_inter_state_t last_guest_inter_state;
     vmx_idt_vectoring_info_t last_idt_vec_info;
@@ -168,62 +159,25 @@ static bool_t can_inject_epf_ve(vmx_exit_qualification_t last_exit_qualification
         && (tdvps_p->ve_info.valid == 0));
 }
 
-
 stepping_filter_e vmexit_stepping_filter(
         vm_vmexit_exit_reason_t vm_exit_reason,
         vmx_exit_qualification_t vm_exit_qualification,
         vmx_exit_inter_info_t vm_exit_inter_info)
 {
     tdx_module_local_t* ld_p = get_local_data();
-    tdcs_t* tdcs_p = ld_p->vp_ctx.tdcs;
+
+    ia32_apic_base_t apic_base;
 
     // stop and reset EPF tracking if forward progress occurred
     uint64_t guest_rip;
     ia32_vmread(VMX_GUEST_RIP_ENCODE, &guest_rip);
-    uint64_t rip_delta = vcpu_rip_delta(ld_p, guest_rip); //
-
+    uint64_t rip_delta = vcpu_rip_delta(ld_p, guest_rip);
 
     if (rip_delta != 0)
     {
+        // There was forward progress; stop and reset EPF tracking
         ld_p->vp_ctx.tdvps->management.last_epf_gpa_list_idx = 0;
         ld_p->vp_ctx.tdvps->management.possibly_epf_stepping = 0;
-    }
-
-    // track EPT violation faults
-    if (is_epf_exiting(vm_exit_reason))
-    {
-        if (ld_p->vp_ctx.tdvps->management.possibly_epf_stepping < STEPPING_EPF_THRESHOLD)
-        {
-            ld_p->vp_ctx.tdvps->management.possibly_epf_stepping++;
-        }
-        else
-        {
-            uint64_t gpa;
-            ia32_vmread(VMX_GUEST_PHYSICAL_ADDRESS_INFO_FULL_ENCODE, &gpa);
-
-            bool_t shared_bit = get_gpa_shared_bit(gpa, tdcs_p->executions_ctl_fields.gpaw);
-            uint8_t last_epf_gpa_list_idx = ld_p->vp_ctx.tdvps->management.last_epf_gpa_list_idx;
-            if (!shared_bit && (last_epf_gpa_list_idx < EPF_GPA_LIST_SIZE))
-            {
-                uint8_t i;
-
-                // lookup for this private GPA
-                for (i = 0; i < last_epf_gpa_list_idx; i++)
-                {
-                    // GPA is already in list
-                    if (ld_p->vp_ctx.tdvps->management.last_epf_gpa_list[i] == gpa)
-                    {
-                        break;
-                    }
-                }
-
-                if (i == last_epf_gpa_list_idx) // this is a new GPA - add to list
-                {
-                    ld_p->vp_ctx.tdvps->management.last_epf_gpa_list[last_epf_gpa_list_idx] = gpa;
-                    ld_p->vp_ctx.tdvps->management.last_epf_gpa_list_idx = last_epf_gpa_list_idx + 1;
-                }
-            }
-        }
     }
 
     // If interruption type exiting happened, check if single stepping may be in progress
@@ -245,9 +199,8 @@ stepping_filter_e vmexit_stepping_filter(
              * Read APIC base.  Check that the local APIC mode is correct for later IPI injection.
              * If not, kill the TD.
              */
-            ld_p->single_step_def_state.apic_base.raw = ia32_rdmsr(IA32_APIC_BASE_MSR_ADDR);
-            if ((ld_p->single_step_def_state.apic_base.enable == 0) ||
-                ((ld_p->single_step_def_state.apic_base.extd == 0) && (get_global_data()->max_x2apic_id > 255)))
+            apic_base.raw = ia32_rdmsr(IA32_APIC_BASE_MSR_ADDR);
+            if (apic_base.enable == 0)
             {
                 return FILTER_FAIL_TDEXIT_WRONG_APIC_MODE;
             }
@@ -263,8 +216,7 @@ stepping_filter_e vmexit_stepping_filter(
             // if stepping started due to interrupt, push it back to APIC as self-IPI
             if (is_intr_exiting(vm_exit_reason))
             {
-                send_self_ipi(ld_p->single_step_def_state.apic_base,
-                              APIC_DELIVERY_FIXED, vm_exit_inter_info.vector);
+                send_self_ipi(APIC_DELIVERY_FIXED, vm_exit_inter_info.vector);
             }
 
             // enable MTF to start single stepping
@@ -291,7 +243,7 @@ stepping_filter_e vmexit_stepping_filter(
             if (!is_pending_debug_exception() && !is_code_breakpoint_on_next_rip(guest_rip) &&
                 !is_guest_blocked_by_sti(guest_inter_state))
             {
-                set_movss_blocking(guest_inter_state, 1);
+                set_movss_blocking(guest_inter_state);
             }
 
             ld_p->single_step_def_state.num_inst_step -= 1;
@@ -309,14 +261,14 @@ stepping_filter_e vmexit_stepping_filter(
         if (ld_p->single_step_def_state.nmi_exit_occured &&
                 !is_nmi_exiting(vm_exit_reason, vm_exit_inter_info))
         {
-            send_self_ipi(ld_p->single_step_def_state.apic_base, APIC_DELIVERY_NMI, 0);
+            send_self_ipi(APIC_DELIVERY_NMI, 0);
         }
 
         // If INIT started the stepping, and current exiting is not INIT,
         // push a new INIT into local APIC
         if (ld_p->single_step_def_state.init_exit_occured && !is_init_exiting(vm_exit_reason))
         {
-            send_self_ipi(ld_p->single_step_def_state.apic_base, APIC_DELIVERY_INIT, 0);
+            send_self_ipi(APIC_DELIVERY_INIT, 0);
         }
 
         // Restore TPR to unblock external interrupts
@@ -349,12 +301,12 @@ stepping_filter_e vmexit_stepping_filter(
 
 
 stepping_filter_e td_entry_stepping_filter(pa_t* faulting_gpa, tdvps_t* tdvps_p, tdr_t* tdr_p, tdcs_t* tdcs_p,
-                                           bool_t* is_sept_locked)
+                                           bool_t* is_sept_tree_locked)
 {
     // capture guest RIP, to be checked at next TD exiting
-    uint64_t last_epf_guest_rip;
-    ia32_vmread(VMX_GUEST_RIP_ENCODE,&last_epf_guest_rip);
-    get_local_data()->single_step_def_state.last_epf_guest_rip = last_epf_guest_rip;
+    uint64_t guest_rip;
+    ia32_vmread(VMX_GUEST_RIP_ENCODE, &guest_rip);
+    get_local_data()->single_step_def_state.guest_rip_on_tdentry = guest_rip;
 
     // if LAST_EPF_GPA_LIST is empty, everything is OK, otherwise a zero-step attack is suspected
     if (tdvps_p->management.last_epf_gpa_list_idx == 0)
@@ -365,20 +317,20 @@ stepping_filter_e td_entry_stepping_filter(pa_t* faulting_gpa, tdvps_t* tdvps_p,
     // Acquire Secure-EPT lock as exclusive
     if (acquire_sharex_lock_ex(&tdcs_p->executions_ctl_fields.secure_ept_lock) != LOCK_RET_SUCCESS)
     {
-        return FILTER_FAIL_TDENTER_SEPT_BUSY;
+        return FILTER_FAIL_SEPT_TREE_BUSY;
     }
 
-    *is_sept_locked = true;
+    *is_sept_tree_locked = true;
 
     // if another EPF on private GPA is pending to happen, fail TD entry
     for (uint32_t i = 0; i < tdvps_p->management.last_epf_gpa_list_idx; i++)
     {
-        pa_t last_epf_gpa = {.raw = tdvps_p->management.last_epf_gpa_list[i]};
+        pa_t last_epf_gpa = {.raw = tdvps_p->last_epf_gpa_list[i]};
         if (is_epf_expected(tdr_p, tdcs_p, last_epf_gpa))
         {
             *faulting_gpa = last_epf_gpa;
             release_sharex_lock_ex(&tdcs_p->executions_ctl_fields.secure_ept_lock);
-            *is_sept_locked = false;
+            *is_sept_tree_locked = false;
             return FILTER_FAIL_TDENTER_EPFS;
         }
     }
@@ -386,28 +338,56 @@ stepping_filter_e td_entry_stepping_filter(pa_t* faulting_gpa, tdvps_t* tdvps_p,
     // notify the TD about the suspected zero-step attack using #VE
     // if the TD has asked for notification, and the last TD VM exit was due to EPF on a private GPA,
     // and #VE can be injected at this time
-    if ((tdcs_p->notify_enables & BIT(0)) == 1) // Bit 0 - notify when zero-step attack is suspected
+    if (tdcs_p->executions_ctl_fields.notify_enables.notify_ept_faults == 1) // Bit 0 - notify when zero-step attack is suspected
     {
-
-        vm_vmexit_exit_reason_t last_exit_reason;
-        vmx_exit_qualification_t last_exit_qualification;
-        uint64_t last_faulting_gpa;
-
-        ia32_vmread(VMX_VM_EXIT_REASON_ENCODE, &last_exit_reason.raw);
-        ia32_vmread(VMX_VM_EXIT_QUALIFICATION_ENCODE, &last_exit_qualification.raw);
-        ia32_vmread(VMX_GUEST_PHYSICAL_ADDRESS_INFO_FULL_ENCODE, &last_faulting_gpa);
-
-        bool_t shared_bit = get_gpa_shared_bit(last_faulting_gpa, tdcs_p->executions_ctl_fields.gpaw);
-
-        if (is_epf_exiting(last_exit_reason)
-            && (!shared_bit )
-            && can_inject_epf_ve(last_exit_qualification, tdvps_p))
-        {
-            // The VE object injects #VE into TD VMCS
-            tdx_inject_ve((uint32_t)last_exit_reason.raw,
-                    last_exit_qualification.raw, tdvps_p, last_faulting_gpa ,0);
-        }
+        return FILTER_OK_NOTIFY_EPS_FAULT;
     }
 
     return FILTER_OK_CONTINUE;
+}
+
+void td_exit_epf_stepping_log(pa_t gpa)
+{
+    tdx_module_local_t* ld_p = get_local_data();
+    tdvps_t* tdvps_p = ld_p->vp_ctx.tdvps;
+
+    uint64_t guest_rip;
+    uint8_t  i;
+
+    ia32_vmread(VMX_GUEST_RIP_ENCODE, &guest_rip);
+
+    if (guest_rip != ld_p->single_step_def_state.guest_rip_on_tdentry)
+    {
+        // There was forward progress; stop and reset EPF tracking
+        tdvps_p->management.last_epf_gpa_list_idx = 0;
+        tdvps_p->management.possibly_epf_stepping = 0;
+    }
+
+    // track EPT violation faults
+    if (tdvps_p->management.possibly_epf_stepping < STEPPING_EPF_THRESHOLD)
+    {
+        tdvps_p->management.possibly_epf_stepping++;
+    }
+    else
+    {
+        // We reached the threshold; too many EPT violations for the same RIP
+        if (tdvps_p->management.last_epf_gpa_list_idx < EPF_GPA_LIST_SIZE)
+        {
+            // lookup for this private GPA in the list
+            for (i = 0; i < tdvps_p->management.last_epf_gpa_list_idx; i++)
+            {
+                if (tdvps_p->last_epf_gpa_list[i] == gpa.raw)
+                {
+                    break;
+                }
+            }
+
+            if (i == tdvps_p->management.last_epf_gpa_list_idx)
+            {
+                // this is a new GPA - add to list
+                tdvps_p->last_epf_gpa_list[i] = gpa.raw;
+                tdvps_p->management.last_epf_gpa_list_idx++;
+            }
+        }
+    }
 }

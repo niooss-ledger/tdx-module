@@ -23,6 +23,7 @@ typedef enum {api_log_entry_seamcall, api_log_entry_tdcall, api_log_entry_seamre
 #define perf_util_log_point_type_custom_id_seamcall 0
 #define perf_util_log_point_type_custom_id_tdcall   1
 #define perf_util_log_point_type_custom_id_tdexit   2
+#define perf_util_log_point_type_custom_id_seamops  3
 #define perf_util_log_point_type_custom_id_td_save_state      0x10
 #define perf_util_log_point_type_custom_id_vmm_restore_state  0x20
 #define perf_util_log_point_type_custom_id_pconfig            0x30
@@ -102,6 +103,7 @@ void per_meas_util_init(uint64_t log_size);
 void per_meas_util_flush_to_file(void);
 void per_meas_util_cLeanup(void);
 void per_meas_util_print_log_point_by_indx(uint64_t index);
+
 perf_meas_util_config_t * perf_meas_util_get_config(void);
 void per_meas_util_enable_log_point(per_meas_util_log_mask_t mask, bool_t enable);
 per_meas_util_log_mask_t per_meas_util_get_log_points_mask(void);
@@ -112,5 +114,3 @@ void per_meas_util_internal_flow_start(const perf_util_log_point_t *log_point);
 void per_meas_util_internal_flow_end(const perf_util_log_point_t *log_point);
 
 void per_meas_util_add_log_point(const perf_util_log_point_t *log_point);
-
-#endif // PERF_MEAS_UTILS_H

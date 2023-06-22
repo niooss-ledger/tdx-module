@@ -1,9 +1,9 @@
-// Intel Proprietary 
-// 
+// Intel Proprietary
+//
 // Copyright 2021 Intel Corporation All Rights Reserved.
-// 
+//
 // Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
+//
 // The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
 // of merchantability, non-infringement, title, or fitness for a particular purpose.
 
@@ -43,11 +43,14 @@ api_error_type tdh_mem_page_remove(page_info_api_input_t target_page_info, uint6
     ia32e_sept_t          page_sept_entry_copy;                   // Cached SEPT entry of the page
     ept_level_t           page_level_entry = gpa_mappings.level;  // EPT level of the page parent
     bool_t                sept_locked_flag = false;               // Indicate SEPT is locked
+    bool_t                septe_locked_flag = false;
 
     // Removed page variables
     pa_t                  removed_page_pa = {.raw = 0};      // Physical address of the page to-be-removed
     pamt_entry_t        * removed_page_pamt_entry_ptr = NULL;  // Pointer to the to-be-removed page PAMT entry
     bool_t                removed_page_locked_flag = false;  // Indicate PAMT of to-be-removed page is locked
+
+    ia32e_sept_t        * l2_sept_entry_ptr = NULL;
 
     api_error_type        return_val = UNINITIALIZE_ERROR;
 
@@ -71,47 +74,31 @@ api_error_type tdh_mem_page_remove(page_info_api_input_t target_page_info, uint6
         goto EXIT;
     }
 
-    // Check the TD state
-    if ((return_val = check_td_in_correct_build_state(tdr_ptr)) != TDX_SUCCESS)
+    // Map the TDCS structure and check the state
+    return_val = check_state_map_tdcs_and_lock(tdr_ptr, TDX_RANGE_RW, TDX_LOCK_SHARED,
+                                               false, TDH_MEM_PAGE_REMOVE_LEAF, &tdcs_ptr);
+
+    if (return_val != TDX_SUCCESS)
     {
-        TDX_ERROR("TD is not in build state - error = %llx\n", return_val);
+        TDX_ERROR("State check or TDCS lock failure - error = %llx\n", return_val);
         goto EXIT;
     }
 
-    // Map the TDCS structure.  No need to lock
-    tdcs_ptr = map_implicit_tdcs(tdr_ptr, TDX_RANGE_RW);
-
-    // Verify that GPA level input reserved fields equal zero
-    if (!is_reserved_zero_in_mappings(gpa_mappings))
+    if (!verify_page_info_input(gpa_mappings, LVL_PT, LVL_PDPT))
     {
-        TDX_ERROR("Reserved fields in GPA mappings are not zero\n");
-        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RCX);
-        goto EXIT;
-    }
-    page_gpa.page_4k_num = gpa_mappings.gpa;
-
-    // Verify that level input is correspond to 4KB or 2MB or 1GB page entry
-    if (gpa_mappings.level > LVL_PDPT)
-    {
-        TDX_ERROR("Input GPA level (=%d) is not valid\n", gpa_mappings.level);
+        TDX_ERROR("Input GPA page info (0x%llx) is not valid\n", gpa_mappings.raw);
         return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RCX);
         goto EXIT;
     }
 
-    // Check the page GPA is aligned
-    if (!is_addr_aligned_pwr_of_2(page_gpa.raw, TDX_PAGE_SIZE_IN_BYTES << (9 * gpa_mappings.level)))
-    {
-        TDX_ERROR("Page GPA is aligned according to its level (=%d)\n", gpa_mappings.level);
-        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RCX);
-        goto EXIT;
-    }
+    page_gpa = page_info_to_pa(gpa_mappings);
 
     // Check GPA, lock SEPT and walk to located entry of to-be-removed page
     return_val = lock_sept_check_and_walk_private_gpa(tdcs_ptr,
                                                       OPERAND_ID_RCX,
                                                       page_gpa,
                                                       tdr_ptr->key_management_fields.hkid,
-                                                      TDX_LOCK_EXCLUSIVE,
+                                                      TDX_LOCK_SHARED,
                                                       &page_sept_entry_ptr,
                                                       &page_level_entry,
                                                       &page_sept_entry_copy,
@@ -128,50 +115,96 @@ api_error_type tdh_mem_page_remove(page_info_api_input_t target_page_info, uint6
         goto EXIT;
     }
 
-    // Verify the located entry points is a leaf entry
-    if (!is_ept_leaf_entry(&page_sept_entry_copy, page_level_entry))
+    // Lock the SEPT entry in memory
+    return_val = sept_lock_acquire_host(page_sept_entry_ptr);
+    if (TDX_SUCCESS != return_val)
     {
-        TDX_ERROR("Page EPT entry is not a leaf\n");
-        return_val = api_error_with_operand_id(TDX_EPT_ENTRY_NOT_LEAF, OPERAND_ID_RCX);
+        return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
+        set_arch_septe_details_in_vmm_regs(page_sept_entry_copy, page_level_entry, local_data_ptr);
+        TDX_ERROR("Failed on SEPT host-side lock attempt\n");
+        goto EXIT;
+    }
+    septe_locked_flag = true;
+
+    // Read the SEPT entry (again after locking)
+    page_sept_entry_copy = *page_sept_entry_ptr;
+
+    // Verify the located entry points is a leaf entry and relocate is allowed
+    if (!is_secure_ept_leaf_entry(&page_sept_entry_copy) ||
+        !sept_state_is_seamcall_leaf_allowed(TDH_MEM_PAGE_REMOVE_LEAF, page_sept_entry_copy))
+    {
+        return_val = api_error_with_operand_id(TDX_EPT_ENTRY_STATE_INCORRECT, OPERAND_ID_RCX);
+        set_arch_septe_details_in_vmm_regs(page_sept_entry_copy, gpa_mappings.level, local_data_ptr);
+        TDX_ERROR("Is leaf entry, or not allowed in current SEPT entry - 0x%llx!\n", page_sept_entry_copy.raw);
         goto EXIT;
     }
 
-    // Verify the page entry is blocked (BLOCKED or PENDING_BLOCKED)
-    if (!page_sept_entry_copy.fields_4k.tdb)
-    {
-        TDX_ERROR("GPA range is not blocked\n");
-        return_val = api_error_with_operand_id(TDX_GPA_RANGE_NOT_BLOCKED, OPERAND_ID_RCX);
-        goto EXIT;
-    }
+    // Cleanup leftover ACCEPT_COUNTER bits
+    sept_cleanup_if_pending(&page_sept_entry_copy, page_level_entry);
 
     // Get removed page HPA PAMT entry
     removed_page_pa.raw = leaf_ept_entry_to_hpa(page_sept_entry_copy, page_gpa.raw, page_level_entry);
 
-    removed_page_pamt_entry_ptr = pamt_implicit_get_and_lock(removed_page_pa, (page_size_t)page_level_entry, TDX_LOCK_EXCLUSIVE);
-
-    if (removed_page_pamt_entry_ptr == NULL)
+    if ((return_val = pamt_implicit_get_and_lock(removed_page_pa, (page_size_t)page_level_entry,
+                      TDX_LOCK_EXCLUSIVE, &removed_page_pamt_entry_ptr)) != TDX_SUCCESS)
     {
         TDX_ERROR("Can't acquire lock on removed page pamt entry\n");
-        return_val = api_error_with_operand_id(TDX_OPERAND_BUSY, OPERAND_ID_RCX);
+        return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
         goto EXIT;
     }
 
     removed_page_locked_flag = true;
 
-    // Verify the TLB tacking of the blocked Secure-EPT page has been completed
-    if(!is_tlb_tracked(tdcs_ptr, removed_page_pamt_entry_ptr->bepoch))
+    if (sept_state_is_tlb_tracking_required(page_sept_entry_copy) &&
+        op_state_is_tlb_tracking_required(tdcs_ptr->management_fields.op_state))
     {
-        return_val = api_error_with_operand_id(TDX_TLB_TRACKING_NOT_DONE, OPERAND_ID_RCX);
-        goto EXIT;
+        // The TD may be running and this page must be blocked and tracked before it's removed.
+
+        // Verify the entry is *BLOCKED (originally MAPPED or PENDING)
+        if (!sept_state_is_any_blocked(page_sept_entry_copy))
+        {
+            return_val = api_error_with_operand_id(TDX_GPA_RANGE_NOT_BLOCKED, OPERAND_ID_RCX);
+            set_arch_septe_details_in_vmm_regs(page_sept_entry_copy, gpa_mappings.level, local_data_ptr);
+            TDX_ERROR("Promoted SEPT entry is not blocked - 0x%llx\n", page_sept_entry_copy.raw);
+            goto EXIT;
+        }
+
+        // Check TLB tracking
+        if (!is_tlb_tracked(tdcs_ptr, removed_page_pamt_entry_ptr->bepoch))
+        {
+            TDX_ERROR("Target splitted page TLB tracking not done\n");
+            return_val = api_error_with_operand_id(TDX_TLB_TRACKING_NOT_DONE, OPERAND_ID_RCX);
+            goto EXIT;
+        }
     }
 
     // ALL_CHECKS_PASSED:  The function is guaranteed to succeed
 
-    // Atomically set the removed page Secure-EPT entry to SEPT_FREE
-    page_sept_entry_ptr->raw = SEPTE_INIT_VALUE ;
+    for (uint16_t vm_id = 1; vm_id <= tdcs_ptr->management_fields.num_l2_vms; vm_id++)
+    {
+        if (!sept_state_is_aliased(page_sept_entry_copy, vm_id))
+        {
+            continue;
+        }
+
+        return_val = l2_sept_walk(tdr_ptr, tdcs_ptr, vm_id, page_gpa, &page_level_entry, &l2_sept_entry_ptr);
+        if (return_val != TDX_SUCCESS)
+        {
+            FATAL_ERROR(); // Should not happen - no need to free the L2 SEPT PTR's
+        }
+
+        atomic_mem_write_64b(&l2_sept_entry_ptr->raw, SEPTE_L2_INIT_VALUE);
+
+        free_la(l2_sept_entry_ptr);
+    }
+
+    // Atomically set the removed page Secure-EPT entry to SEPT_FREE or REMOVED (if import is in progress)
+    septe_set_free_or_removed_and_release_locks(&page_sept_entry_copy, tdcs_ptr);
+    atomic_mem_write_64b(&page_sept_entry_ptr->raw, page_sept_entry_copy.raw);
+    septe_locked_flag = false;
 
     // Atomically decrement TDR child count by the amount of removed 4KB pages
-    _lock_xadd_64b(&tdr_ptr->management_fields.chldcnt, -(1 << (9 * page_level_entry)));
+    (void)_lock_xadd_64b(&tdr_ptr->management_fields.chldcnt, -(1 << (9 * page_level_entry)));
 
     // Update the removed page PAMT entry to FREE
     removed_page_pamt_entry_ptr->pt = PT_NDA;
@@ -181,26 +214,35 @@ api_error_type tdh_mem_page_remove(page_info_api_input_t target_page_info, uint6
 
 EXIT:
     // Release all acquired locks and free keyhole mappings
-    if (tdr_locked_flag)
+    if (removed_page_locked_flag)
     {
-        pamt_unwalk(tdr_pa, tdr_pamt_block, tdr_pamt_entry_ptr, TDX_LOCK_SHARED, PT_4KB);
-        free_la(tdr_ptr);
+        pamt_implicit_release_lock(removed_page_pamt_entry_ptr, TDX_LOCK_EXCLUSIVE);
     }
+
+    if (septe_locked_flag)
+    {
+        sept_lock_release(page_sept_entry_ptr);
+    }
+
     if (sept_locked_flag)
     {
-        release_sharex_lock_ex(&tdcs_ptr->executions_ctl_fields.secure_ept_lock);
+        release_sharex_lock_sh(&tdcs_ptr->executions_ctl_fields.secure_ept_lock);
         if (page_sept_entry_ptr != NULL)
         {
             free_la(page_sept_entry_ptr);
         }
     }
+
     if (tdcs_ptr != NULL)
     {
+        release_sharex_lock_hp_sh(&tdcs_ptr->management_fields.op_state_lock);
         free_la(tdcs_ptr);
     }
-    if (removed_page_locked_flag)
+
+    if (tdr_locked_flag)
     {
-        pamt_implicit_release_lock(removed_page_pamt_entry_ptr, TDX_LOCK_EXCLUSIVE);
+        pamt_unwalk(tdr_pa, tdr_pamt_block, tdr_pamt_entry_ptr, TDX_LOCK_SHARED, PT_4KB);
+        free_la(tdr_ptr);
     }
 
     return return_val;

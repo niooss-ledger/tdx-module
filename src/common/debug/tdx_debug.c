@@ -321,7 +321,7 @@ static void common_printf(const char* format, va_list args)
     debug_control_t* p_ctl = &(get_global_data()->debug_control);
     tdx_module_local_t* local_data = get_local_data();
 
-    thread_id = get_current_thread_num();
+    thread_id = get_current_thread_num(get_sysinfo_table(), local_data);
     msg_id = local_data->local_dbg_msg_num++;
 
     // Put a message header (message num and thread num)

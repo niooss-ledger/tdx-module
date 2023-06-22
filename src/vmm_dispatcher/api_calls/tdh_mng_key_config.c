@@ -102,7 +102,7 @@ api_error_type tdh_mng_key_config(uint64_t target_tdr_pa)
     tdr_ptr->key_management_fields.pkg_config_bitmap |= BIT(local_data->lp_info.pkg);
 
     // Check whether the TD keys have been configured on all packages
-    if (tdr_ptr->key_management_fields.pkg_config_bitmap == global_data->pkg_config_bitmap)
+    if (tdr_ptr->key_management_fields.pkg_config_bitmap == (uint64_t)global_data->pkg_config_bitmap)
     {
         tdr_ptr->management_fields.lifecycle_state = (uint8_t)TD_KEYS_CONFIGURED;
     }

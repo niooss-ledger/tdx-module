@@ -36,7 +36,6 @@ api_error_type tdh_vp_flush(uint64_t target_tdvpr_pa)
     pamt_block_t          tdvpr_pamt_block;                     // TDVPR PAMT block
     pamt_entry_t        * tdvpr_pamt_entry_ptr;                 // Pointer to the TDVPR PAMT entry
     bool_t                tdvpr_locked_flag = false;            // Indicate TDVPR is locked
-    page_size_t           tdvpr_leaf_size = PT_4KB;
 
     // TDR related variables
     tdr_t               * tdr_ptr = NULL;                       // Pointer to the TDR page (linear address)
@@ -56,7 +55,6 @@ api_error_type tdh_vp_flush(uint64_t target_tdvpr_pa)
                                                          PT_TDVPR,
                                                          &tdvpr_pamt_block,
                                                          &tdvpr_pamt_entry_ptr,
-                                                         &tdvpr_leaf_size,
                                                          &tdvpr_locked_flag);
     if (return_val != TDX_SUCCESS)
     {
@@ -89,13 +87,16 @@ api_error_type tdh_vp_flush(uint64_t target_tdvpr_pa)
     // Get the TD's ephemeral HKID
     curr_hkid = tdr_ptr->key_management_fields.hkid;
 
+    // Map the TDCS structure and check the state.  No need to lock
+    tdcs_ptr = map_implicit_tdcs(tdr_ptr, TDX_RANGE_RW, false);
+
     // Map the multi-page TDVPS structure
-    tdvps_ptr = map_tdvps(tdvpr_pa, curr_hkid, TDX_RANGE_RW);
+    tdvps_ptr = map_tdvps(tdvpr_pa, curr_hkid, tdcs_ptr->management_fields.num_l2_vms, TDX_RANGE_RW);
 
     if (tdvps_ptr == NULL)
     {
         TDX_ERROR("TDVPS mapping failed\n");
-        return_val = TDX_TDVPX_NUM_INCORRECT;
+        return_val = TDX_TDCX_NUM_INCORRECT;
         goto EXIT;
     }
 
@@ -109,29 +110,29 @@ api_error_type tdh_vp_flush(uint64_t target_tdvpr_pa)
 
     // ALL_CHECKS_PASSED:  The function is guaranteed to succeed
 
-    // Map the TDCS structure and check the state.  No need to lock
-    tdcs_ptr = map_implicit_tdcs(tdr_ptr, TDX_RANGE_RW);
+    // Flush the TLB context and extended paging structure (EPxE) caches associated
+    // with all VMs of the current TD, using INVEPT single-context invalidation (type 1).
 
-    /**
-     *  Flush the TLB context and extended paging structure (EPxE) caches associated
-     *  with the current TD
-     */
-    ept_descriptor_t ept_desc = {.ept = tdcs_ptr->executions_ctl_fields.eptp.raw, .reserved = 0};
-    ia32_invept(&ept_desc, INVEPT_TYPE_1);
+    // Execute INVEPT type 1 for each Secure EPT
+    flush_all_td_asids(tdr_ptr, tdcs_ptr);
 
-    // Flush the cached TD VMCS content to TDVPS using VMCLEAR
-    pa_t vmcs_pa = set_hkid_to_pa((pa_t)tdvps_ptr->management.tdvps_pa[TDVPS_VMCS_PAGE_INDEX], curr_hkid);
+    // Invalidate all soft-translated GPAs
+    invalidate_all_gpa_translations(tdcs_ptr, tdvps_ptr);
 
-    ia32_vmclear((void*)vmcs_pa.raw);
+    // Flush the cached VMCSes contents to TDVPS using VMCLEAR
+    // We didn't do any VMPTRLD of a guest VMCS so no need to set LP.ACTIVE_VMCS to -1. */
+    tdx_debug_assert(local_data_ptr->vp_ctx.active_vmcs == ACTIVE_VMCS_NONE);
 
-    // Mark the guest TD as not launched.  Next VM entry will require VMLAUNCH
-    tdvps_ptr->management.launched = false;
+    for (uint16_t vm_id = 0; vm_id <= tdcs_ptr->management_fields.num_l2_vms; vm_id++)
+    {
+        vmclear_vmcs(tdvps_ptr, vm_id);
+    }
 
     // Mark the VCPU as not associated with any LP
     tdvps_ptr->management.assoc_lpid = (uint32_t)-1;
 
     // Atomically decrement the associated VCPUs counter.
-    _lock_xadd_32b(&(tdcs_ptr->management_fields.num_assoc_vcpus), (uint32_t)-1);
+    (void)_lock_xadd_32b(&(tdcs_ptr->management_fields.num_assoc_vcpus), (uint32_t)-1);
 
     // Make sure the current VCPU is not marked as the last one that ran on this LP
     local_data_ptr->vp_ctx.last_tdvpr_pa.raw = NULL_PA;

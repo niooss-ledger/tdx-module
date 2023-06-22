@@ -50,8 +50,6 @@ void td_ept_violation_exit(vmx_exit_qualification_t exit_qualification, vm_vmexi
 
     ia32_vmread(VMX_GUEST_PHYSICAL_ADDRESS_INFO_FULL_ENCODE, &gpa.raw);
 
-
-
     // Special treatment for GPAW==0 (i.e., SHARED bit is bit 47) and MAX_PA > 48.
     // If any GPA bit between the SHARED bit and bit (MAX_PA-1) is set,
     // and there is a valid guest linear address, morph the EPT_VIOLATION into a #PF exception.
@@ -72,6 +70,15 @@ void td_ept_violation_exit(vmx_exit_qualification_t exit_qualification, vm_vmexi
 
         inject_pf(gla, pfec);
         return;
+    }
+
+    // At this point we're going to do a TD exit. If the GPA is private, log suspected 0-step
+    // attacks that repeatedly cause EPT violations with the same RIP.
+    bool_t shared_bit = get_gpa_shared_bit(gpa.raw, gpaw);
+
+    if (!shared_bit)
+    {
+        td_exit_epf_stepping_log(gpa);
     }
 
     tdx_ept_violation_exit_to_vmm(gpa, vm_exit_reason, exit_qualification.raw, 0);

@@ -36,12 +36,11 @@ void td_xsetbv_instruction_exit(void)
     //   TDX-SEAM injects a #GP(0) to the guest TD.
 
     tdx_module_local_t* tdx_local_data_ptr = get_local_data();
-    tdx_module_global_t* tdx_global_data_ptr = get_global_data();
 
     tdvps_t* tdvps_ptr = tdx_local_data_ptr->vp_ctx.tdvps;
 
     // XCR index must be 0
-    if ((uint32_t)tdvps_ptr->guest_state.rcx != 0)
+    if ((uint32_t)tdvps_ptr->guest_state.gpr_state.rcx != 0)
     {
         inject_gp(0);
         return;
@@ -50,29 +49,7 @@ void td_xsetbv_instruction_exit(void)
     ia32_xcr0_t xcr0;
     xcr0.raw = (tdx_local_data_ptr->td_regs.rdx << 32) | (tdx_local_data_ptr->td_regs.rax & BITS(31,0));
 
-    // Check that any bit that is set to 1 is supported by XCR0 and XFAM.  Note that CPU
-    // support has been enumerated on TDHSYSINIT and used to verify XFAM on TDHMNGINIT.
-    if ((xcr0.raw &
-            ~(((uint64_t)tdx_global_data_ptr->xcr0_supported_mask) &
-                tdvps_ptr->management.xfam)) != 0)
-    {
-        inject_gp(0);
-        return;
-    }
-
-    // XCR0[0] is always 1
-    if (!xcr0.x87_fpu_mmx)
-    {
-        inject_gp(0);
-        return;
-    }
-
-    // Check that all bit combinations are allowed
-    if ((!xcr0.sse && xcr0.avx) ||
-        (xcr0.avx3_kmask && !xcr0.avx) ||
-        (xcr0.avx3_kmask != xcr0.avx3_zmm_hi) ||
-        (xcr0.avx3_kmask != xcr0.avx3_zmm) ||
-        (xcr0.amx_xtilecfg != xcr0.amx_xtiledata))
+    if (!check_guest_xcr0_value(xcr0, tdx_local_data_ptr->vp_ctx.xfam))
     {
         inject_gp(0);
         return;
@@ -83,7 +60,5 @@ void td_xsetbv_instruction_exit(void)
     -----------------------------------------------------*/
 
     ia32_xsetbv(0, xcr0.raw);
-
-    tdx_local_data_ptr->vp_ctx.tdvps->guest_state.xcr0 = xcr0.raw;
 }
 

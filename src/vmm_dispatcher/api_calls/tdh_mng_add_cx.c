@@ -1,9 +1,9 @@
-// Intel Proprietary 
-// 
+// Intel Proprietary
+//
 // Copyright 2021 Intel Corporation All Rights Reserved.
-// 
+//
 // Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
+//
 // The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
 // of merchantability, non-infringement, title, or fitness for a particular purpose.
 
@@ -39,8 +39,9 @@ api_error_type tdh_mng_add_cx(uint64_t target_tdcx_pa, uint64_t target_tdr_pa)
     pamt_block_t          tdr_pamt_block;            // TDR PAMT block
     pamt_entry_t        * tdr_pamt_entry_ptr;        // Pointer to the TDR PAMT entry
     bool_t                tdr_locked_flag = false;   // Indicate TDR is locked
+    tdcs_t              * tdcs_p = NULL;
 
-    uint64_t              tdcx_index_num;
+    uint32_t              tdcx_index_num;
 
     api_error_type        return_val = UNINITIALIZE_ERROR;
 
@@ -78,18 +79,11 @@ api_error_type tdh_mng_add_cx(uint64_t target_tdcx_pa, uint64_t target_tdr_pa)
         goto EXIT;
     }
 
-    if (tdr_ptr->management_fields.init)
-    {
-        TDX_ERROR("TDR state already initialized\n");
-        return_val = TDX_TD_INITIALIZED;
-        goto EXIT;
-    }
-
     // Get the current number of TDCS pages and verify
-    tdcx_index_num = (uint64_t)tdr_ptr->management_fields.num_tdcx;
+    tdcx_index_num = tdr_ptr->management_fields.num_tdcx;
     if (tdcx_index_num > (MAX_NUM_TDCS_PAGES-1))
     {
-        TDX_ERROR("Number of TDCS pages (%llu) exceeds the allowed count (%d)\n", tdcx_index_num, MAX_NUM_TDCS_PAGES-1);
+        TDX_ERROR("Number of TDCS pages (%lu) exceeds the allowed count (%d)\n", tdcx_index_num, MAX_NUM_TDCS_PAGES-1);
         return_val = TDX_TDCX_NUM_INCORRECT;
         goto EXIT;
     }
@@ -130,12 +124,46 @@ api_error_type tdh_mng_add_cx(uint64_t target_tdcx_pa, uint64_t target_tdr_pa)
     }
     else
     {
-        zero_area_cacheline(tdcx_ptr, TDX_PAGE_SIZE_IN_BYTES);
+        fill_area_cacheline(tdcx_ptr, TDX_PAGE_SIZE_IN_BYTES, SEPTE_L2_INIT_VALUE);
+    }
+
+    if ((tdcx_index_num + 1) >= MIN_NUM_TDCS_PAGES)
+    {
+        // With the new page, we have enough TDCS pages to do some initializations and checks.
+
+        // Map the TDCS structure and check the state.
+        tdcs_p = map_implicit_tdcs(tdr_ptr, TDX_RANGE_RW, false);
+
+        if ((tdcx_index_num + 1) == MIN_NUM_TDCS_PAGES)
+        {
+            tdcs_p->management_fields.op_state = OP_STATE_UNINITIALIZED;
+
+            // Generate a 256-bit encryption key for the next migration session
+            if (!generate_256bit_random(&tdcs_p->migration_fields.mig_enc_key))
+            {
+                TDX_ERROR("migration encryption key generation failed\n");
+                return_val = TDX_RND_NO_ENTROPY;
+                goto EXIT;
+            }
+        }
+        else
+        {
+            // We have more than the minimum number of TDCS pages.
+            // OP_STATE is now available; check it.
+            if (!op_state_is_seamcall_allowed(TDH_MNG_ADDCX_LEAF, tdcs_p->management_fields.op_state, false))
+            {
+                TDX_ERROR("Current OP state is incorrect %d\n", tdcs_p->management_fields.op_state);
+                return_val = TDX_OP_STATE_INCORRECT;
+                goto EXIT;
+            }
+        }
     }
 
     // Register the new TDCS page in its parent TDR
-    tdr_ptr->management_fields.tdcx_pa[tdcx_index_num] = tdcx_pa.raw;
-    tdr_ptr->management_fields.num_tdcx = (uint32_t)(tdcx_index_num + 1);
+    tdr_ptr->management_fields.tdcx_pa[tdcx_index_num] = assign_hkid_to_hpa(tdr_ptr, tdcx_pa).raw;
+    tdr_ptr->management_fields.num_tdcx = (tdcx_index_num + 1);
+
+    // Complete new TDCX page registration in its parent TDR
     tdr_ptr->management_fields.chldcnt++;
 
     // Set the new TDCS page PAMT fields
@@ -143,6 +171,10 @@ api_error_type tdh_mng_add_cx(uint64_t target_tdcx_pa, uint64_t target_tdr_pa)
     set_pamt_entry_owner(tdcx_pamt_entry_ptr, tdr_pa);
 
 EXIT:
+    if (tdcs_p)
+    {
+        free_la(tdcs_p);
+    }
     // Release all acquired locks and free keyhole mappings
     if (tdr_locked_flag)
     {

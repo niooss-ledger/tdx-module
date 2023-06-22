@@ -62,20 +62,13 @@ api_error_type tdh_vp_create(uint64_t target_tdvpr_pa, uint64_t target_tdr_pa)
         goto EXIT;
     }
 
-    // Check the TD state
-    if ((return_val = check_td_in_correct_build_state(tdr_ptr)) != TDX_SUCCESS)
-    {
-        TDX_ERROR("TD is not in build state - error = %llx\n", return_val);
-        goto EXIT;
-    }
+    // Map the TDCS structure and check the state
+    return_val = check_state_map_tdcs_and_lock(tdr_ptr, TDX_RANGE_RW, TDX_LOCK_SHARED,
+                                               false, TDH_VP_CREATE_LEAF, &tdcs_ptr);
 
-    // Map the TDCS structure and check the state. No need to lock
-    tdcs_ptr = map_implicit_tdcs(tdr_ptr, TDX_RANGE_RO);
-
-    if (tdcs_ptr->management_fields.finalized)
+    if (return_val != TDX_SUCCESS)
     {
-        TDX_ERROR("TD is already finalized\n");
-        return_val = TDX_TD_FINALIZED;
+        TDX_ERROR("State check or TDCS lock failure - error = %llx\n", return_val);
         goto EXIT;
     }
 
@@ -106,11 +99,12 @@ api_error_type tdh_vp_create(uint64_t target_tdvpr_pa, uint64_t target_tdr_pa)
      * Fields which are initialized to zero are implicitly zero'd in the
      * previous state.
      */
+    tdvps_ptr->management.num_tdvps_pages = 1;
     tdvps_ptr->management.assoc_lpid = (uint32_t)-1;
-    tdvps_ptr->management.tdvps_pa[0] = tdvpr_pa.raw;
+    tdvps_ptr->management.tdvps_pa[0] = assign_hkid_to_hpa(tdr_ptr, tdvpr_pa).raw;
 
     // Register the new TDVPR page in its owner TDR
-    _lock_xadd_64b(&(tdr_ptr->management_fields.chldcnt), 1);
+    (void)_lock_xadd_64b(&(tdr_ptr->management_fields.chldcnt), 1);
 
     // Set the new TDVPR page PAMT fields
     tdvpr_pamt_entry_ptr->pt = PT_TDVPR;
@@ -118,20 +112,24 @@ api_error_type tdh_vp_create(uint64_t target_tdvpr_pa, uint64_t target_tdr_pa)
 
 EXIT:
     // Release all acquired locks and free keyhole mappings
-    if (tdr_locked_flag)
-    {
-        pamt_unwalk(tdr_pa, tdr_pamt_block, tdr_pamt_entry_ptr, TDX_LOCK_SHARED, PT_4KB);
-        free_la(tdr_ptr);
-    }
-    if (tdcs_ptr != NULL)
-    {
-        free_la(tdcs_ptr);
-    }
     if (tdvpr_locked_flag)
     {
         pamt_unwalk(tdvpr_pa, tdvpr_pamt_block, tdvpr_pamt_entry_ptr, TDX_LOCK_EXCLUSIVE, PT_4KB);
         free_la(tdvps_ptr);
     }
+
+    if (tdcs_ptr != NULL)
+    {
+        release_sharex_lock_hp_sh(&tdcs_ptr->management_fields.op_state_lock);
+        free_la(tdcs_ptr);
+    }
+
+    if (tdr_locked_flag)
+    {
+        pamt_unwalk(tdr_pa, tdr_pamt_block, tdr_pamt_entry_ptr, TDX_LOCK_SHARED, PT_4KB);
+        free_la(tdr_ptr);
+    }
+
     return return_val;
 }
 

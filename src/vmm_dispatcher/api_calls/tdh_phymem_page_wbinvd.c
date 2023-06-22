@@ -30,7 +30,6 @@ api_error_type tdh_phymem_page_wbinvd(uint64_t tdmr_page_pa)
     pamt_block_t          page_wbinvd_pamt_block;                 // Page PAMT block
     pamt_entry_t        * page_wbinvd_pamt_entry_ptr = NULL;      // Pointer to the page PAMT entry
     bool_t                page_wbinvd_locked_flag = false;        // Indicate PAMT of page is locked
-    page_size_t           page_wbinvd_leaf_size;                  // Page size
     uint16_t              curr_hkid;                              // HKID taken from the page physical address
 
     api_error_type        return_val = UNINITIALIZE_ERROR;
@@ -46,7 +45,6 @@ api_error_type tdh_phymem_page_wbinvd(uint64_t tdmr_page_pa)
                                                          PT_NDA,
                                                          &page_wbinvd_pamt_block,
                                                          &page_wbinvd_pamt_entry_ptr,
-                                                         &page_wbinvd_leaf_size,
                                                          &page_wbinvd_locked_flag);
 
     if (return_val != TDX_SUCCESS)
@@ -71,7 +69,7 @@ EXIT:
                     page_wbinvd_pamt_block,
                     page_wbinvd_pamt_entry_ptr,
                     TDX_LOCK_SHARED,
-                    page_wbinvd_leaf_size);
+                    PT_4KB);
         if (page_wbinvd_ptr != NULL)
         {
             free_la(page_wbinvd_ptr);

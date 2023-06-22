@@ -27,7 +27,7 @@ _STATIC_INLINE_ uint64_t la_from_keyhole_idx(uint16_t keyhole_idx)
     tdx_debug_assert(keyhole_idx < MAX_KEYHOLE_PER_LP);
 
     return get_sysinfo_table()->keyhole_rgn_base +
-            (uint64_t)((get_local_data()->lp_info.lp_id * MAX_KEYHOLE_PER_LP + keyhole_idx) * 0x1000);
+            (((uint64_t)get_local_data()->lp_info.lp_id * MAX_KEYHOLE_PER_LP + keyhole_idx) * (uint64_t)0x1000);
 }
 
 _STATIC_INLINE_ uint16_t keyhole_idx_from_la(uint64_t la)
@@ -242,9 +242,7 @@ void init_keyhole_state(void)
     keyhole_state->lru_head = MAX_CACHEABLE_KEYHOLES - 1;
     keyhole_state->lru_tail = 0;
 
-#ifdef DEBUG
     keyhole_state->total_ref_count = 0;
-#endif
 }
 
 static void* map_pa_with_memtype(void* pa, mapping_type_t mapping_type, bool_t is_wb_memtype)
@@ -255,11 +253,9 @@ static void* map_pa_with_memtype(void* pa, mapping_type_t mapping_type, bool_t i
     // Search the requested PA first, if it's mapped or cached
     uint16_t keyhole_idx = hash_table_find_entry((uint64_t)pa, is_writable, is_wb_memtype, NULL);
 
-#ifdef DEBUG
     // Increment the total ref count and check for overflow
     keyhole_state->total_ref_count += 1;
-    tdx_debug_assert(keyhole_state->total_ref_count != 0);
-#endif
+    tdx_sanity_check(keyhole_state->total_ref_count != 0, SCEC_KEYHOLE_MANAGER_SOURCE, 0);
 
     // Requested PA is already mapped/cached
     if (keyhole_idx != UNDEFINED_IDX)
@@ -274,6 +270,9 @@ static void* map_pa_with_memtype(void* pa, mapping_type_t mapping_type, bool_t i
         }
         keyhole_state->keyhole_array[keyhole_idx].ref_count += 1;
 
+        // Check ref count overflow
+        tdx_sanity_check(keyhole_state->keyhole_array[keyhole_idx].ref_count != 0, SCEC_KEYHOLE_MANAGER_SOURCE, 1);
+
         // Protection against speculative attacks on sensitive physical addresses
         lfence();
 
@@ -286,7 +285,7 @@ static void* map_pa_with_memtype(void* pa, mapping_type_t mapping_type, bool_t i
     keyhole_idx = keyhole_state->lru_tail;
 
     // Check if there any available keyholes left, otherwise - kill the module
-    tdx_sanity_check(keyhole_idx != UNDEFINED_IDX, SCEC_KEYHOLE_MANAGER_SOURCE, 0);
+    tdx_sanity_check(keyhole_idx != UNDEFINED_IDX, SCEC_KEYHOLE_MANAGER_SOURCE, 2);
 
     keyhole_entry_t* target_keyhole = &keyhole_state->keyhole_array[keyhole_idx];
 
@@ -310,7 +309,7 @@ static void* map_pa_with_memtype(void* pa, mapping_type_t mapping_type, bool_t i
     target_keyhole->mapped_pa = PG_START((uint64_t)pa);
     target_keyhole->is_writable = is_writable;
     target_keyhole->is_wb_memtype = is_wb_memtype;
-    target_keyhole->ref_count += 1;
+    target_keyhole->ref_count = 1;
 
     hash_table_insert_entry((uint64_t)pa, keyhole_idx);
     fill_keyhole_pte(keyhole_idx, (uint64_t)pa, is_writable, is_wb_memtype);
@@ -343,20 +342,19 @@ void free_la(void* la)
     keyhole_state_t* keyhole_state = &get_local_data()->keyhole_state;
     uint16_t keyhole_idx = keyhole_idx_from_la((uint64_t)la);
 
-    if (keyhole_idx >= MAX_CACHEABLE_KEYHOLES ||
-        keyhole_state->keyhole_array[keyhole_idx].state == KH_ENTRY_FREE ||
-        keyhole_state->keyhole_array[keyhole_idx].state == KH_ENTRY_CAN_BE_REMOVED)
+    tdx_sanity_check((keyhole_state->keyhole_array[keyhole_idx].state != KH_ENTRY_FREE) &&
+                     (keyhole_state->keyhole_array[keyhole_idx].state != KH_ENTRY_CAN_BE_REMOVED),
+                     SCEC_KEYHOLE_MANAGER_SOURCE, 3);
+
+    if (keyhole_idx >= MAX_CACHEABLE_KEYHOLES)
     {
         return;
     }
 
-    tdx_sanity_check(keyhole_state->keyhole_array[keyhole_idx].ref_count > 0, SCEC_KEYHOLE_MANAGER_SOURCE, 1);
+    tdx_sanity_check((keyhole_state->total_ref_count > 0) &&
+                     (keyhole_state->keyhole_array[keyhole_idx].ref_count > 0), SCEC_KEYHOLE_MANAGER_SOURCE, 4);
 
-#ifdef DEBUG    
-    tdx_debug_assert(keyhole_state->total_ref_count > 0);
     keyhole_state->total_ref_count -= 1;
-#endif
-
     keyhole_state->keyhole_array[keyhole_idx].ref_count -= 1;
 
     if (keyhole_state->keyhole_array[keyhole_idx].ref_count == 0)

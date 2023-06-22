@@ -47,7 +47,6 @@ api_error_type tdh_mr_extend(uint64_t target_page_gpa, uint64_t target_tdr_pa)
     ia32e_sept_t        * page_sept_entry_ptr = NULL; // SEPT entry of the page
     ia32e_sept_t          page_sept_entry_copy;       // Cached SEPT entry of the page
     ept_level_t           page_level_entry = LVL_PT; // SEPT entry level of the page
-    bool_t                sept_locked_flag = false;  // Indicate SEPT is locked
 
     uint128_t             xmms[16];                  // SSE state backup for crypto
     sha384_128B_block_t   sha_gpa_update_block = {.block_qword_buffer = {0}};
@@ -77,19 +76,13 @@ api_error_type tdh_mr_extend(uint64_t target_page_gpa, uint64_t target_tdr_pa)
         goto EXIT;
     }
 
-    // Check the TD state
-    if ((return_val = check_td_in_correct_build_state(tdr_ptr)) != TDX_SUCCESS)
-    {
-        TDX_ERROR("TD is not in build state - error = %lld\n", return_val);
-        goto EXIT;
-    }
+    // Map the TDCS structure and check the state
+    return_val = check_state_map_tdcs_and_lock(tdr_ptr, TDX_RANGE_RW, TDX_LOCK_NO_LOCK,
+                                               false, TDH_MR_EXTEND_LEAF, &tdcs_ptr);
 
-    // Map the TDCS structure and check the state.  No need to lock
-    tdcs_ptr = map_implicit_tdcs(tdr_ptr, TDX_RANGE_RW);
-    if (tdcs_ptr->management_fields.finalized)
+    if (return_val != TDX_SUCCESS)
     {
-        TDX_ERROR("TD is already finalized\n");
-        return_val = TDX_TD_FINALIZED;
+        TDX_ERROR("State check or TDCS lock failure - error = %llx\n", return_val);
         goto EXIT;
     }
 
@@ -101,48 +94,40 @@ api_error_type tdh_mr_extend(uint64_t target_page_gpa, uint64_t target_tdr_pa)
         goto EXIT;
     }
 
-    // Check GPA, lock SEPT and walk to find entry
-    return_val = lock_sept_check_and_walk_private_gpa(tdcs_ptr,
-                                                      OPERAND_ID_RCX,
-                                                      page_gpa,
-                                                      tdr_ptr->key_management_fields.hkid,
-                                                      TDX_LOCK_SHARED,
-                                                      &page_sept_entry_ptr,
-                                                      &page_level_entry,
-                                                      &page_sept_entry_copy,
-                                                      &sept_locked_flag);
+    // SEPT tree is implicitly locked in exclusive mode, since TDR is exclusively locked
 
-    if (return_val == api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RCX) ||
-            return_val == api_error_with_operand_id(TDX_OPERAND_BUSY, OPERAND_ID_SEPT))
+    // Check GPA, don't lock SEPT and walk to find entry
+    return_val = check_and_walk_private_gpa_to_leaf(tdcs_ptr,
+                                                    OPERAND_ID_RCX,
+                                                    page_gpa,
+                                                    tdr_ptr->key_management_fields.hkid,
+                                                    &page_sept_entry_ptr,
+                                                    &page_level_entry,
+                                                    &page_sept_entry_copy);
+
+    if (return_val != TDX_SUCCESS)
     {
-        TDX_ERROR("Failed on GPA check or SEPT lock - error = %llx\n", return_val);
+        if (return_val == api_error_with_operand_id(TDX_EPT_WALK_FAILED, OPERAND_ID_RCX))
+        {
+            // Update output register operands
+            return_val = api_error_with_operand_id(TDX_EPT_ENTRY_NOT_PRESENT, OPERAND_ID_RCX);
+            set_arch_septe_details_in_vmm_regs(page_sept_entry_copy, page_level_entry, local_data_ptr);
+            TDX_ERROR("Failed on SEPT walk - error = %lld\n", return_val);
+        }
+
+        TDX_ERROR("Failed on GPA check or any other error = %llx\n", return_val);
         goto EXIT;
     }
 
-    /*
-     * Walk failed only if it did not find a leaf entry.
-     * If we did find a leaf entry, we don't care if it's at 4K, 2M or 1G level.
-     **/
-    if (return_val == api_error_with_operand_id(TDX_EPT_WALK_FAILED, OPERAND_ID_RCX) &&
-            !is_ept_leaf_entry(&page_sept_entry_copy, page_level_entry))
+    // Verify the EPT entry state is MAPPED
+    if (!sept_state_is_seamcall_leaf_allowed(TDH_MR_EXTEND_LEAF, page_sept_entry_copy))
     {
-        // Update output register operands
-        set_arch_septe_details_in_vmm_regs(page_sept_entry_copy, page_level_entry, local_data_ptr);
-        TDX_ERROR("Failed on SEPT walk - error = %llx\n", return_val);
-        goto EXIT;
-    }
-
-    // Verify the Secure EPT entry state
-    if (get_sept_entry_state(&page_sept_entry_copy, page_level_entry) != SEPTE_PRESENT)
-    {
-        // Update output register operands
-        set_arch_septe_details_in_vmm_regs(page_sept_entry_copy, page_level_entry, local_data_ptr);
-        return_val = api_error_with_operand_id(TDX_EPT_ENTRY_NOT_PRESENT, OPERAND_ID_RCX);
+        return_val = TDX_EPT_ENTRY_NOT_PRESENT;
         TDX_ERROR("EPT entry is not present %llx\n", return_val);
         goto EXIT;
     }
 
-    // Calculate HPA at 4KB resolution from SEPT page entry by inserting GPA bits 30:12 (for 1G) or 21:12 (for 2M)
+    // Calculate HPA from SEPT page entry and GPA offset
     page_hpa.raw = leaf_ept_entry_to_hpa(page_sept_entry_copy, page_gpa.raw, page_level_entry);
 
     // Map the page to measure
@@ -194,13 +179,9 @@ EXIT:
         pamt_unwalk(tdr_pa, tdr_pamt_block, tdr_pamt_entry_ptr, TDX_LOCK_EXCLUSIVE, PT_4KB);
         free_la(tdr_ptr);
     }
-    if (sept_locked_flag)
+    if (page_sept_entry_ptr != NULL)
     {
-        release_sharex_lock_sh(&tdcs_ptr->executions_ctl_fields.secure_ept_lock);
-        if (page_sept_entry_ptr != NULL)
-        {
-            free_la(page_sept_entry_ptr);
-        }
+        free_la(page_sept_entry_ptr);
     }
     if (tdcs_ptr != NULL)
     {

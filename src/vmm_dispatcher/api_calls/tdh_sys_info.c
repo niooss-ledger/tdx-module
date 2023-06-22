@@ -100,14 +100,14 @@ api_error_type tdh_sys_info(uint64_t tdhsysinfo_output_pa,
     tdhsysinfo_output_la->build_num = TDX_MODULE_BUILD_NUM;
     tdhsysinfo_output_la->minor_version = TDX_MODULE_MINOR_VER;
     tdhsysinfo_output_la->major_version = TDX_MODULE_MAJOR_VER;
-
+    tdhsysinfo_output_la->sys_rd = true; // Indicate that TDH.SYS.RD* should be used
     tdhsysinfo_output_la->max_tdmrs = MAX_TDMRS;
     tdhsysinfo_output_la->max_reserved_per_tdmr = MAX_RESERVED_AREAS; //MAX_RESERVED_PER_TDMR;
     tdhsysinfo_output_la->pamt_entry_size = sizeof(pamt_entry_t);
 
-    tdhsysinfo_output_la->tdcs_base_size = _4KB * MAX_NUM_TDCS_PAGES; //_4KB * TDCS_PAGES;
+    tdhsysinfo_output_la->tdcs_base_size = _4KB * MIN_NUM_TDCS_PAGES; //_4KB * TDCS_PAGES;
 
-    tdhsysinfo_output_la->tdvps_base_size = _4KB * MAX_TDVPS_PAGES; //_4KB * TDVPS_PAGES;
+    tdhsysinfo_output_la->tdvps_base_size = _4KB * MIN_TDVPS_PAGES; //_4KB * TDVPS_PAGES;
 
     tdhsysinfo_output_la->tdvps_xfam_dependent_size = false;
 

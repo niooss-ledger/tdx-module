@@ -16,7 +16,7 @@
 
 
 #include "tdx_api_defs.h"
-
+#include "helpers/service_td.h"
 
 /**
  * @brief Add a 4KB private page to a TD.
@@ -46,14 +46,16 @@ api_error_type tdh_mem_page_add(page_info_api_input_t gpa_page_info,
  * @note
  *
  * @param sept_level_and_gpa Level and to-be-mapped GPA of the Secure EPT page
- * @param tdr_pa Host physical address of the parent TDR page
+ * @param target_tdr_and_flags Host physical address of the parent TDR page and additional flags
  * @param sept_page_pa Host physical address of the new Secure EPT page to be added to the TD
+ * @param version Version of the API
  *
  * @return Success or Error type
  */
 api_error_type tdh_mem_sept_add(page_info_api_input_t sept_level_and_gpa,
-                           uint64_t tdr_pa,
-                           uint64_t sept_page_pa);
+                                td_handle_and_flags_t target_tdr_and_flags,
+                                uint64_t sept_page_pa,
+                                uint64_t version);
 
 
 /**
@@ -74,12 +76,12 @@ api_error_type tdh_mng_add_cx(uint64_t tdcx_pa, uint64_t tdr_pa);
  *
  * @note
  *
- * @param tdvpx_pa The physical address of a page where the TDVPX page will be added
+ * @param tdcx_pa The physical address of a page where the TDCX page will be added
  * @param tdvpr_pa The physical address of a TDVPR page
  *
  * @return Success or Error type
  */
-api_error_type tdh_vp_addcx(uint64_t tdvpx_pa, uint64_t tdvpr_pa);
+api_error_type tdh_vp_addcx(uint64_t tdcx_pa, uint64_t tdvpr_pa);
 
 
 /**
@@ -177,7 +179,7 @@ api_error_type tdh_vp_create(uint64_t target_tdvpr_pa, uint64_t tdr_pa);
  *
  * @return Success or Error type
  */
-api_error_type tdh_mng_rd(uint64_t tdr_pa, uint64_t field_code);
+api_error_type tdh_mng_rd(uint64_t target_tdr_pa, uint64_t requested_field_code, uint64_t version);
 
 
 /**
@@ -200,11 +202,11 @@ api_error_type tdh_mem_rd(uint64_t aligned_page_pa, uint64_t target_tdr_pa);
  * @param tdr_pa The physical address of a TDR page
  * @param field_code Field access code
  * @param data Data to write to the field
- * @param wr_request_mask 64b write mask to indicate which bits of the value in R8 are to be written to the field
  *
  * @return Success or Error type
  */
-api_error_type tdh_mng_wr(uint64_t tdr_pa, uint64_t field_code, uint64_t data, uint64_t wr_request_mask);
+api_error_type tdh_mng_wr(uint64_t target_tdr_pa, uint64_t requested_field_code,
+                          uint64_t wr_data, uint64_t wr_mask);
 
 
 /**
@@ -226,14 +228,12 @@ api_error_type tdh_mem_wr(uint64_t aligned_page_pa, uint64_t target_tdr_pa, uint
  * @note
  *
  * @param page_info Level and GPA of the page to be split
- * @param tdr_pa Host physical address of the parent TDR page
- * @param sept_pa Host physical address of the new Secure EPT page to be added to the TD
+ * @param target_tdr_and_flags Host physical address of the parent TDR page and flags
  *
  * @return Success or Error type
  */
 api_error_type tdh_mem_page_demote(page_info_api_input_t page_info,
-                              uint64_t tdr_pa,
-                              uint64_t sept_pa);
+                              td_handle_and_flags_t target_tdr_and_flags);
 
 
 /**
@@ -343,10 +343,11 @@ api_error_type tdh_vp_init(uint64_t tdvpr_pa, uint64_t td_vcpu_rcx);
  *
  * @param page_info Level and GPA of the page to be merged
  * @param tdr_pa Host physical address of the parent TDR page
+ * @param version API version
  *
  * @return Success or Error type
  */
-api_error_type tdh_mem_page_promote(page_info_api_input_t page_info, uint64_t tdr_pa);
+api_error_type tdh_mem_page_promote(page_info_api_input_t page_info, uint64_t tdr_pa, uint64_t version);
 
 
 /**
@@ -384,7 +385,7 @@ api_error_type tdh_mem_sept_rd(page_info_api_input_t sept_page_info, uint64_t td
  *
  * @return Success or Error type
  */
-api_error_type tdh_vp_rd(uint64_t tdvpr_pa, td_ctrl_struct_field_code_t field_code);
+api_error_type tdh_vp_rd(uint64_t tdvpr_pa, md_field_id_t field_code, uint64_t version);
 
 
 /**
@@ -433,10 +434,11 @@ api_error_type tdh_mem_page_remove(page_info_api_input_t page_info, uint64_t tdr
  *
  * @param sept_page_info Level and GPA of the to-be-removed SEPT page
  * @param tdr_pa Host physical address of the parent TDR page
+ * @param version Version of the API
  *
  * @return Success or Error type
  */
-api_error_type tdh_mem_sept_remove(page_info_api_input_t sept_page_info, uint64_t tdr_pa);
+api_error_type tdh_mem_sept_remove(page_info_api_input_t sept_page_info, uint64_t tdr_pa, uint64_t version);
 
 
 /**
@@ -482,6 +484,28 @@ api_error_type tdh_sys_info(uint64_t tdhsysinfo_output_pa,
                            uint64_t cmr_info_pa,
                            uint64_t num_of_cmr_info_entries);
 
+/**
+ * @brief Read a TDX Module global-scope metadata field
+ *
+ * @note
+ *
+ * @param field_id FIELD ID to read
+ *
+ * @return Success or Error type
+ */
+api_error_type tdh_sys_rd(md_field_id_t field_id);
+
+/**
+ * @brief Read all host-readable TDX Module global-scope metadata fields
+ *
+ * @note
+ *
+ * @param md_list_hpa Physical address of output metadata list
+ * @param field_id FIELD ID to read
+ *
+ * @return Success or Error type
+ */
+api_error_type tdh_sys_rdall(uint64_t md_list_hpa, md_field_id_t field_id);
 
 /**
  * @brief Globally initialize the TDX-SEAM module.
@@ -590,9 +614,230 @@ api_error_type tdh_phymem_page_wbinvd(uint64_t tdmr_page_pa);
  * @return Success or Error type
  */
 api_error_type tdh_vp_wr(uint64_t tdvpr_pa,
-                         td_ctrl_struct_field_code_t field_code,
+                         md_field_id_t field_code,
                          uint64_t wr_data,
                          uint64_t wr_mask);
 
+/**
+ * @brief
+ *
+ * @return Success or Error type
+ */
+api_error_type tdh_servtd_bind(uint64_t target_tdr_pa, uint64_t servtd_tdr, uint64_t servtd_slot,
+        uint64_t servtd_type_raw, servtd_attributes_t servtd_attr);
+
+/**
+ * @brief
+ *
+ * @return Success or Error type
+ */
+api_error_type tdh_servtd_prebind(uint64_t target_tdr_pa, uint64_t servtd_info_hash, uint64_t servtd_slot,
+        uint64_t servtd_type_raw, servtd_attributes_t servtd_attr);
+
+/**
+ * @brief
+ *
+ * @return Success or Error type
+ */
+api_error_type tdh_export_abort(uint64_t target_tdr_pa, uint64_t hpa_and_size_pa,
+                                uint64_t mig_stream_indx);
+
+/**
+ * @brief
+ *
+ * @return Success or Error type
+ */
+api_error_type tdh_export_state_td(uint64_t target_tdr_pa, uint64_t hpa_and_size_pa,
+                                   uint64_t page_or_list_pa, uint64_t  migs_i_and_cmd_pa);
+
+/**
+ * @brief
+ *
+ * @return Success or Error type
+ */
+api_error_type tdh_export_state_immutable(uint64_t target_tdr_pa, uint64_t hpa_and_size_pa,
+        uint64_t page_or_list_pa, uint64_t  migs_i_and_cmd_pa);
+
+/**
+ * @brief
+ *
+ * @return Success or Error type
+ */
+api_error_type tdh_import_state_immutable(uint64_t target_tdr_pa, uint64_t hpa_and_size_pa,
+        uint64_t page_or_list_pa, uint64_t  migs_i_and_cmd_pa);
+
+/**
+ * @brief
+ *
+ * @return Success or Error type
+ */
+api_error_type tdh_mig_stream_create(uint64_t migsc_pa, uint64_t target_tdr_pa);
+
+/**
+ * @brief
+ *
+ * @return Success or Error type
+ */
+api_error_type tdh_export_state_vp(uint64_t target_tdvpr_pa, uint64_t hpa_and_size_pa,
+                                   uint64_t page_or_list_pa, uint64_t  migs_i_and_cmd_pa);
+
+/**
+ * @brief
+ *
+ * @return Success or Error type
+ */
+api_error_type tdh_import_state_td(uint64_t target_tdr_pa, uint64_t hpa_and_size_pa,
+                                   uint64_t page_or_list_pa, uint64_t  migs_i_and_cmd_pa);
+
+/**
+ * @brief
+ *
+ * @return Success or Error type
+ */
+api_error_type tdh_import_state_vp(uint64_t target_tdvpr_pa, uint64_t hpa_and_size_pa,
+                                   uint64_t page_or_list_pa, uint64_t  migs_i_and_cmd_pa);
+
+/**
+ * @brief
+ *
+ * @return Success or Error type
+ */
+api_error_type tdh_export_track(uint64_t target_tdr_pa, uint64_t hpa_and_size_pa, uint64_t idx_and_cmd);
+
+/**
+ * @brief
+ *
+ * @return Success or Error type
+ */
+api_error_type tdh_import_track(uint64_t target_tdr_pa, uint64_t hpa_and_size_pa, uint64_t idx_and_cmd);
+
+/**
+ * @brief
+ *
+ * @return Success or Error type
+ */
+api_error_type tdh_export_pause(uint64_t target_tdr_pa);
+
+
+/**
+ * @brief API handler for TDH_EXPORT_MEM_LEAF
+ *
+ * @param gpa_list_info - HPA of a GPA list page
+ * @param target_tdr_pa - HPA of the TDR
+ * @param hpa_and_size_pa - HPA and size of the mbmd page
+ * @param mig_buff_list_pa_val - HPA (including HKID bits) of a migration buffer list
+ * @param migs_i_and_cmd_val - Migration stream index and command
+ * @param mac_list_0_pa - HPA (including HKID bits) of a MAC list
+ * @param mac_list_1_pa - HPA (including HKID bits) of a MAC list
+ *
+ * @return  Success or Error type
+ */
+api_error_type tdh_export_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr_pa, uint64_t hpa_and_size_pa,
+                              uint64_t mig_buff_list_pa_val, uint64_t migs_i_and_cmd_val,
+                              uint64_t  mac_list_0_pa, uint64_t  mac_list_1_pa);
+
+/**
+ * @brief API handler for TDH_IMPORT_MEM_LEAF
+ *
+ * @param gpa_list_info - HPA of a GPA list page
+ * @param target_tdr_pa - HPA of the TDR
+ * @param hpa_and_size_pa - HPA and size of the mbmd page
+ * @param mig_buff_list_pa_val - HPA (including HKID bits) of a migration buffer list
+ * @param migs_i_and_cmd_pa - Migration stream index and command
+ * @param mac_list_0_pa - HPA (including HKID bits) of a MAC list
+ * @param mac_list_1_pa - HPA (including HKID bits) of a MAC list
+ * @param new_page_list_pa_val - HPA (including HKID bits) of a destination page if in-place import is not requested,
+ *                               otherwise, should be set to NULL_PA (all 1's).
+ *
+ * @return  Success or Error type
+ */
+api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr_pa, uint64_t hpa_and_size_pa,
+                              uint64_t mig_buff_list_pa_val, uint64_t migs_i_and_cmd_pa, uint64_t mac_list_0_pa,
+                              uint64_t  mac_list_1_pa, uint64_t new_page_list_pa_val);
+
+/**
+ * @brief API handler for TDH_IMPORT_ABORT_LEAF
+ *
+ * @param target_tdr_pa - HPA of the TDR
+ * @param hpa_and_size_pa - HPA of the mbmd page
+ * @param migs_i - migration stream index
+ *
+ * @return  Success or Error type
+ */
+api_error_type tdh_import_abort(uint64_t target_tdr_pa, uint64_t hpa_and_size_pa, uint64_t migs_i);
+
+/**
+ * @brief API handler for TDH_IMPORT_COMMIT_LEAF
+ *
+ * @param target_tdr_pa - HPA of the TDR
+ *
+ * @return  Success or Error type
+ */
+api_error_type tdh_import_commit(uint64_t target_tdr_pa);
+
+/**
+ * @brief API handler for TDH_IMPORT_END_LEAF
+ *
+ * @param target_tdr_pa - HPA of the TDR
+ *
+ * @return  Success or Error type
+ */
+api_error_type tdh_import_end(uint64_t target_tdr_pa);
+
+/**
+ * @brief API handler for TDH_IMPORT_PAGE_CANCEL_LEAF
+ *
+ * @param target_tdr_pa
+ * @param hpa_and_size_pa
+ * @param migs_i
+ *
+ * @return  Success or Error type
+ */
+api_error_type tdh_import_page_cancel(uint64_t target_tdr_pa,
+        uint64_t hpa_and_size_pa, uint64_t migs_i);
+
+/**
+ * @brief API handler for TDH_EXPORT_BLOCKW_LEAF
+ *
+ * @param gpa_list_info
+ * @param target_tdr_pa
+ *
+ * @return Success or Error type
+ */
+api_error_type tdh_export_blockw(gpa_list_info_t gpa_list_info, uint64_t target_tdr_pa);
+
+/**
+ * @brief API handler for TDH_EXPORT_RESTORE_LEAF
+ *
+ * @param gpa_list_info
+ * @param target_tdr_pa
+ *
+ * @return Success or Error type
+ */
+api_error_type tdh_export_restore(gpa_list_info_t gpa_list_info, uint64_t target_tdr_pa);
+
+/**
+ * @brief
+ *
+ * @return Success or Error type
+ */
+api_error_type tdh_export_unblockw(uint64_t page_pa, uint64_t target_tdr_pa);
+
+/**
+ * @brief Shuts down the system and prepared handoff data buffer for the next module
+ *
+ * @param hv_input Handoff version input
+ *
+ * @return Success or Error type
+ */
+api_error_type tdh_sys_shutdown(uint64_t hv_input);
+
+/**
+ * @brief Finished updating TDX module by retrieving and loading handoff data from the
+ *        previous module
+ *
+ * @return Success or Error type
+ */
+api_error_type tdh_sys_update(void);
 
 #endif // __TDX_VMM_API_HANDLERS_H_INCLUDED__

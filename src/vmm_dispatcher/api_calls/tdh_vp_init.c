@@ -1,9 +1,9 @@
-// Intel Proprietary 
-// 
+// Intel Proprietary
+//
 // Copyright 2021 Intel Corporation All Rights Reserved.
-// 
+//
 // Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
+//
 // The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
 // of merchantability, non-infringement, title, or fitness for a particular purpose.
 
@@ -36,19 +36,19 @@ _STATIC_INLINE_ void init_vcpu_gprs_and_registers(tdvps_t * tdvps_ptr, tdcs_t * 
      */
     if (tdcs_ptr->executions_ctl_fields.gpaw)
     {
-        tdvps_ptr->guest_state.rbx = MAX_PA_FOR_GPAW;
+        tdvps_ptr->guest_state.gpr_state.rbx = MAX_PA_FOR_GPAW;
     }
     else
     {
-        tdvps_ptr->guest_state.rbx = MAX_PA_FOR_GPA_NOT_WIDE;
+        tdvps_ptr->guest_state.gpr_state.rbx = MAX_PA_FOR_GPA_NOT_WIDE;
     }
     // Set RCX and R8 to the input parameter's value
-    tdvps_ptr->guest_state.rcx = init_rcx;
-    tdvps_ptr->guest_state.r8 = init_rcx;
+    tdvps_ptr->guest_state.gpr_state.rcx = init_rcx;
+    tdvps_ptr->guest_state.gpr_state.r8 = init_rcx;
 
     // CPUID(1).EAX - returns Family/Model/Stepping in EAX - take the saved value by TDHSYSINIT
     tdx_debug_assert(get_cpuid_lookup_entry(0x1, 0x0) < MAX_NUM_CPUID_LOOKUP);
-    tdvps_ptr->guest_state.rdx = (uint64_t)get_global_data()->cpuid_values[get_cpuid_lookup_entry(0x1, 0x0)].values.eax;
+    tdvps_ptr->guest_state.gpr_state.rdx = (uint64_t)get_global_data()->cpuid_values[get_cpuid_lookup_entry(0x1, 0x0)].values.eax;
 
     /**
      *  Registers init
@@ -58,7 +58,7 @@ _STATIC_INLINE_ void init_vcpu_gprs_and_registers(tdvps_t * tdvps_ptr, tdcs_t * 
 
 
     // Set RSI to the VCPU index
-    tdvps_ptr->guest_state.rsi = vcpu_index & BITS(31,0);
+    tdvps_ptr->guest_state.gpr_state.rsi = vcpu_index & BITS(31,0);
 
     /**
      *  All other GPRs/Registers are set to 0 or
@@ -86,7 +86,6 @@ api_error_type tdh_vp_init(uint64_t target_tdvpr_pa, uint64_t td_vcpu_rcx)
     pamt_block_t          tdvpr_pamt_block;                     // TDVPR PAMT block
     pamt_entry_t        * tdvpr_pamt_entry_ptr;                 // Pointer to the TDVPR PAMT entry
     bool_t                tdvpr_locked_flag = false;            // Indicate TDVPR is locked
-    page_size_t           tdvpr_leaf_size = PT_4KB;
 
     // TDR related variables
     tdr_t               * tdr_ptr = NULL;                       // Pointer to the TDR page (linear address)
@@ -99,10 +98,6 @@ api_error_type tdh_vp_init(uint64_t target_tdvpr_pa, uint64_t td_vcpu_rcx)
     uint16_t              curr_hkid;
     uint64_t              init_rcx = td_vcpu_rcx;               // Initial value of RDX in TDVPS
     uint32_t              vcpu_index;
-    pa_t                  vmcs_pa;
-    vmcs_header_t       * vmcs_ptr = NULL;                      // Pointer to VMCS header
-    bool_t                td_vmcs_loaded = false;               // Indicates whether TD VMCS was loaded
-    vmcs_host_values_t    td_vmcs_host_values;                  // Host TD VMCS value (read from SEAM VMCS)
 
     api_error_type        return_val = UNINITIALIZE_ERROR;
 
@@ -114,7 +109,6 @@ api_error_type tdh_vp_init(uint64_t target_tdvpr_pa, uint64_t td_vcpu_rcx)
                                                          PT_TDVPR,
                                                          &tdvpr_pamt_block,
                                                          &tdvpr_pamt_entry_ptr,
-                                                         &tdvpr_leaf_size,
                                                          &tdvpr_locked_flag);
     if (return_val != TDX_SUCCESS)
     {
@@ -136,29 +130,13 @@ api_error_type tdh_vp_init(uint64_t target_tdvpr_pa, uint64_t td_vcpu_rcx)
         goto EXIT;
     }
 
-    /**
-     *  Check the TD state.  No need to check that the TD has been initialized,
-     *  this is implied by the fact that the TDVPR page exists
-     */
-    if (tdr_ptr->management_fields.fatal)
-    {
-        TDX_ERROR("TDR in fatal state\n");
-        return_val = TDX_TD_FATAL;
-        goto EXIT;
-    }
-    if (tdr_ptr->management_fields.lifecycle_state != TD_KEYS_CONFIGURED)
-    {
-        TDX_ERROR("TDR keys not configured\n");
-        return_val = TDX_TD_KEYS_NOT_CONFIGURED;
-        goto EXIT;
-    }
+    // Map the TDCS structure and check the state
+    return_val = check_state_map_tdcs_and_lock(tdr_ptr, TDX_RANGE_RW, TDX_LOCK_SHARED,
+                                               false, TDH_VP_INIT_LEAF, &tdcs_ptr);
 
-    // Map the TDCS structure and check the state.  No need to lock
-    tdcs_ptr = map_implicit_tdcs(tdr_ptr, TDX_RANGE_RW);
-    if (tdcs_ptr->management_fields.finalized)
+    if (return_val != TDX_SUCCESS)
     {
-        TDX_ERROR("TD is already finalized\n");
-        return_val = TDX_TD_FINALIZED;
+        TDX_ERROR("State check or TDCS lock failure - error = %llx\n", return_val);
         goto EXIT;
     }
 
@@ -166,12 +144,12 @@ api_error_type tdh_vp_init(uint64_t target_tdvpr_pa, uint64_t td_vcpu_rcx)
     curr_hkid = tdr_ptr->key_management_fields.hkid;
 
     // Map the multi-page TDVPS structure
-    tdvps_ptr = map_tdvps(tdvpr_pa, curr_hkid, TDX_RANGE_RW);
+    tdvps_ptr = map_tdvps(tdvpr_pa, curr_hkid, tdcs_ptr->management_fields.num_l2_vms, TDX_RANGE_RW);
 
     if (tdvps_ptr == NULL)
     {
         TDX_ERROR("TDVPS mapping failed\n");
-        return_val = TDX_TDVPX_NUM_INCORRECT;
+        return_val = TDX_TDCX_NUM_INCORRECT;
         goto EXIT;
     }
 
@@ -192,7 +170,7 @@ api_error_type tdh_vp_init(uint64_t target_tdvpr_pa, uint64_t td_vcpu_rcx)
     vcpu_index = _lock_xadd_32b(&tdcs_ptr->management_fields.num_vcpus, 1);
     if (vcpu_index >= tdcs_ptr->executions_ctl_fields.max_vcpus)
     {
-        _lock_xadd_32b(&tdcs_ptr->management_fields.num_vcpus, (uint32_t)-1);
+        (void)_lock_xadd_32b(&tdcs_ptr->management_fields.num_vcpus, (uint32_t)-1);
         TDX_ERROR("Max VCPUS (%d) has been exceeded\n", tdcs_ptr->executions_ctl_fields.max_vcpus);
         return_val = TDX_MAX_VCPUS_EXCEEDED;
         goto EXIT;
@@ -248,19 +226,6 @@ api_error_type tdh_vp_init(uint64_t target_tdvpr_pa, uint64_t td_vcpu_rcx)
      *  Since the pages are initialized to 0 on TDHVPCREATE/TDVPADDCX,
      *  VAPIC page is already 0.
      */
-    vmcs_pa = set_hkid_to_pa((pa_t)tdvps_ptr->management.tdvps_pa[TDVPS_VMCS_PAGE_INDEX], curr_hkid);
-
-    /**
-     *  Map the TD VMCS page.
-     *
-     *  @note This is the only place the VMCS page is directly accessed.
-     */
-    vmcs_ptr = map_pa((void*)vmcs_pa.raw, TDX_RANGE_RW);
-    vmcs_ptr->revision.vmcs_revision_identifier =
-            get_global_data()->plt_common_config.ia32_vmx_basic.vmcs_revision_id;
-
-    // Clear the TD VMCS
-    ia32_vmclear((void*)vmcs_pa.raw);
 
     /**
      *  No need to explicitly initialize VE_INFO.
@@ -269,40 +234,43 @@ api_error_type tdh_vp_init(uint64_t target_tdvpr_pa, uint64_t td_vcpu_rcx)
      */
 
     // Mark the VCPU as initialized and ready
-    tdvps_ptr->management.state = VCPU_READY_ASYNC;
+    tdvps_ptr->management.state = VCPU_READY;
+    tdvps_ptr->management.last_td_exit = LAST_EXIT_ASYNC_FAULT;
+    
+    init_tdvps_fields(tdcs_ptr, tdvps_ptr);
 
-    /**
-     *  Save the host VMCS fields before going to TD VMCS context
-     */
-    save_vmcs_host_fields(&td_vmcs_host_values);
+    associate_vcpu_initial(tdvps_ptr, tdcs_ptr);
 
+    // Prepare and initialize the L1 VMCS
+    prepare_td_vmcs(tdvps_ptr, 0);
+    set_vm_vmcs_as_active(tdvps_ptr, 0);
+    init_td_vmcs(tdr_ptr, tdcs_ptr, tdvps_ptr, false, 0);
 
-    /**
-     *  Associate the VCPU - no checks required
-     */
-    associate_vcpu_initial(tdvps_ptr, tdcs_ptr, tdr_ptr, &td_vmcs_host_values);
-    td_vmcs_loaded = true;
+    // Prepare and initialize the L2 VMCSes and MSR bitmaps
+    for (uint16_t vm_id = 1; vm_id <= tdcs_ptr->management_fields.num_l2_vms; vm_id++)
+    {
+        prepare_td_vmcs(tdvps_ptr, vm_id);
+        set_vm_vmcs_as_active(tdvps_ptr, vm_id);
+        init_td_vmcs(tdr_ptr, tdcs_ptr, tdvps_ptr, false, vm_id);
 
-    /**
-     *  Initialize the TD VMCS fields
-     */
-    init_td_vmcs(tdcs_ptr, tdvps_ptr, &td_vmcs_host_values);
+        // There's no need to explicitly initialize the MSR exiting bitmaps.
+        // They were initialized to all-1 when their pages were added by TDH.VP.ADDCX.
+    }
 
 EXIT:
-    // Check if we need to load the SEAM VMCS
-    if (td_vmcs_loaded)
-    {
-        set_seam_vmcs_as_active();
-    }
+
+    set_seam_vmcs_as_active();
+
     // Release all acquired locks and free keyhole mappings
+    if (tdcs_ptr != NULL)
+    {
+        release_sharex_lock_hp_sh(&tdcs_ptr->management_fields.op_state_lock);
+        free_la(tdcs_ptr);
+    }
     if (tdr_locked_flag)
     {
         pamt_implicit_release_lock(tdr_pamt_entry_ptr, TDX_LOCK_SHARED);
         free_la(tdr_ptr);
-    }
-    if (tdcs_ptr != NULL)
-    {
-        free_la(tdcs_ptr);
     }
     if (tdvpr_locked_flag)
     {
@@ -312,9 +280,6 @@ EXIT:
             free_la(tdvps_ptr);
         }
     }
-    if (vmcs_ptr != NULL)
-    {
-        free_la((void*)vmcs_ptr);
-    }
+
     return return_val;
 }

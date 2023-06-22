@@ -1,9 +1,9 @@
-// Intel Proprietary 
-// 
+// Intel Proprietary
+//
 // Copyright 2021 Intel Corporation All Rights Reserved.
-// 
+//
 // Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
+//
 // The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
 // of merchantability, non-infringement, title, or fitness for a particular purpose.
 
@@ -24,41 +24,18 @@
 #include "helpers/helpers.h"
 #include "td_dispatcher/vm_exits/td_vmexit.h"
 
-static void tdaccept_ept_violation_exit(pa_t gpa, ept_level_t req_level, sept_entry_state sept_state,
-                                        bool_t is_leaf, ept_level_t ept_level, ia32e_sept_t* sept_entry_ptr)
-{
-    vmx_ext_exit_qual_t eeq = { .raw = 0 };
-    tdaccept_vmx_eeq_info_t eeq_info = { .raw = 0 };
-
-    eeq_info.req_sept_level = req_level;
-    eeq_info.err_sept_level = ept_level;
-    eeq_info.err_sept_state = sept_state;
-    eeq_info.err_sept_is_leaf = is_leaf;
-
-    eeq.type = VMX_EEQ_ACCEPT;
-    eeq.info = eeq_info.raw;
-
-    if (sept_entry_ptr != NULL)
-    {
-        free_la(sept_entry_ptr);
-    }
-
-    vm_vmexit_exit_reason_t vm_exit_reason = { .raw = 0 };
-    vm_exit_reason.basic_reason = VMEXIT_REASON_EPT_VIOLATION;
-
-    tdx_ept_violation_exit_to_vmm(gpa, vm_exit_reason, 0, eeq.raw);
-}
-
 typedef enum tdaccept_failure_type_e
 {
-    TDACCEPT_SUCCESS           = 0,
-    TDACCEPT_ALREADY_ACCEPTED  = 1,
-    TDACCEPT_SIZE_MISMATCH     = 2,
-    TDACCEPT_VIOLATION         = 3
+    TDACCEPT_SUCCESS              = 0,
+    TDACCEPT_ALREADY_ACCEPTED     = 1,
+    TDACCEPT_SIZE_MISMATCH        = 2,
+    TDACCEPT_VIOLATION            = 3,
+    TDACCEPT_AQCUIRE_LOCK_FAILURE = 4
 } tdaccept_failure_type_t;
 
 static tdaccept_failure_type_t check_tdaccept_failure(bool_t walk_failed, bool_t is_leaf,
-                                                      sept_entry_state sept_state)
+                                                      ia32e_sept_t *sept_ptr, ia32e_sept_t* sept_entry_copy,
+                                                      bool_t *sept_ptr_locked_flag, api_error_type* error)
 {
     // SEPT walk fails only when reached level is smaller than requested level
     // i.e. (ept_level > req_accept_level)
@@ -67,88 +44,77 @@ static tdaccept_failure_type_t check_tdaccept_failure(bool_t walk_failed, bool_t
 
     IF_RARE (walk_failed)
     {
-        if (is_leaf)
+        /* Case 1.1:
+           SEPT walk failed and terminated due to a guest-accessible (MAPPED, BLOCKEDW or EXPORTED*) *leaf* entry
+           at a level > requested ACCEPT size (e.g. 2 MB PTE for a 4 KB request) */
+        if (sept_state_is_guest_accessible_leaf(*sept_entry_copy))
         {
-            // Walk failed and terminated due to a PRESENT *leaf* entry > requested ACCEPT size
-            // (e.g. 2 MB PTE present for a 4 KB request).
-            if (sept_state == SEPTE_PRESENT)
-            {
-                TDX_WARN("PRESENT *leaf* entry > requested ACCEPT size\n");
-                return TDACCEPT_ALREADY_ACCEPTED;
-            }
-            // Walk failed and terminated due to a BLOCKED, PENDING or PENDING_BLOCKED
-            // *leaf* entry > requested ACCEPT size (e.g. 2 MB PTE PENDING leaf for a 4 KB request).
-            else if (sept_state == SEPTE_BLOCKED || sept_state == SEPTE_PENDING ||
-                     sept_state == SEPTE_PENDING_BLOCKED)
-            {
-                TDX_WARN("NON-PRESENT *leaf* entry > requested ACCEPT size\n");
-                return TDACCEPT_VIOLATION;
-            }
-            else
-            {
-                FATAL_ERROR();
-            }
+            TDX_WARN("Guest-accessible *leaf* entry > requested ACCEPT size\n");
+            return TDACCEPT_ALREADY_ACCEPTED;
         }
 
-        // Walk failed: intermediate paging structure missing at size > requested ACCEPT size
-        // (e.g.  missing PDE for a 4 KB request).
-        else // (!is_leaf)
+        /* Case 1.2:
+           SEPT walk failed and terminated due to a non-guest-accessible (BLOCKED, PENDING*
+           etc. *leaf* entry at a level > requested ACCEPT size (e.g. 2 MB PTE PENDING leaf
+           for a 4 KB request).
+
+           Or
+
+           Case 2:
+           SEPT walk failed due to intermediate paging structure missing or inaccessible (e.g.missing PDE for a
+           4 KB request). */
+        else
         {
-            TDX_WARN("Failure due to intermediate paging structure missing\n");
+            TDX_WARN("Non-guest-accessible *leaf* entry > requested ACCEPT size\n");
             return TDACCEPT_VIOLATION;
         }
     }
-    else // SEPT walk did not fail - i.e. reached the requested level
+
+    // Lock the SEPT entry
+    api_error_type return_val = sept_lock_acquire_guest(sept_ptr);
+    if (TDX_SUCCESS != return_val)
     {
-        IF_RARE ((sept_state != SEPTE_FREE) && !is_leaf)
-        {
-            // Non-free non-leaf entry == requested ACCEPT size
-            // (i.e. requested 2M entry is mapped to a EPT page instead of being a leaf)
-            TDX_WARN("Non-free non-leaf entry < requested ACCEPT size\n");
-            return TDACCEPT_SIZE_MISMATCH;
-        }
-        else
-        {
-            // Secure EPT walk terminated with leaf entry == requested ACCEPT size.
-            // Entry state is PRESENT
-            if (sept_state == SEPTE_PRESENT)
-            {
-                TDX_WARN("PRESENT leaf entry at level == requested ACCEPT size\n");
-                return TDACCEPT_ALREADY_ACCEPTED;
-            }
+        TDX_ERROR("sept_lock_acquire_guest with error code 0x%llx\n", return_val);
+        *error = return_val;
+        return TDACCEPT_AQCUIRE_LOCK_FAILURE;
+    }
+    *sept_ptr_locked_flag = true;
 
-            // Secure EPT walk terminated with leaf entry == requested ACCEPT size.
-            // Entry state is BLOCKED or PENDING_BLOCKED or FREE (leaf)
-            if (sept_state != SEPTE_PENDING)
-            {
-                TDX_WARN("BLOCKED, PENDING_BLOCKED or FREE leaf entry at level == requested ACCEPT size\n");
-                return TDACCEPT_VIOLATION;
-            }
+    // Read the SEPT entry again (and update the copy) after it was locked
+    sept_entry_copy->raw = sept_ptr->raw;
 
-            // Success in the last case (sept_state == SEPTE_PENDING)
+    /* Case 3:
+        SEPT walk terminated at a non-leaf entry (e.g. ACCEPT requested 2M but page mapped as 4K) */
+    IF_RARE (!is_sept_free(sept_entry_copy) && !is_leaf)
+    {
+        // Non-free non-leaf entry == requested ACCEPT size
+        // (i.e. requested 2M entry is mapped to a EPT page instead of being a leaf)
+        TDX_WARN("Non-free non-leaf entry < requested ACCEPT size\n");
+        return TDACCEPT_SIZE_MISMATCH;
+    }
+    else
+    {
+        // Secure EPT walk terminated with leaf entry == requested ACCEPT size.
+        // Entry state is a guest-accessible (MAPPED, BLOCKEDW or EXPORTED_*)
+        if (sept_state_is_guest_accessible_leaf(*sept_entry_copy))
+        {
+            TDX_WARN("Guest-accessible leaf entry at level == requested ACCEPT size\n");
+            return TDACCEPT_ALREADY_ACCEPTED;
         }
+
+        // Secure EPT walk terminated with leaf entry == requested ACCEPT size.
+        // Entry state is a non-ACCEPTable (not PENDING nor PENDING_EXPORTED_DIRTY)
+        if (!sept_state_is_tdcall_leaf_allowed(TDG_MEM_PAGE_ACCEPT_LEAF, *sept_entry_copy))
+        {
+            TDX_WARN("Non-ACCEPTable leaf entry at level == requested ACCEPT size\n");
+            return TDACCEPT_VIOLATION;
+        }
+
+        // Success in the last case (sept_state == SEPTE_PENDING)
+        tdx_debug_assert(is_leaf);   // There are no PENDING* non-leaf entries
     }
 
     return TDACCEPT_SUCCESS;
-}
-
-static bool_t update_sept_entry(ia32e_sept_t* sept_entry_ptr, ia32e_sept_t sept_entry_expected,
-                                ia32e_sept_t new_sept_entry)
-{
-    ia32e_sept_t prev_sept_entry;
-    /* Try to update the SEPT entry */
-    prev_sept_entry.raw =  _lock_cmpxchg_64b(sept_entry_expected.raw,
-                                             new_sept_entry.raw,
-                                             &sept_entry_ptr->raw);
-
-    if (prev_sept_entry.raw != sept_entry_expected.raw)
-    {
-        // Release SEPT entry guest exclusive lock
-        _lock_btr_64b(&sept_entry_ptr->raw, SEPT_ENTRY_TDGL_BIT_POSITION);
-        return false;
-    }
-
-    return true;
 }
 
 static void init_sept_4k_page(tdr_t* tdr_p, ia32e_sept_t sept_entry)
@@ -172,37 +138,22 @@ api_error_type tdg_mem_page_accept(uint64_t page_to_accept_gpa, bool_t* interrup
     page_info_api_input_t gpa_mappings = {.raw = page_to_accept_gpa}; // GPA and level
     ia32e_sept_t* sept_entry_ptr = NULL;
     ia32e_sept_t  sept_entry_copy;
+    bool_t        sept_entry_locked_flag = false;
     ept_level_t   req_accept_level = gpa_mappings.level;    // SEPT entry level of the page
 
     pa_t page_gpa = {.raw = 0}; // Target page GPA
-    page_gpa.page_4k_num = gpa_mappings.gpa;
 
     /**
      * Memory operand checks
      */
-    // Verify that GPA mapping input reserved fields equal zero
-    if (!is_reserved_zero_in_mappings(gpa_mappings))
+    if (!verify_page_info_input(gpa_mappings, LVL_PT, LVL_PD))
     {
-        TDX_ERROR("Reserved fields in GPA mappings are not zero\n");
+        TDX_ERROR("Input GPA page info (0x%llx) is not valid\n", gpa_mappings.raw);
         return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RCX);
         goto EXIT;
     }
 
-    // Verify mapping level input is valid (4KB or 2MB)
-    if (req_accept_level > LVL_PD)
-    {
-        TDX_ERROR("Input GPA level (=%d) is not valid\n", gpa_mappings.level);
-        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RCX);
-        goto EXIT;
-    }
-
-    // Verify GPA is aligned
-    if (!is_gpa_aligned(gpa_mappings))
-    {
-        TDX_ERROR("Page to accept GPA (=%llx) is not aligned.\n", gpa_mappings.gpa);
-        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RCX);
-        goto EXIT;
-    }
+    page_gpa = page_info_to_pa(gpa_mappings);
 
     tdr_t* tdr_p = tdx_local_data_ptr->vp_ctx.tdr;
     tdcs_t* tdcs_p = tdx_local_data_ptr->vp_ctx.tdcs;
@@ -221,11 +172,11 @@ api_error_type tdg_mem_page_accept(uint64_t page_to_accept_gpa, bool_t* interrup
     return_val = walk_private_gpa(tdcs_p, page_gpa, tdr_p->key_management_fields.hkid,
                                   &sept_entry_ptr, &ept_level, &sept_entry_copy);
 
-    bool_t is_leaf = is_ept_leaf_entry(&sept_entry_copy, ept_level);
-    sept_entry_state sept_state = get_sept_entry_state(&sept_entry_copy, ept_level);
+    bool_t is_leaf = is_secure_ept_leaf_entry(&sept_entry_copy);
 
-    tdaccept_failure_type_t fail_type = check_tdaccept_failure((return_val != TDX_SUCCESS), is_leaf,
-                                                                sept_state);
+    api_error_type error = TDX_OPERAND_BUSY;
+    tdaccept_failure_type_t fail_type = check_tdaccept_failure((return_val != TDX_SUCCESS), is_leaf, sept_entry_ptr,
+                                                                &sept_entry_copy, &sept_entry_locked_flag, &error);
 
     IF_RARE (fail_type != TDACCEPT_SUCCESS)
     {
@@ -242,8 +193,18 @@ api_error_type tdg_mem_page_accept(uint64_t page_to_accept_gpa, bool_t* interrup
         }
         else if (fail_type == TDACCEPT_VIOLATION)
         {
-            tdaccept_ept_violation_exit(page_gpa, req_accept_level, sept_state,
-                                        is_leaf, ept_level, sept_entry_ptr);
+            if (sept_entry_locked_flag)
+            {
+                sept_lock_release(sept_entry_ptr);
+                sept_entry_locked_flag = false;
+            }
+            async_tdexit_ept_violation(page_gpa, req_accept_level, sept_entry_copy,
+                                       ept_level, sept_entry_ptr, VMX_EEQ_ACCEPT);
+        }
+        else if (fail_type == TDACCEPT_AQCUIRE_LOCK_FAILURE)
+        {
+            return_val = api_error_with_operand_id(error, OPERAND_ID_RCX);
+            goto EXIT;
         }
         else
         {
@@ -251,86 +212,88 @@ api_error_type tdg_mem_page_accept(uint64_t page_to_accept_gpa, bool_t* interrup
         }
     }
 
-    // Try to acquire SEPT entry guest exclusive lock and check entry blocked and pending states
-    ia32e_sept_t sept_entry_expected;
+    // At this point we know that the page was PENDING when we sampled the SEPT entry above.
+    // Atomically check that the entry has not changed and lock it on the guest side.
+    // This guarantees that the SEPT entry can only be locked on the guest side for PENDING pages.
 
-    sept_entry_expected.raw = sept_entry_copy.raw;
-    sept_entry_expected.fields_4k.tdp = 1;
-    sept_entry_expected.fields_4k.tdb = 0;
-    sept_entry_expected.fields_4k.tdgl = 0;
+    // We're running in the guest TD context and the EPT walk was successful.
+    // This means the page and is guaranteed by TLB tracking to exist at least
+    // until the next TD exit, septe_p is valid throughout this function, and the page can be freely written.
+    // However the state of the SEPT entry itself may change concurrently by the host VMM.
 
-    ia32e_sept_t new_sept_entry = {.raw = sept_entry_expected.raw};
-    new_sept_entry.fields_4k.tdgl = 1;
+    bool_t interrupt_pending = false;
 
-    ia32e_sept_t prev_sept_entry =  {
-                                     .raw = _lock_cmpxchg_64b(sept_entry_expected.raw,
-                                                              new_sept_entry.raw,
-                                                              &sept_entry_ptr->raw)
-                                    };
-
-    // Check that previous value has the expected value
-    if (prev_sept_entry.raw != sept_entry_expected.raw)
+    if (req_accept_level == LVL_PT)
     {
-        return_val = api_error_with_operand_id(TDX_OPERAND_BUSY, OPERAND_ID_RCX);
-        goto EXIT;
+        init_sept_4k_page(current_tdr, sept_entry_copy);
+    }
+    else
+    {
+        // 2MB page
+        bool_t tdaccept_2mb_done = false;
+        do
+        {
+            init_sept_4k_page(current_tdr, sept_entry_copy);
+
+            if (sept_entry_copy.accept_counter == (NUM_OF_4K_PAGES_IN_2MB - 1))
+            {
+                tdaccept_2mb_done = true;
+                sept_entry_copy.accept_counter = 0;
+            }
+            else
+            {
+                sept_entry_copy.accept_counter += 1;
+                interrupt_pending = is_interrupt_pending_guest_side();
+            }
+        } while (!tdaccept_2mb_done && !interrupt_pending);
     }
 
-    // Update expected EPTE value
-    sept_entry_expected.raw = new_sept_entry.raw;
-
-    /**---------------------------------------------------------------------
-       Interruptible page initialization loop
-    ---------------------------------------------------------------------**/
-    bool_t tdaccept_done = false;
-
-    while (!tdaccept_done)
+    if (!interrupt_pending)
     {
-        init_sept_4k_page(current_tdr, new_sept_entry);
+        // We're done.  Prepare a new SEPT entry value as MAPPED or EXPORTED_DIRTY as required
+        sept_entry_copy.raw |= SEPT_PERMISSIONS_RWX;
 
-        // Check if initialization is done
-        // Initialization is done either in case when we accept only a single 4KB page
-        // or when we already initialized all the 512 child 4KB pages in 2MB range
-        if ((req_accept_level == LVL_PT) || (new_sept_entry.accept.init_counter == (NUM_OF_4K_PAGES_IN_2MB - 1)))
+        // Clearing the TDP bit relies of specific encoding of the SEPT entry state.
+        // The following assertions verify this.
+
+        if (is_sept_pending(&sept_entry_copy))
         {
-            if (req_accept_level == LVL_PD)
-            {
-                new_sept_entry.accept.init_counter = 0;
-            }
-
-            new_sept_entry.present.rwx = 0x7;
-            new_sept_entry.fields_ps.tdp = 0;
-            new_sept_entry.fields_4k.supp_ve = 1;
-            new_sept_entry.fields_4k.tdgl = 0;
-
-            tdaccept_done = true;
+            sept_update_state(&sept_entry_copy, SEPT_STATE_MAPPED_MASK, false);
         }
         else
         {
-            // Update next initialized PA
-            new_sept_entry.accept.init_counter += 1;
+            sept_update_state(&sept_entry_copy, SEPT_STATE_EXP_DIRTY_MASK, false);
         }
 
-        if (!update_sept_entry(sept_entry_ptr, sept_entry_expected, new_sept_entry))
+        for (uint16_t vm_id = 1; vm_id <= tdcs_p->management_fields.num_l2_vms; vm_id++)
         {
-            return_val = api_error_with_operand_id(TDX_OPERAND_BUSY, OPERAND_ID_RCX);
-            goto EXIT;
-        }
-        sept_entry_expected.raw = new_sept_entry.raw;
-
-        // End of interrupt window, check for interrupt
-        if ((!tdaccept_done) && (ia32_rdmsr(IA32_INTR_PENDING_MSR_ADDR) != 0))
-        {
-            // Release SEPT entry guest exclusive lock
-            if (!_lock_btr_64b(&sept_entry_ptr->raw, SEPT_ENTRY_TDGL_BIT_POSITION))
+            if (!sept_state_is_aliased(sept_entry_copy, vm_id))
             {
-                FATAL_ERROR();
+                continue;
             }
 
-            // Resume TD guest without changing any GPR and without incrementing RIP
-            *interrupt_occurred = true;
-            goto EXIT;
+            ia32e_sept_t* l2_sept_entry_ptr = NULL;
+
+            return_val = l2_sept_walk(tdr_p, tdcs_p, vm_id, page_gpa, &req_accept_level, &l2_sept_entry_ptr);
+            if (return_val != TDX_SUCCESS)
+            {
+                FATAL_ERROR(); // Should not happen - no need to free the L2 SEPT PTR's
+            }
+
+            sept_l2_unblock(l2_sept_entry_ptr);
+
+            free_la(l2_sept_entry_ptr);
         }
     }
+
+    atomic_mem_write_64b(&sept_entry_ptr->raw, sept_entry_copy.raw);
+    sept_lock_release(sept_entry_ptr);
+    sept_entry_locked_flag = false;
+
+    // Secure EPT entry can be modified by a concurrent host-side function. Attempt to write it to memory.
+    // This will also unlock the entry since  we're using the original, unlocked entry.
+
+    *interrupt_occurred = interrupt_pending;
 
     return_val = TDX_SUCCESS;
 
@@ -338,6 +301,11 @@ EXIT:
     // Free keyhole mappings
     if (sept_entry_ptr != NULL)
     {
+        if (sept_entry_locked_flag)
+        {
+            sept_lock_release(sept_entry_ptr);
+        }
+
         free_la(sept_entry_ptr);
     }
 

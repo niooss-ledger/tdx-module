@@ -29,31 +29,35 @@ api_error_type tdg_vp_info(void)
     tdx_module_local_t* local_data_ptr = get_local_data();
 
     td_num_of_vcpus_t vcpus_info = {.raw = 0};
+    tdg_commands_available_t commands_available = {.raw = 0};
 
     api_error_type return_val = TDX_OPERAND_INVALID;
 
     // Check GPA width
     if (local_data_ptr->vp_ctx.tdcs->executions_ctl_fields.gpaw)
     {
-        local_data_ptr->vp_ctx.tdvps->guest_state.rcx = MAX_PA_FOR_GPAW;
+        local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.rcx = MAX_PA_FOR_GPAW;
     }
     else
     {
-        local_data_ptr->vp_ctx.tdvps->guest_state.rcx = MAX_PA_FOR_GPA_NOT_WIDE;
+        local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.rcx = MAX_PA_FOR_GPA_NOT_WIDE;
     }
 
     // Get attributes
-    local_data_ptr->vp_ctx.tdvps->guest_state.rdx = local_data_ptr->vp_ctx.tdcs->executions_ctl_fields.attributes.raw;
+    local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.rdx =
+            local_data_ptr->vp_ctx.tdcs->executions_ctl_fields.attributes.raw;
 
     // Get VCPUs info
     vcpus_info.max_vcpus = local_data_ptr->vp_ctx.tdcs->executions_ctl_fields.max_vcpus;
     vcpus_info.num_vcpus = local_data_ptr->vp_ctx.tdcs->management_fields.num_vcpus;
-    local_data_ptr->vp_ctx.tdvps->guest_state.r8 = vcpus_info.raw;
-    local_data_ptr->vp_ctx.tdvps->guest_state.r9 = local_data_ptr->vp_ctx.tdvps->management.vcpu_index;
+    local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.r8 = vcpus_info.raw;
+    local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.r9 = local_data_ptr->vp_ctx.tdvps->management.vcpu_index;
+
+    commands_available.tdg_sys_rd_available = 1;
+    local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.r10 = commands_available.raw;
 
     // Reserved for future use
-    local_data_ptr->vp_ctx.tdvps->guest_state.r10 = 0ULL;
-    local_data_ptr->vp_ctx.tdvps->guest_state.r11 = 0ULL;
+    local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.r11 = 0ULL;
 
     return_val = TDX_SUCCESS;
 

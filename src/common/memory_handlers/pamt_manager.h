@@ -20,6 +20,8 @@
 #include "x86_defs/x86_defs.h"
 #include "data_structures/tdx_global_data.h"
 
+#include "auto_gen/tdx_error_codes_defs.h"
+
 /**
  * @brief Enum for page type in PAMT
  */
@@ -30,7 +32,7 @@ typedef enum {
     PT_TDR   = 4,
     PT_TDCX  = 5,
     PT_TDVPR = 6,
-    PT_TDVPX = 7,
+    //reserved = 7,
     PT_EPT   = 8
 } page_type_t;
 
@@ -45,6 +47,26 @@ typedef enum {
 
 #define PAMT_ENTRY_SIZE_IN_BYTES        16
 
+
+/**
+ * @struct bepoch_t
+ *
+ * @brief BEPOCH is part of the PAMT entry.  It is used for either holding BEPOCH for TLB tracking
+   or migration epoch for migration tracking.
+ */
+typedef union bepoch_u
+{
+    struct
+    {
+        uint64_t mig_epoch    : 32; // Bits 31:0  : Migration epoch
+        uint64_t export_count : 31; // Bits 62:32 : Export counter
+        uint64_t mig_flag     : 1;  // Bit 63     : If set, indicates that BEPOCH is used for migration epoch
+    };
+
+    uint64_t raw;
+} bepoch_t;
+tdx_static_assert(sizeof(bepoch_t) == 8, bepoch_t);
+
 /**
  * @struct pamt_entry_t
  *
@@ -54,14 +76,14 @@ typedef struct pamt_entry_s
 {
     struct
     {
-        sharex_lock_t entry_lock; // 2 byte (16 bit)
+        sharex_hp_lock_t entry_lock; // 2 byte (16 bit)
         page_type_t pt : 8;
         uint64_t owner : 40; // don't access this field directly, use accessors below
     }; // primary
 
     union
     {
-        uint64_t bepoch;
+        bepoch_t bepoch;
     }; // additional
 } pamt_entry_t;
 tdx_static_assert(sizeof(pamt_entry_t) == PAMT_ENTRY_SIZE_IN_BYTES, pamt_entry_t);
@@ -70,7 +92,7 @@ tdx_static_assert((MOVDIR64_CHUNK_SIZE % sizeof(pamt_entry_t)) == 0, pamt_entry_
 _STATIC_INLINE_ pa_t get_pamt_entry_owner(pamt_entry_t* pamt_entry)
 {
     pa_t owner_pa;
-    owner_pa.raw = pamt_entry->owner << 12;
+    owner_pa.raw = ((uint64_t)pamt_entry->owner) << 12;
     return owner_pa;
 }
 
@@ -140,11 +162,15 @@ void pamt_init(pamt_block_t* pamt_block, uint64_t num_4k_entries, tdmr_entry_t *
  *                            be shared or exclusive.
  * @param leaf_size Returns the leaf size of the found PAMT entry
  * @param walk_to_leaf_size - If it is true, leaf_size is used as an input too, and PAMT walk stops at that level
+ * @param is_guest - Indicates whether the walk+lock request came from the TD guest
+ * @param pamt_entry returns the linear address of the PAMT entry if the lock acquisition succeeded.
+ *                   Should be freed after use. Returns NULL if lock failed (doesn't need to be freed in that case).
  *
- * @return Linear pointer to the found PAMT leaf entry. Should be freed by pamt_unwalk after usage.
+ * @return Error code status
  */
-pamt_entry_t* pamt_walk(pa_t pa, pamt_block_t pamt_block, lock_type_t leaf_lock_type,
-                        page_size_t* leaf_size, bool_t walk_to_leaf_size);
+api_error_code_e pamt_walk(pa_t pa, pamt_block_t pamt_block, lock_type_t leaf_lock_type,
+                           page_size_t* leaf_size, bool_t walk_to_leaf_size, bool_t is_guest,
+                           pamt_entry_t** pamt_entry);
 
 /**
  * @brief Performs PAMT lock release in a reverse order to PAMT walk (i.e. from leaf PAMT entry
@@ -175,9 +201,11 @@ void pamt_unwalk(pa_t pa, pamt_block_t pamt_block, pamt_entry_t* pamt_entry_p,
  * and shared locks on its parent PAMT entry when promoting to 2MB page.
  *
  * @param pa Physical address corresponding to the PAMT entry
- * @param pamt_block PAMT block virtual structure covering the @a pa
+ * @param new_leaf_size Size of the new promoted page
+ *
+ * @return Error code status
  */
-bool_t pamt_promote(pa_t pa, page_size_t new_leaf_size, pamt_block_t pamt_block);
+api_error_code_e pamt_promote(pa_t pa, page_size_t new_leaf_size);
 
 
 /**
@@ -188,9 +216,11 @@ bool_t pamt_promote(pa_t pa, page_size_t new_leaf_size, pamt_block_t pamt_block)
  *  entry and shared locks on its parent PAMT entry when demoting a 2MB page.
  *
  * @param pa Physical address corresponding to the PAMT entry
- * @param pamt_block PAMT block virtual structure covering the @a pa
+ * @param leaf_size Size of the page to demote
+ *
+ * @return Error code status
  */
-bool_t pamt_demote(pa_t pa, page_size_t leaf_size, pamt_block_t pamt_block);
+api_error_code_e pamt_demote(pa_t pa, page_size_t leaf_size);
 
 
 /**
@@ -209,10 +239,13 @@ pamt_entry_t* pamt_implicit_get(pa_t pa, page_size_t leaf_size);
  * @param leaf_size Leaf size of the relevant page
  * @param leaf_lock_type Determines whether on the found PAMT leaf entry, the taken lock should
  *                            be shared or exclusive.
- * @return Linear address of the pamt_entry. Should be freed after use.
- *         Returns NULL if lock failed (doesn't need to be freed in that case).
+ * @param pamt_entry returns the linear address of the PAMT entry if the lock acquisition succeeded.
+ *                   Should be freed after use. Returns NULL if lock failed (doesn't need to be freed in that case).
+ *
+ * @return Error code status
  */
-pamt_entry_t* pamt_implicit_get_and_lock(pa_t pa, page_size_t leaf_size, lock_type_t leaf_lock_type);
+api_error_code_e pamt_implicit_get_and_lock(pa_t pa, page_size_t leaf_size, lock_type_t leaf_lock_type,
+                                            pamt_entry_t** pamt_entry);
 
 /**
  * @brief Frees the lock of an implicit pamt entry, and also frees the pamt_entry linear address

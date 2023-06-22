@@ -38,7 +38,9 @@ CFLAGS = $(STD_FLAGS) $(PROJ_FLAGS) $(OPT_FLAGS) $(SECV_FLAGS) $(CET_FLAGS) $(PR
 # Entry pointer for the linker
 MODULE_ENTRY_POINT = tdx_seamcall_entry_point
 
+LINKER_SCRIPT = $(PROJ_DIR)/tdx_linker_script.lds
+
 # Linker flags
 LDFLAGS = -Wl,-shared -Wl,-pie -Wl,-e,$(MODULE_ENTRY_POINT) -Wl,-z,relro -Wl,-z,now -Wl,--wrap=__stack_chk_fail \
-		  -disable-red-zone -nostartfiles 
+		  -disable-red-zone -nostartfiles -Wl,-T,$(LINKER_SCRIPT)
 

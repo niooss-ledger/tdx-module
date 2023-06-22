@@ -1,9 +1,9 @@
-// Intel Proprietary 
-// 
+// Intel Proprietary
+//
 // Copyright 2021 Intel Corporation All Rights Reserved.
-// 
+//
 // Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
+//
 // The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
 // of merchantability, non-infringement, title, or fitness for a particular purpose.
 
@@ -46,6 +46,7 @@ api_error_type tdh_mem_page_aug(page_info_api_input_t gpa_page_info,
     ia32e_sept_t          page_sept_entry_copy;          // Cached SEPT entry of the page
     ept_level_t           page_level_entry = gpa_mappings.level;    // SEPT entry level of the page
     bool_t                sept_locked_flag = false;     // Indicate SEPT is locked
+    bool_t                septe_locked_flag = false;    // Indicate SEPT entry is locked
 
     // New TD private page variables
     pa_t                  td_page_pa;                // Physical address of the new TD page
@@ -78,47 +79,31 @@ api_error_type tdh_mem_page_aug(page_info_api_input_t gpa_page_info,
         goto EXIT;
     }
 
-    // Check the TD state
-    if ((return_val = check_td_in_correct_build_state(tdr_ptr)) != TDX_SUCCESS)
+    // Map the TDCS structure and check the state
+    return_val = check_state_map_tdcs_and_lock(tdr_ptr, TDX_RANGE_RW, TDX_LOCK_SHARED,
+                                               false, TDH_MEM_PAGE_AUG_LEAF, &tdcs_ptr);
+
+    if (return_val != TDX_SUCCESS)
     {
-        TDX_ERROR("TD is not in build state - error = %llx\n", return_val);
+        TDX_ERROR("State check or TDCS lock failure - error = %llx\n", return_val);
         goto EXIT;
     }
 
-    // Map the TDCS structure.  No need to lock
-    tdcs_ptr = map_implicit_tdcs(tdr_ptr, TDX_RANGE_RW);
-
-    // Verify that GPA mapping input reserved fields equal zero
-    if (!is_reserved_zero_in_mappings(gpa_mappings))
+    if (!verify_page_info_input(gpa_mappings, LVL_PT, LVL_PD))
     {
-        TDX_ERROR("Reserved fields in GPA mappings are not zero\n");
-        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RCX);
-        goto EXIT;
-    }
-    page_gpa.page_4k_num = gpa_mappings.gpa;
-
-    // Verify mapping level input is valid (4KB or 2MB)
-    if (page_level_entry > LVL_PD)
-    {
-        TDX_ERROR("Input GPA level (=%d) is not valid\n", gpa_mappings.level);
+        TDX_ERROR("Input GPA page info (0x%llx) is not valid\n", gpa_mappings.raw);
         return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RCX);
         goto EXIT;
     }
 
-    // Check the page GPA is page aligned
-    if (!is_addr_aligned_pwr_of_2(page_gpa.raw, TDX_PAGE_SIZE_IN_BYTES<<(9*page_level_entry)))
-    {
-        TDX_ERROR("Page GPA is not page (=%llx) aligned\n", TDX_PAGE_SIZE_IN_BYTES);
-        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RCX);
-        goto EXIT;
-    }
+    page_gpa = page_info_to_pa(gpa_mappings);
 
     // Check GPA, lock SEPT and walk to find entry
     return_val = lock_sept_check_and_walk_private_gpa(tdcs_ptr,
                                                       OPERAND_ID_RCX,
                                                       page_gpa,
                                                       tdr_ptr->key_management_fields.hkid,
-                                                      TDX_LOCK_EXCLUSIVE,
+                                                      TDX_LOCK_SHARED,
                                                       &page_sept_entry_ptr,
                                                       &page_level_entry,
                                                       &page_sept_entry_copy,
@@ -135,11 +120,25 @@ api_error_type tdh_mem_page_aug(page_info_api_input_t gpa_page_info,
         goto EXIT;
     }
 
-    // Verify the parent entry located for new TD page is FREE
-    if (get_sept_entry_state(&page_sept_entry_copy, page_level_entry) != SEPTE_FREE)
+    // Lock the SEPT entry in memory
+    return_val = sept_lock_acquire_host(page_sept_entry_ptr);
+    if (TDX_SUCCESS != return_val)
     {
-        TDX_ERROR("SEPT entry of GPA is not free\n");
-        return_val = api_error_with_operand_id(TDX_EPT_ENTRY_NOT_FREE,OPERAND_ID_RCX);
+        return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
+        set_arch_septe_details_in_vmm_regs(page_sept_entry_copy, page_level_entry, local_data_ptr);
+        TDX_ERROR("Failed on SEPT host-side lock attempt\n");
+        goto EXIT;
+    }
+    septe_locked_flag = true;
+
+    // Read the SEPT entry (again after locking)
+    page_sept_entry_copy = *page_sept_entry_ptr;
+
+    if (!sept_state_is_seamcall_leaf_allowed(TDH_MEM_PAGE_AUG_LEAF, page_sept_entry_copy))
+    {
+        return_val = api_error_with_operand_id(TDX_EPT_ENTRY_STATE_INCORRECT, OPERAND_ID_RCX);
+        set_arch_septe_details_in_vmm_regs(page_sept_entry_copy, page_level_entry, local_data_ptr);
+        TDX_ERROR("TDH_MEM_PAGE_AUG is not allowed in current SEPT entry state - 0x%llx\n", page_sept_entry_copy.raw);
         goto EXIT;
     }
 
@@ -161,25 +160,31 @@ api_error_type tdh_mem_page_aug(page_info_api_input_t gpa_page_info,
     // ALL_CHECKS_PASSED:  The function is guaranteed to succeed
 
     // Update the parent EPT entry with the new TD page HPA and SEPT_PENDING state
-    map_sept_leaf(page_sept_entry_ptr, td_page_pa, true, tdcs_ptr->executions_ctl_fields.attributes.sept_ve_disable);
+    sept_set_leaf_and_release_locks(page_sept_entry_ptr, SEPT_PERMISSIONS_NONE, td_page_pa, SEPT_STATE_PEND_MASK,
+                               tdcs_ptr->executions_ctl_fields.attributes.sept_ve_disable);
+    septe_locked_flag = false;
 
     // Increment TDR child count, use an atomic operation since we have SHARED lock on TDR
-    _lock_xadd_64b(&(tdr_ptr->management_fields.chldcnt), 1 << (9 * page_level_entry));
+    (void)_lock_xadd_64b(&(tdr_ptr->management_fields.chldcnt), 1 << (9 * page_level_entry));
 
     // Update the new Secure EPT page’s PAMT entry
     td_page_pamt_entry_ptr->pt = PT_REG;
     set_pamt_entry_owner(td_page_pamt_entry_ptr, tdr_pa);
+    td_page_pamt_entry_ptr->bepoch.raw = 0;   // Setting BEPOCH to 0 is required to avoid confusion during page export
 
 EXIT:
     // Release all acquired locks and free keyhole mappings
-    if (tdr_locked_flag)
+    if (td_page_locked_flag)
     {
-        pamt_unwalk(tdr_pa, tdr_pamt_block, tdr_pamt_entry_ptr, TDX_LOCK_SHARED, PT_4KB);
-        free_la(tdr_ptr);
+        pamt_unwalk(td_page_pa, td_page_pamt_block, td_page_pamt_entry_ptr, TDX_LOCK_EXCLUSIVE, (page_size_t)page_level_entry);
+    }
+    if (septe_locked_flag)
+    {
+        sept_lock_release(page_sept_entry_ptr);
     }
     if (sept_locked_flag)
     {
-        release_sharex_lock_ex(&tdcs_ptr->executions_ctl_fields.secure_ept_lock);
+        release_sharex_lock_sh(&tdcs_ptr->executions_ctl_fields.secure_ept_lock);
         if (page_sept_entry_ptr != NULL)
         {
             free_la(page_sept_entry_ptr);
@@ -187,11 +192,13 @@ EXIT:
     }
     if (tdcs_ptr != NULL)
     {
+        release_sharex_lock_hp_sh(&tdcs_ptr->management_fields.op_state_lock);
         free_la(tdcs_ptr);
     }
-    if (td_page_locked_flag)
+    if (tdr_locked_flag)
     {
-        pamt_unwalk(td_page_pa, td_page_pamt_block, td_page_pamt_entry_ptr, TDX_LOCK_EXCLUSIVE, (page_size_t)page_level_entry);
+        pamt_unwalk(tdr_pa, tdr_pamt_block, tdr_pamt_entry_ptr, TDX_LOCK_SHARED, PT_4KB);
+        free_la(tdr_ptr);
     }
     return return_val;
 }

@@ -66,14 +66,22 @@ _STATIC_INLINE_ tdx_module_global_t* get_global_data(void)
 
 #define LOCAL_DATA_SIZE_PER_LP         (TDX_PAGE_SIZE_IN_BYTES * (get_sysinfo_table()->num_tls_pages + 1))
 
-_STATIC_INLINE_ uint64_t get_current_thread_num(void)
+_STATIC_INLINE_ uint64_t get_current_thread_num(sysinfo_table_t* sysinfo_table, tdx_module_local_t* local_data)
 {
-    sysinfo_table_t* sysinfo_table = get_sysinfo_table();
-
-    uint64_t current_local_data_addr = (uint64_t)get_local_data();
+    uint64_t current_local_data_addr = (uint64_t)local_data;
     uint64_t local_data_start_addr = sysinfo_table->data_rgn_base;
 
-    return (current_local_data_addr - local_data_start_addr) / LOCAL_DATA_SIZE_PER_LP;
+    local_data_start_addr += (sysinfo_table->num_handoff_pages + 1) * TDX_PAGE_SIZE_IN_BYTES;
+
+    uint64_t local_data_size_per_lp = (TDX_PAGE_SIZE_IN_BYTES * (sysinfo_table->num_tls_pages + 1));
+
+    return (current_local_data_addr - local_data_start_addr) / local_data_size_per_lp;
+}
+
+_STATIC_INLINE_ uint64_t get_num_addressable_lps(sysinfo_table_t* sysinfo_table)
+{
+    return ((sysinfo_table->stack_rgn_size / TDX_PAGE_SIZE_IN_BYTES) /
+            (sysinfo_table->num_stack_pages + 1 + 1));
 }
 
 //****************************************************************************************
@@ -113,13 +121,14 @@ _STATIC_INLINE_ tdx_module_global_t* calculate_global_data(sysinfo_table_t* sysi
     // STACK_REGION_SIZE gives the size (in bytes) of all stack pages, i.e. STACK_REGION_SIZE = (D + 1) * N * 4K.
     // Therefore, N = (STACK_REGION_SIZE / 4K) / (D + 1) = (STACK_REGION_SIZE >> 12) / (NUM_STACK_PAGES + 1 + 1).
 
-    uint64_t num_of_addressable_lp = (sysinfo_table->stack_rgn_size / TDX_PAGE_SIZE_IN_BYTES) /
-                                        (sysinfo_table->num_stack_pages + 1 + 1);
+    uint64_t num_of_addressable_lp = get_num_addressable_lps(sysinfo_table);
 
     uint64_t local_data_size_per_lp = (TDX_PAGE_SIZE_IN_BYTES * (sysinfo_table->num_tls_pages + 1));
 
     uint64_t global_data_addr = sysinfo_table->data_rgn_base +
             num_of_addressable_lp * local_data_size_per_lp;
+
+    global_data_addr += (sysinfo_table->num_handoff_pages + 1) * TDX_PAGE_SIZE_IN_BYTES;
 
     return (tdx_module_global_t*)global_data_addr;
 }
@@ -138,6 +147,21 @@ _STATIC_INLINE_ tdx_module_local_t* init_data_fast_ref_ptrs(void)
     }
 
     return local_data;
+}
+
+//****************************************************************************************
+// All the other accessors to SEAM module data structures
+//****************************************************************************************
+
+_STATIC_INLINE_ tdx_module_local_t* get_other_lp_local_data(tdx_module_global_t* global_data,
+                                                            sysinfo_table_t* sysinfo_table, uint64_t lp_num)
+{
+    uint64_t local_data_start = sysinfo_table->data_rgn_base +
+                                ((global_data->num_handoff_pages + 1) * TDX_PAGE_SIZE_IN_BYTES);
+
+    uint64_t local_data_size_per_lp = (TDX_PAGE_SIZE_IN_BYTES * (sysinfo_table->num_tls_pages + 1));
+
+    return (tdx_module_local_t*)(local_data_start + (local_data_size_per_lp * lp_num));
 }
 
 #endif /* SRC_COMMON_ACCESSORS_DATA_ACCESSORS_H_ */

@@ -58,15 +58,15 @@ api_error_type tdh_mem_track(uint64_t target_tdr_pa)
         goto EXIT;
     }
 
-    // Check the TD state
-    if ((return_val = check_td_in_correct_build_state(tdr_ptr)) != TDX_SUCCESS)
+    // Map the TDCS structure and check the state
+    return_val = check_state_map_tdcs_and_lock(tdr_ptr, TDX_RANGE_RW, TDX_LOCK_SHARED,
+                                               false, TDH_MEM_TRACK_LEAF, &tdcs_ptr);
+
+    if (return_val != TDX_SUCCESS)
     {
-        TDX_ERROR("TD is not in build state - error = %llx\n", return_val);
+        TDX_ERROR("State check or TDCS lock failure - error = %llx\n", return_val);
         goto EXIT;
     }
-
-    // Map the TDCS structure
-    tdcs_ptr = map_implicit_tdcs(tdr_ptr, TDX_RANGE_RW);
 
     // Lock the TD epoch
     if (acquire_sharex_lock_ex(&tdcs_ptr->epoch_tracking.epoch_lock)
@@ -98,12 +98,6 @@ api_error_type tdh_mem_track(uint64_t target_tdr_pa)
 
 EXIT:
 
-    if (tdr_locked_flag)
-    {
-        pamt_unwalk(tdr_pa, tdr_pamt_block, tdr_pamt_entry_ptr, TDX_LOCK_SHARED, PT_4KB);
-        free_la(tdr_ptr);
-    }
-
     if (epoch_locked_flag)
     {
         release_sharex_lock_ex(&tdcs_ptr->epoch_tracking.epoch_lock);
@@ -111,7 +105,14 @@ EXIT:
 
     if(tdcs_ptr != NULL)
     {
+        release_sharex_lock_hp_sh(&tdcs_ptr->management_fields.op_state_lock);
         free_la(tdcs_ptr);
+    }
+
+    if (tdr_locked_flag)
+    {
+        pamt_unwalk(tdr_pa, tdr_pamt_block, tdr_pamt_entry_ptr, TDX_LOCK_SHARED, PT_4KB);
+        free_la(tdr_ptr);
     }
 
     return return_val;

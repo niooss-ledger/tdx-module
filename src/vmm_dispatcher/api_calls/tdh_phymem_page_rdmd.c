@@ -43,8 +43,8 @@ api_error_type tdh_phymem_page_rdmd(uint64_t target_page_pa)
     // Initialize output registers to default values
     local_data_ptr->vmm_regs.rcx = 0ULL;
     local_data_ptr->vmm_regs.rdx = 0ULL;
-    local_data_ptr->vmm_regs.r8 = 0ULL;
-    local_data_ptr->vmm_regs.r9 = 0ULL;
+    local_data_ptr->vmm_regs.r8  = 0ULL;
+    local_data_ptr->vmm_regs.r9  = 0ULL;
     local_data_ptr->vmm_regs.r10 = 0ULL;
     local_data_ptr->vmm_regs.r11 = 0ULL;
 
@@ -66,11 +66,11 @@ api_error_type tdh_phymem_page_rdmd(uint64_t target_page_pa)
     }
 
     // Walk and locate the leaf PAMT entry
-    page_pamt_entry_ptr = pamt_walk(page_pa, page_pamt_block, TDX_LOCK_SHARED, &page_leaf_size, false);
-    if (page_pamt_entry_ptr == NULL)
+    if ((return_val = pamt_walk(page_pa, page_pamt_block, TDX_LOCK_SHARED,
+                                &page_leaf_size, false, false, &page_pamt_entry_ptr)) != TDX_SUCCESS)
     {
         TDX_ERROR("Failed to PAMT walk to entry - PAMT is locked\n");
-        return_val = api_error_with_operand_id(TDX_OPERAND_BUSY, OPERAND_ID_RCX);
+        return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
         goto EXIT;
     }
     page_locked_flag = true;
@@ -84,11 +84,7 @@ api_error_type tdh_phymem_page_rdmd(uint64_t target_page_pa)
 
     if ((pamt_entry.pt == PT_REG) || (pamt_entry.pt == PT_EPT))
     {
-        local_data_ptr->vmm_regs.r9 = pamt_entry.bepoch;
-    }
-    else
-    {
-        local_data_ptr->vmm_regs.r9 = 0;
+        local_data_ptr->vmm_regs.r9 = pamt_entry.bepoch.raw;
     }
 
     return_val = TDX_SUCCESS;

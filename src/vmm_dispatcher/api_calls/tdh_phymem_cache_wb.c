@@ -30,7 +30,7 @@ api_error_type tdh_phymem_cache_wb(uint64_t cachewb_cmd)
 
     // KOT and PHYMEMCACHEWB related variables
     uint64_t              curr_cachewb_cmd = cachewb_cmd;
-    uint8_t               cachewb_flushed_bitmap[MAX_HKIDS] = {0};
+    uint8_t               cachewb_flushed_bitmap[MAX_HKIDS];
     bool_t                flushed_bitmap_counter = false;
     uint16_t              curr_hkid;
     bool_t                kot_locked_flag = false;       // Indicates whether KOT is locked
@@ -70,6 +70,8 @@ api_error_type tdh_phymem_cache_wb(uint64_t cachewb_cmd)
         goto EXIT;
     }
     kot_locked_flag = true;
+
+    basic_memset_to_zero(cachewb_flushed_bitmap, sizeof(cachewb_flushed_bitmap));
 
     // Handle initial TDBWINVD (that is not a resumption of an interrupted TDWBINVD)
     if (curr_cachewb_cmd == TDH_PHYMEM_CACHEWB_START_CMD)
@@ -141,10 +143,10 @@ api_error_type tdh_phymem_cache_wb(uint64_t cachewb_cmd)
         // If this was not the last sub-block, check for pending interrupts
         if (intr_point_for_cachewb < global_data_ptr->num_of_cached_sub_blocks)
         {
-            if (ia32_rdmsr(IA32_INTR_PENDING_MSR_ADDR) != 0)
+            if (is_interrupt_pending_host_side())
             {
                 global_data_ptr->wbt_entries[cachewb_index].intr_point = intr_point_for_cachewb;
-                TDX_ERROR("There were pending interrupts during CACHEWB call\n");
+                TDX_LOG("There were pending interrupts during CACHEWB call\n");
                 return_val = TDX_INTERRUPTED_RESUMABLE;
                 goto EXIT;
             }

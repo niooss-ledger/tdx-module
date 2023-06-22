@@ -32,16 +32,21 @@
 static void copy_gprs_data_from_td_to_vmm(tdx_module_local_t* tdx_local_data_ptr,
                                           tdvmcall_control_t control)
 {
-    // Copy guest TD's GPRs, selected by the input parameter, to the host
-    // VMM GPRs image.  Clear other non-selected GPRs.
+    // Copy guest TD's GPRs, selected by the input parameter, to the host VMM GPRs image.
+    // Clear other non-selected GPRs.
+    td_exit_qualification_t td_exit_qual = { .raw = 0 };
+    td_exit_qual.vm = tdx_local_data_ptr->vp_ctx.tdvps->management.curr_vm;
+    td_exit_qual.gpr_select = control.gpr_select;
+    td_exit_qual.xmm_select = control.xmm_select;
 
-    // RAX is not copied, start from RCX
-    control.gpr_select |= (uint16_t)BIT(1);  // RCX is always copied
-    for (uint32_t i = 1; i < 16; i++)
+    tdx_local_data_ptr->vmm_regs.rcx = td_exit_qual.raw;
+
+    // RAX is not copied, RCX filled above, start from RDX
+    for (uint32_t i = 2; i < 16; i++)
     {
         if ((control.gpr_select & BIT(i)) != 0)
         {
-            tdx_local_data_ptr->vmm_regs.gprs[i] = tdx_local_data_ptr->vp_ctx.tdvps->guest_state.gprs[i];
+            tdx_local_data_ptr->vmm_regs.gprs[i] = tdx_local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.gprs[i];
         }
         else
         {
@@ -66,10 +71,6 @@ api_error_type tdg_vp_vmcall(uint64_t controller_value)
         goto EXIT_FAILURE;
     }
 
-    // TDGVPVMCALL behaves as a trap-like TD exit.
-    // TDX-SEAM advances the guest TD RIP (in TD VMCS) to the instruction following TDCALL.
-    advance_guest_rip();
-
     // TDX-SEAM loads the host VMM GPRs (in its LP-scope state save area), except RAX,
     // with the guest TD GPR (from TDVPS).
     copy_gprs_data_from_td_to_vmm(tdx_local_data_ptr, control);
@@ -89,8 +90,9 @@ api_error_type tdg_vp_vmcall(uint64_t controller_value)
     xcr0.sse = 1;
     uint64_t scrub_mask = xcr0.raw;
 
-
-    td_vmexit_to_vmm(VCPU_READY_TDVMCALL, scrub_mask, control.xmm_select, false);
+    // TDGVPVMCALL behaves as a trap-like TD exit.
+    // TDX-SEAM advances the guest TD RIP (in TD VMCS) to the instruction following TDCALL.
+    td_vmexit_to_vmm(VCPU_READY, LAST_EXIT_TDVMCALL, scrub_mask, control.xmm_select, false, true);
     
     EXIT_FAILURE:
 

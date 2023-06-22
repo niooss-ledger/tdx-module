@@ -22,15 +22,20 @@
 #include "helpers/helpers.h"
 #include "td_dispatcher/vm_exits/td_vmexit.h"
 #include "crypto/sha384.h"
+#include "helpers/service_td.h"
+#include "td_transitions/td_exit.h"
 
 
-api_error_type tdg_mr_report(uint64_t report_struct_gpa, uint64_t additional_data_gpa, uint64_t sub_type)
+api_error_type tdg_mr_report(uint64_t report_struct_gpa, uint64_t additional_data_gpa, uint64_t sub_type,
+                             bool_t* interrupt_occurred)
 {
     // Local data and TD's structures
     tdx_module_local_t  * local_data_ptr = get_local_data();
     tdr_t               * tdr_p = local_data_ptr->vp_ctx.tdr;
     tdcs_t              * tdcs_p = local_data_ptr->vp_ctx.tdcs;
     tdvps_t             * tdvps_p = local_data_ptr->vp_ctx.tdvps;
+
+    bool_t                interrupt_pending = false;
 
     tdx_sanity_check(tdr_p != NULL, SCEC_TDCALL_SOURCE(TDG_MR_REPORT_LEAF), 0);
     tdx_sanity_check(tdcs_p != NULL, SCEC_TDCALL_SOURCE(TDG_MR_REPORT_LEAF), 1);
@@ -46,10 +51,11 @@ api_error_type tdg_mr_report(uint64_t report_struct_gpa, uint64_t additional_dat
     td_report_data_t    * tdg_mr_report_data_ptr = NULL;           // Pointer to the REPORTDATA_STRUCT
     td_report_type_t      tdg_mr_report_type = {.raw = 0};         // REPORTTYPE STRUCT
     ALIGN(1024) td_report_t temp_tdg_mr_report;                    // To generate the report before copying
-    ALIGN(64) uint64_t    tee_info_hash[SIZE_OF_SHA384_HASH_IN_QWORDS] = { 0 };
+    ALIGN(64) measurement_t tee_info_hash = { 0 };
 
-    uint128_t             xmms[16];                  // SSE state backup for crypto
-    crypto_api_error      sha_error_code;
+    bool_t async_exit_needed = false;
+
+    basic_memset_to_zero(&temp_tdg_mr_report, sizeof(temp_tdg_mr_report));
 
     api_error_type        return_val = TDX_OPERAND_INVALID;
 
@@ -94,67 +100,55 @@ api_error_type tdg_mr_report(uint64_t report_struct_gpa, uint64_t additional_dat
         goto EXIT;
     }
 
-    // Acquire shared access to TDCS.RTMR
-    if (acquire_sharex_lock_sh(&tdcs_p->measurement_fields.rtmr_lock) != LOCK_RET_SUCCESS)
-    {
-        TDX_ERROR("Failed to acquire shared lock on RTMR\n");
-        return_val = api_error_with_operand_id(TDX_OPERAND_BUSY, OPERAND_ID_RTMR);
-        goto EXIT;
-    }
-
     // Assemble REPORTTYPE
     tdg_mr_report_type.type = (uint8_t)TDX_REPORT_TYPE;
     tdg_mr_report_type.subtype = report_subtype;
-    tdg_mr_report_type.version = (uint8_t)TDX_REPORT_VERSION;
 
-    // Create TDG_MR_REPORT_LEAF in a temporary buffer
-    // Zero the report (reserve fields are zero'd)
-    basic_memset_to_zero(&temp_tdg_mr_report, sizeof(td_report_t));
-    temp_tdg_mr_report.td_info.attributes = tdcs_p->executions_ctl_fields.attributes.raw;
-    temp_tdg_mr_report.td_info.xfam = tdcs_p->executions_ctl_fields.xfam;
-    tdx_memcpy(temp_tdg_mr_report.td_info.mr_td.bytes, sizeof(measurement_t),
-               tdcs_p->measurement_fields.mr_td.bytes,
-               sizeof(measurement_t));
-    tdx_memcpy(temp_tdg_mr_report.td_info.mr_config_id.bytes, sizeof(measurement_t),
-               tdcs_p->measurement_fields.mr_config_id.bytes,
-               sizeof(measurement_t));
-    tdx_memcpy(temp_tdg_mr_report.td_info.mr_owner.bytes, sizeof(measurement_t),
-               tdcs_p->measurement_fields.mr_owner.bytes,
-               sizeof(measurement_t));
-    tdx_memcpy(temp_tdg_mr_report.td_info.mr_owner_config.bytes, sizeof(measurement_t),
-               tdcs_p->measurement_fields.mr_owner_config.bytes,
-               sizeof(measurement_t));
-    for (uint32_t i = 0; i < NUM_OF_RTMRS; i++)
+    if (tdcs_p->service_td_fields.servtd_num > 0)
     {
-        tdx_memcpy(temp_tdg_mr_report.td_info.rtmr[i].bytes, sizeof(measurement_t),
-                   tdcs_p->measurement_fields.rtmr[i].bytes,
-                   sizeof(measurement_t));
+        tdg_mr_report_type.version = (uint8_t)TDX_REPORT_VERSION_WITH_SERVTDS;
+    }
+    else
+    {
+        tdg_mr_report_type.version = (uint8_t)TDX_REPORT_VERSION_NO_SERVTDS;
     }
 
-    // Compute TEE_INFO_HASH
-
-    store_xmms_in_buffer(xmms);
-
-    if ((sha_error_code = sha384_generate_hash((const uint8_t *)&temp_tdg_mr_report.td_info,
-                                                sizeof(td_info_t),
-                                                (void *)&tee_info_hash[0])))
+    // Create TDREPORT in a temporary buffer and compute TEE_INFO_HASH
+    ignore_tdinfo_bitmap_t ignore = { .raw = 0 };
+    if ((return_val = get_tdinfo_and_teeinfohash(tdcs_p, ignore,
+                          &temp_tdg_mr_report.td_info, &tee_info_hash, true)) != TDX_SUCCESS)
     {
-        // Unexpected error - Fatal Error
-        TDX_ERROR("Unexpected error in SHA384 - error = %d\n", sha_error_code);
-        FATAL_ERROR();
+        return_val = api_error_with_operand_id(return_val, OPERAND_ID_RTMR);
+        goto EXIT;
     }
 
-    load_xmms_from_buffer(xmms);
-    basic_memset_to_zero(xmms, sizeof(xmms));
+    // Interruption Point
+    if (is_interrupt_pending_guest_side())
+    {
+        // An interrupt is pending. Resume the guest without updating CPU state
+        // TDG.MR.REPORT will be called again after the interrupt is serviced.
+        // get_tdinfo_and_teeinfohash() is optimized to avoid recalculation if used with the same inputs,
+        // so some progress should happen.
+        interrupt_pending = true;
+        goto EXIT;
+    }
 
-    // Use SEAMREPORT to create REPORTMACSTRUCT & SEAM measurements (if applicable)
-    ia32_seamops_seamreport(&temp_tdg_mr_report,
-                            tdg_mr_report_data_ptr,
-                            &tee_info_hash[0],
-                            tdg_mr_report_type.raw);
+    // Use SEAMDB_REPORT to create REPORTMACSTRUCT & SEAM measurements (if applicable)
+    // for the TD's index/nonce
+    uint64_t result = ia32_seamops_seamdb_report(&temp_tdg_mr_report, tdg_mr_report_data_ptr,
+            tee_info_hash.qwords, tdg_mr_report_type.raw, tdr_p->td_preserving_fields.seamdb_index,
+            &tdr_p->td_preserving_fields.seamdb_nonce);
 
-    // Release all acquired locks and free keyhole mappings
-    release_sharex_lock_sh(&tdcs_p->measurement_fields.rtmr_lock);  
+    // If SEAMDB_REPORT failed due to TDR corruption (contained bad index/nonce),
+    // go to non-recoverable asynchronous TDEXIT
+    if (result != SEAMOPS_SUCCESS)
+    {
+        TDX_ERROR("SEADB_REPORT failure due to TDR corruption\n");
+        async_exit_needed = true;
+        goto EXIT;
+    }
+	
+    // Free keyhole mappings
     if (tdg_mr_report_data_ptr != NULL)
     {
         free_la(tdg_mr_report_data_ptr);
@@ -162,12 +156,12 @@ api_error_type tdg_mr_report(uint64_t report_struct_gpa, uint64_t additional_dat
     }
 
     return_val = check_walk_and_map_guest_side_gpa(tdcs_p,
-                                                tdvps_p,
-                                                tdg_mr_report_gpa,
-                                                tdr_p->key_management_fields.hkid,
-                                                TDX_RANGE_RW,
-                                                PRIVATE_OR_SHARED,
-                                                (void **)&tdg_mr_report_ptr);
+                                                   tdvps_p,
+                                                   tdg_mr_report_gpa,
+                                                   tdr_p->key_management_fields.hkid,
+                                                   TDX_RANGE_RW,
+                                                   PRIVATE_OR_SHARED,
+                                                   (void **)&tdg_mr_report_ptr);
     if (return_val != TDX_SUCCESS)
     {
         TDX_ERROR("Failed on checking GPA (=%llx) error = %llx\n", tdg_mr_report_gpa.raw, return_val);
@@ -181,6 +175,9 @@ api_error_type tdg_mr_report(uint64_t report_struct_gpa, uint64_t additional_dat
     return_val = TDX_SUCCESS;
 
 EXIT:
+
+    *interrupt_occurred = interrupt_pending;
+
     // Free keyhole mappings
     if (tdg_mr_report_data_ptr != NULL)
     {
@@ -189,6 +186,10 @@ EXIT:
     if (tdg_mr_report_ptr != NULL)
     {
         free_la(tdg_mr_report_ptr);
+    }
+    if (async_exit_needed)
+    {
+        async_tdexit_empty_reason(TDX_NON_RECOVERABLE_TD_CORRUPTED_MD);
     }
 
     return return_val;

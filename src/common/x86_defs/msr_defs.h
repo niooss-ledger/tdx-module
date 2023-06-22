@@ -20,6 +20,8 @@
 #include "tdx_basic_types.h"
 #include "x86_defs.h"
 
+#define MSR_RANGE_SIZE                                   0x2000
+
 #define IA32_SEAMRR_BASE_MSR_ADDR                        0x1400
 #define IA32_SEAMRR_MASK_MSR_ADDR                        0x1401
 #define IA32_TME_CAPABILITY_MSR_ADDR                     0x981
@@ -28,6 +30,7 @@
 #define IA32_TME_EXCLUDE_BASE                            0x984
 #define IA32_MKTME_KEYID_PARTITIONING_MSR_ADDR           0x87
 #define IA32_XSS_MSR_ADDR                                0xDA0
+#define IA32_EFER_MSR_ADDR                               0xC0000080
 #define IA32_STAR_MSR_ADDR                               0xC0000081
 #define IA32_LSTAR_MSR_ADDR                              0xC0000082
 #define IA32_FMASK_MSR_ADDR                              0xC0000084
@@ -37,14 +40,16 @@
 #define IA32_SPEC_CTRL_MSR_ADDR                          0x48
 #define IA32_LBR_DEPTH_MSR_ADDR                          0x14CF
 #define IA32_DS_AREA_MSR_ADDR                            0x600
-#define IA32_TSC_DEADLINE_MSR_ADDR                       0x6E0
-#define IA32_PKRS                                        0x6E1
+#define IA32_PKRS_MSR_ADDR                               0x6E1
+#define IA32_X2APIC_START                                0x800
 #define IA32_X2APIC_APICID                               0x802
 #define IA32_X2APIC_ICR                                  0x830
 #define IA32_X2APIC_EOI                                  0x80B
+#define IA32_X2APIC_END                                  0x8FF
 #define IA32_APIC_BASE_MSR_ADDR                          0x1B
 #define IA32_TSC_ADJ_MSR_ADDR                            0x3B
 #define IA32_TSC_AUX_MSR_ADDR                            0xC0000103
+#define IA32_TSC_DEADLINE_MSR_ADDR                       0x6E0
 #define IA32_FIXED_CTR_CTRL_MSR_ADDR                     0x38D
 #define IA32_FIXED_CTR0_MSR_ADDR                         0x309
 #define IA32_A_PMC0_MSR_ADDR                             0x4C1
@@ -68,6 +73,9 @@
 #define IA32_DCA_CAP                                     0x1FA
 #define IA32_CORE_CAPABILITIES                           0xCF
 #define IA32_LAM_ENABLE_MSR_ADDR                         0x276
+#define IA32_MISC_PACKAGE_CTLS_MSR_ADDR                  0xBC
+#define IA32_UARCH_MISC_CTL_MSR_ADDR                     0x1B01
+#define IA32_XAPIC_DISABLE_STATUS_MSR_ADDR               0xBD
 // Partial WBINVD related MSRs
 #define IA32_WBINVDP_MSR_ADDR                            0x98
 #define IA32_WBNOINVDP_MSR_ADDR                          0x99
@@ -86,18 +94,18 @@
 #define IA32_LBR_DEPTH_MSR_RESET_STATE           0x20ULL
 
 #define NUM_PMC                      8
-#define NUM_FIXED_CTR                4
+#define MAX_FIXED_CTR                7ULL // Max supported by TDX module
 
 typedef union
 {
     struct
     {
-        uint64_t syscall_enabled :1;
-        uint64_t reserved_0 :7;
-        uint64_t lme :1;
-        uint64_t reserved_1 :1;
-        uint64_t lma :1;
-        uint64_t xde :1;
+        uint64_t syscall_enabled :1; // Bit 0
+        uint64_t reserved_0 :7;      // Bits 1:7
+        uint64_t lme :1;             // Bit 8
+        uint64_t reserved_1 :1;      // Bit 9
+        uint64_t lma :1;             // Bit 10
+        uint64_t nxe :1;             // Bit 11
         uint64_t reserved_2 :52;
     };
     uint64_t raw;
@@ -132,23 +140,26 @@ typedef union
 {
     struct
     {
-        uint64_t lock                                    : 1, //0
-                 tme_enable                              : 1, //1
-                 key_select                              : 1, //2
-                 save_key_for_standby                    : 1, //3
-                 tme_policy                              : 4, //4-7
-                 sgx_tem_enable                          : 1, //8
-                 rsvd                                    : 23, //9-31
-                 mk_tme_keyid_bits                       : 4, //32-35
-                 tdx_reserved_keyid_bits                 : 4, //36-39
-                 rsvd1                                   : 8, //40-47
-                 mk_tme_crypto_algs_aes_xts_128          : 1,
-                 mk_tme_crypto_algs_aes_xts_128_with_integrity : 1,
-                 mk_tme_crypto_algs_aes_xts_256          : 1,
-                 mk_tme_crypto_algs_rsvd                 : 13;
+        uint64_t lock                            : 1 , //0
+                 tme_enable                      : 1,  //1
+                 key_select                      : 1,  //2
+                 save_key_for_standby            : 1,  //3
+                 tme_policy                      : 4,  //4-7
+                 sgx_tem_enable                  : 1,  //8
+                 rsvd                            : 22, //9-30
+                 tme_enc_bypass_enable           : 1,  //31
+                 mk_tme_keyid_bits               : 4,  //32-35
+                 tdx_reserved_keyid_bits         : 4,  //36-39
+                 rsvd1                           : 8,  //40-47
+                 algs_aes_xts_128                : 1,  //48
+                 algs_aes_xts_128_with_integrity : 1,  //49
+                 algs_aes_xts_256                : 1,  //50
+                 algs_aes_xts_256_with_integrity : 1,  //51
+                 algs_rsvd                       : 12;
     };
     uint64_t raw;
 } ia32_tme_activate_t;
+tdx_static_assert(sizeof(ia32_tme_activate_t) == 8, ia32_tme_activate_t);
 
 typedef union
 {
@@ -157,7 +168,9 @@ typedef union
         uint64_t aes_xts_128 : 1;                // Bit 0
         uint64_t aes_xts_128_with_integrity : 1; // Bit 1
         uint64_t aes_xts_256 : 1;                // Bit 2
-        uint64_t rsvd : 29;                      // Bits 31:3
+        uint64_t aes_xts_256_with_integrity : 1; // Bit 3
+        uint64_t rsvd : 27;                      // Bits 30:4
+        uint64_t tme_enc_bypass_supported   : 1; // Bit 31
         uint64_t mk_tme_max_keyid_bits : 4;      // Bits 35:32
         uint64_t mk_tme_max_keys : 15;           // Bits 50:36
         uint64_t nm_encryption_disable : 1;      // Bit 51
@@ -166,6 +179,7 @@ typedef union
     };
     uint64_t raw;
 } ia32_tme_capability_t;
+tdx_static_assert(sizeof(ia32_tme_capability_t) == 8, ia32_tme_capability_t);
 
 typedef union
 {
@@ -176,6 +190,7 @@ typedef union
     };
     uint64_t raw;
 } ia32_tme_keyid_partitioning_t;
+tdx_static_assert(sizeof(ia32_tme_keyid_partitioning_t) == 8, ia32_tme_keyid_partitioning_t);
 
 typedef union ia32_seamrr_base_u {
     struct {
@@ -228,20 +243,83 @@ typedef union
 {
     struct
     {
-        uint64_t vmcs_revision_id         : 31;
-        uint64_t rsvd0                    : 1;
-        uint64_t vmcs_region_size         : 13;
-        uint64_t rsvd1                    : 3;
-        uint64_t vmxon_pa_width           : 1;   // bits 44:32
-        uint64_t dual_monitor             : 1;
-        uint64_t vmcs_mt                  : 4;
-        uint64_t vmexit_info_on_ios       : 1;
-        uint64_t default_1_controls_clear : 1;   // bit 55
-        uint64_t rsvd2                    : 8;
+        uint64_t vmcs_revision_id         : 31; // bits 30:0
+        uint64_t rsvd0                    : 1;  // bit 31
+        uint64_t vmcs_region_size         : 13; // bits 44:32
+        uint64_t rsvd1                    : 3;  // bits 47:45
+        uint64_t vmxon_pa_width           : 1;  // bit 48 
+        uint64_t dual_monitor             : 1;  // bit 49
+        uint64_t vmcs_mt                  : 4;  // bits 53:50
+        uint64_t vmexit_info_on_ios       : 1;  // bit 54
+        uint64_t ia32_vmx_true_available  : 1;  // bit 55
+        uint64_t voe_without_err_code     : 1;  // bit 56
+        uint64_t rsvd2                    : 7;  // bits 63:57
     };
     uint64_t raw;
 } ia32_vmx_basic_t;
 tdx_static_assert(sizeof(ia32_vmx_basic_t) == 8, ia32_vmx_basic_t);
+
+typedef union ia32_vmx_misc_u
+{
+    struct
+    {
+        uint64_t vmx_preempt_timer_tsc_factor   : 5;   // Bits 4:0
+        uint64_t unrestricted_guest             : 1;   // bit 5
+        uint64_t activity_hlt                   : 1;   // bit 6
+        uint64_t activity_shutdown              : 1;   // bit 7
+        uint64_t activity_wait_for_sipi         : 1;   // bit 8
+        uint64_t reserved                       : 5;   // bits 13:9
+        uint64_t pt_in_vmx                      : 1;   // bit 14
+        uint64_t ia32_smbase                    : 1;   // bit 15
+        uint64_t max_cr3_targets                : 9;   // bits 24:16
+        uint64_t max_msr_list_size              : 3;   // bits 27:25
+        uint64_t ia32_smm_monitor_ctl           : 1;   // bit 28
+        uint64_t vmwrite_any_vmcs_field         : 1;   // bit 29
+        uint64_t voe_with_0_instr_length        : 1;   // bit 30
+        uint64_t reserved_1                     : 1;   // bit 31
+        uint64_t mseg_rev_id                    : 32;  // bits 63:32
+    };
+    uint64_t raw;
+} ia32_vmx_misc_t;
+tdx_static_assert(sizeof(ia32_vmx_misc_t) == 8, ia32_vmx_misc_t);
+
+
+typedef union ia32_vmx_ept_vpid_cap_u
+{
+    struct
+    {
+        uint64_t exe_only_supported                             : 1;   // bit 0
+        uint64_t reserved_1                                     : 5;   // bits 5:1
+        uint64_t pml4_supported                                 : 1;   // bit 6
+        uint64_t pml5_supported                                 : 1;   // bit 7
+        uint64_t uc_supported                                   : 1;   // bit 8
+        uint64_t reserved_2                                     : 5;   // bits 13:9
+        uint64_t wb_supported                                   : 1;   // bit 14
+        uint64_t reserved_3                                     : 1;   // bit 15
+        uint64_t ps_2m_supported                                : 1;   // bit 16
+        uint64_t ps_1g_supported                                : 1;   // bit 17
+        uint64_t reserved_4                                     : 2;   // bits 19:18
+        uint64_t invept_supported                               : 1;   // bit 20
+        uint64_t ad_supported                                   : 1;   // bit 21
+        uint64_t advanced_vmexit_info_supported                 : 1;   // bit 22
+        uint64_t sss_support                                    : 1;   // bit 23
+        uint64_t reserved_5                                     : 1;   // bit 24
+        uint64_t single_context_invept_supported                : 1;   // bit 25
+        uint64_t all_context_invept_supported                   : 1;   // bit 26
+        uint64_t reserved_6                                     : 5;   // bit 31:27
+        uint64_t invvpid_supported                              : 1;   // bit 32
+        uint64_t reserved_7                                     : 7;   // bits 39:33
+        uint64_t individual_addr_invvpid_supported              : 1;   // bit 40
+        uint64_t single_context_invvpid_supported               : 1;   // bit 41
+        uint64_t all_context_invvpid_supported                  : 1;   // bit 42
+        uint64_t single_contx_retaining_globals_invvpid_supp    : 1;   // bit 43
+        uint64_t reserved_8                                     : 4;   // bits 47:44
+        uint64_t hlat_prefix_size                               : 6;   // Bits 53:48
+        uint64_t reserved_9                                     : 10;  // Bits 63:54
+    };
+    uint64_t raw;
+} ia32_vmx_ept_vpid_cap_t;
+tdx_static_assert(sizeof(ia32_vmx_ept_vpid_cap_t) == 8, ia32_vmx_ept_vpid_cap_t);
 
 typedef union
 {
@@ -280,19 +358,34 @@ typedef union ia32_core_capabilities_u
     };
     uint64_t raw;
 } ia32_core_capabilities_t;
-
+tdx_static_assert(sizeof(ia32_core_capabilities_t) == 8, ia32_core_capabilities_t);
 
 typedef union ia32_spec_ctrl_u
 {
     struct
     {
-        uint64_t ibrs : 1;
-        uint64_t stibp : 1;
-        uint64_t ssbd : 1;
-        uint64_t reserved : 61;
+        uint64_t ibrs           : 1;  // Bit 0
+        uint64_t stibp          : 1;  // Bit 1
+        uint64_t ssbd           : 1;  // Bit 2
+        uint64_t ipred_dis_u    : 1;  // Bit 3
+        uint64_t ipred_dis_s    : 1;  // Bit 4
+        uint64_t rrsba_dis_u    : 1;  // Bit 5
+        uint64_t rrsba_dis_s    : 1;  // Bit 6
+        uint64_t psfd           : 1;  // Bit 7
+        uint64_t ddpd_u         : 1;  // Bit 8
+        uint64_t reserved_0     : 1;  // Bit 9
+        uint64_t bhi_dis_s      : 1;  // Bit 10
+        uint64_t reserved_1     : 53; // Bits 63:11
     };
     uint64_t raw;
 } ia32_spec_ctrl_t;
+tdx_static_assert(sizeof(ia32_spec_ctrl_t) == 8, ia32_spec_ctrl_t);
+
+#define IA32_SPEC_CTRL_SSBD_BIT         BIT(2)
+
+#define TDX_MODULE_IA32_SPEC_CTRL       (IA32_SPEC_CTRL_SSBD_BIT)
+
+#define IA32_ARCH_CAPABILITIES_CONFIG_MASK  (BIT(4) | BIT(19) | BIT(20) | BIT(24))
 
 typedef union ia32_arch_capabilities_u
 {
@@ -327,6 +420,7 @@ typedef union ia32_arch_capabilities_u
     };
     uint64_t raw;
 } ia32_arch_capabilities_t;
+tdx_static_assert(sizeof(ia32_arch_capabilities_t) == 8, ia32_arch_capabilities_t);
 
 typedef union ia32_tsx_ctrl_u
 {
@@ -369,5 +463,37 @@ typedef union ia32_misc_enable_u
     };
     uint64_t raw;
 } ia32_misc_enable_t;
+
+typedef union ia32_misc_package_ctls_u
+{
+    struct
+    {
+        uint64_t energy_filtering_enable   : 1;   // Bit 0
+        uint64_t reserved                  : 63;  // Bits 63-1
+    };
+    uint64_t raw;
+} ia32_misc_package_ctls_t;
+
+typedef union ia32_msr_intr_pending_u
+{
+    struct
+    {
+        uint64_t intr  : 1;   // Bit 0: INTR is pending
+        uint64_t nmi   : 1;   // Bit 1: NMI is pending
+        uint64_t smi   : 1;   // Bit 2: SMI is pending
+        uint64_t other : 61;  // Bits 63:3: Other events are pending
+    };
+    uint64_t raw;
+} ia32_msr_intr_pending_t;
+
+typedef union ia32_xapic_disable_status_u
+{
+    struct
+    {
+        uint64_t legacy_xapic_disabled : 1;   // Bit 0
+        uint64_t reserved              : 63;  // Bits 63-1
+    };
+    uint64_t raw;
+} ia32_xapic_disable_status_t;
 
 #endif /* SRC_COMMON_X86_DEFS_MSR_DEFS_H_ */

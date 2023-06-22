@@ -1,9 +1,9 @@
-// Intel Proprietary 
-// 
+// Intel Proprietary
+//
 // Copyright 2021 Intel Corporation All Rights Reserved.
-// 
+//
 // Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
+//
 // The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
 // of merchantability, non-infringement, title, or fitness for a particular purpose.
 
@@ -34,6 +34,52 @@
 #define DR2_RESET_STATE  0x0ULL
 #define DR3_RESET_STATE  0x0ULL
 #define DR6_RESET_STATE  0xFFFF0FF0ULL
+
+#define CODE_SEGMENT_TYPE_WITH_CRA_BITS   0b1111
+
+typedef union {
+    struct
+    {
+        uint64_t  limit_low    : 16;
+        uint64_t  base_low     : 24;
+        uint64_t  type         : 4;
+        uint64_t  s            : 1;
+        uint64_t  dpl          : 2;
+        uint64_t  p            : 1;
+        uint64_t  limit_high   : 4;
+        uint64_t  avl          : 1;
+        uint64_t  l            : 1;
+        uint64_t  db           : 1;
+        uint64_t  g            : 1;
+        uint64_t  base_high    : 8;
+    };
+
+  uint64_t raw;
+} ia32_segment_descriptor_t;
+tdx_static_assert(sizeof(ia32_segment_descriptor_t) == 8, ia32_segment_descriptor_t);
+
+#define IA32_IDT_GATE_TYPE_INTERRUPT_32   0xEU
+
+typedef union {
+    struct
+    {
+        uint64_t  offset_low   : 16;
+        uint64_t  selector     : 16;
+        uint64_t  reserved_0   : 8;
+        uint64_t  gate_type    : 5;
+        uint64_t  dpl          : 2;
+        uint64_t  present      : 1;
+        uint64_t  offset_high  : 16;
+        uint64_t  offset_upper : 32;
+        uint64_t  reserved_1   : 32;
+    };
+    struct
+    {
+        uint64_t  raw_low;
+        uint64_t  raw_high;
+    };
+} ia32_idt_gate_descriptor;
+tdx_static_assert(sizeof(ia32_idt_gate_descriptor) == 16, ia32_idt_gate_descriptor);
 
 typedef union
 {
@@ -127,7 +173,7 @@ typedef union {
             pke        : 1,   // Bit 22
             cet        : 1,   // Bit 23
             pks        : 1,   // Bit 24
-            uie        : 1,   // Bit 25
+            uintr      : 1,   // Bit 25
             reserved_1 : 38;  // Bits 26:63
     };
     uint64_t raw;
@@ -216,9 +262,9 @@ tdx_static_assert(sizeof(ia32_xcr0_t) == 8, ia32xcr0_t);
 #define IA32E_4K_OFFSET                  ((uint64_t) 0x0000000000000FFFLLU)
 
 // Page alignment masks
-#define MEM_MASK_4KB 0xFFFFFFFFFFFFF000;
-#define MEM_MASK_2MB 0xFFFFFFFFFFE00000;
-#define MEM_MASK_1GB 0xFFFFFFFFC0000000;
+#define MEM_MASK_4KB 0xFFFFFFFFFFFFF000
+#define MEM_MASK_2MB 0xFFFFFFFFFFE00000
+#define MEM_MASK_1GB 0xFFFFFFFFC0000000
 
 #define IA32E_4K_PAGE_OFFSET             12
 #define IA32E_2M_PAGE_OFFSET             21
@@ -285,17 +331,6 @@ typedef enum {
     LVL_MAX     = 5,
 } ept_level_t;
 
-/**
- * @brief Definition for SEPT entry state
- */
-typedef enum {
-    SEPTE_FREE = 0x0,
-    SEPTE_BLOCKED = 0x1,
-    SEPTE_PENDING = 0x2,
-    SEPTE_PENDING_BLOCKED = (SEPTE_BLOCKED | SEPTE_PENDING),
-    SEPTE_PRESENT = 0x4
-} sept_entry_state;
-
 typedef union ia32e_pxe_u {
     struct {
         uint64_t
@@ -317,10 +352,6 @@ typedef union ia32e_pxe_u {
   uint64_t raw;
 } ia32e_pxe_t;
 tdx_static_assert(sizeof(ia32e_pxe_t) == 8, ia32e_pxe_t);
-
-#define SEPT_ENTRY_TDB_BIT_POSITION         9
-#define SEPT_ENTRY_TDP_BIT_POSITION         11
-#define SEPT_ENTRY_TDGL_BIT_POSITION        62
 
 typedef union ia32e_ept_u {
     struct {
@@ -395,84 +426,145 @@ typedef union ia32e_ept_u {
 } ia32e_ept_t;
 tdx_static_assert(sizeof(ia32e_ept_t) == 8, ia32e_sept_t);
 
+#define SEPT_ENTRY_R_BIT_POSITION         0
+#define SEPT_ENTRY_W_BIT_POSITION         1
+#define SEPT_ENTRY_X_BIT_POSITION         2
+#define SEPT_ENTRY_XS_BIT_POSITION        2
+#define SEPT_ENTRY_MT0_BIT_POSITION       3   // Memory Type
+#define SEPT_ENTRY_MT1_BIT_POSITION       4   // Memory Type
+#define SEPT_ENTRY_MT2_BIT_POSITION       5   // Memory Type
+#define SEPT_ENTRY_IPAT_BIT_POSITION      6   // IPAT
+#define SEPT_ENTRY_PS_BIT_POSITION        7   // Non-Leaf(0) / Leaf(1)
+#define SEPT_ENTRY_A_BIT_POSITION         8   // Accessed bit
+#define SEPT_ENTRY_TDGL_BIT_POSITION      8   // Guest-side lock
+#define SEPT_ENTRY_D_BIT_POSITION         9   // Dirt bit
+#define SEPT_ENTRY_XU_BIT_POSITION        10
+#define SEPT_ENTRY_TDEL_BIT_POSITION      11  // Entry Lock
+#define SEPT_ENTRY_TDHP_BIT_POSITION      52  // Host Priority, used together with TDEL
+#define SEPT_ENTRY_TDEX_BIT_POSITION      53  // Exported
+#define SEPT_ENTRY_TDBW_BIT_POSITION      54  // Blocked for Writing
+#define SEPT_ENTRY_TDB_BIT_POSITION       55  // Blocked
+#define SEPT_ENTRY_TDP_BIT_POSITION       56  // Pending
+#define SEPT_ENTRY_VPW_BIT_POSITION       57  // Verify Paging-Write
+#define SEPT_ENTRY_PW_BIT_POSITION        58  // Paging-Write
+#define SEPT_ENTRY_TDWR_BIT_POSITION      59  // Saved W bit value
+#define SEPT_ENTRY_SSS_BIT_POSITION       60  // Supervisor Shadow Stack
+#define SEPT_ENTRY_TDSA_BIT_POSITION      60  // SEPT Alias (Link)
+#define SEPT_ENTRY_TDIO_BIT_POSITION      62  // Private(0) / MMIO(1)
+#define SEPT_ENTRY_SVE_BIT_POSITION       63  // Suppress #VE
+
+#define SEPT_ENTRY_MT_BITS_SIZE           3
+
 typedef union ia32e_sept_u {
     struct {
         uint64_t
-            r            :   1,  // 0
-            w            :   1,  // 1
-            x            :   1,  // 2
+            r_ps         :   1,  // 0
+            w_ps         :   1,  // 1
+            x_ps         :   1,  // 2
             reserved_0   :   5,  // 3-7
             ignore_0     :   1,  // 8
-            tdb          :   1,  // 9
-            reserved_1   :   1,  // 10
-            tdp          :   1,  // 11
-            base         :   40, // 12-51
-            reserved_2   :   12; // 52-63
+            reserved_1   :   3,  // 9-11
+            base_ps      :   40, // 12-51
+            reserved_52  :   4,  // 52-55
+            tdp_ps       :   1,  // 56 - Pending
+            reserved_2   :   7;  // 57-63
     } fields_ps;
     struct {
         uint64_t
-            r            :   1,  // 0
-            w            :   1,  // 1
-            x            :   1,  // 2
-            mt           :   3,  // 3-5 - Set to 110 (WB)
-            ipat         :   1,  // 6 - Set to 1
-            leaf         :   1,  // 7 - Set to 1
-            ignore_0     :   1,  // 8
-            tdb          :   1,  // 9
-            reserved_0   :   1,  // 10
-            tdp          :   1,  // 11
-            reserved_1   :   18, // 12-29
-            base         :   22, // 30-51
-            reserved_2   :   11, // 52-62
-            supp_ve      :   1;  // 63
+            reserved_0_1g :   30, // 0-29
+            base_1g       :   22, // 30-51
+            unused_1g     :   12;
     } fields_1g;
     struct {
         uint64_t
-            r            :   1,  // 0
-            w            :   1,  // 1
-            x            :   1,  // 2
-            mt           :   3,  // 3-5 - Set to 110 (WB)
-            ipat         :   1,  // 6 - Set to 1
-            leaf         :   1,  // 7 - Set to 1
-            ignore_0     :   1,  // 8
-            tdb          :   1,  // 9
-            reserved_0   :   1,  // 10
-            tdp          :   1,  // 11
-            reserved_1   :   9,  // 12-20
-            base         :   31, // 21-51
-            reserved_2   :   10, // 52-61
-            tdgl         :   1,  // 62 - Guest-Side Lock relevant for 2M and 4K
-            supp_ve      :   1;  // 63
+            reserved_0_2m :   21, // 0-20
+            base_2m       :   31, // 21-51
+            unused_2m     :   12;
     } fields_2m;
     struct {
         uint64_t
-            r            :   1,  // 0
-            w            :   1,  // 1
-            x            :   1,  // 2
-            mt           :   3,  // 3-5 - Set to 110 (WB)
-            ipat         :   1,  // 6 - Set to 1
-            leaf         :   1,  // 7 - Set to 1
-            ignore_0     :   1,  // 8
-            tdb          :   1,  // 9
-            reserved_0   :   1,  // 10
-            tdp          :   1,  // 11
-            base         :   40, // 12-51
-            reserved_2   :   10, // 52-61
-            tdgl         :   1,  // 62 - Guest-Side Lock relevant for 2M and 4K
-            supp_ve      :   1;  // 63
-    } fields_4k;
+            r          :   1,  // 0
+            w          :   1,  // 1
+            x          :   1,  // 2
+            mt         :   3,  // 3-5 - Set to 110 (WB)
+            ipat       :   1,  // 6 - Set to 1
+            leaf       :   1,  // 7 - Non-Leaf(0) / Leaf(1), always 1 for 4KB (level 0)
+            a          :   1,  // 8 - Accessed
+            d          :   1,  // 9 - Dirty, set and cleared by the TDX module in all the *EXPORTED_* states
+            reserved_0 :   1,  // 10 - Xu, not enabled for L1 SEPT
+            tdel       :   1,  // 11 - Entry Lock
+            base       :   40, // 12-51
+            hp         :   1,  // 52 - Host Priority, used together with TDEL
+            tdex       :   1,  // 53 - Exported
+            tdbw       :   1,  // 54 - Blocked for Writing
+            tdb        :   1,  // 55 - Blocked
+            tdp        :   1,  // 56 - Pending
+            vpw        :   1,  // 57 - Verify Paging-Write
+            pw         :   1,  // 58 - Paging-Write
+            ignored_0  :   1,  // 59
+            sss_tdsa   :   1,  // 60 - Supervisor Shadow Stack / SEPT Alias (Link)
+            tdup       :   1,  // 61 - 1: Page is not pinned in memory even though I/O devices may be attached to the TD
+            reserved_1 :   1,  // 62
+            supp_ve    :   1;  // 63
+    };
     uint64_t raw;
     struct {
         uint64_t
-            rwx          :   3,
-            ignore       :   61;
-    } present;
+            rwx          :   3,   // 0-2
+            ignore_0     :   9,   // 3-11
+            accept_counter : 9,   // 12-20 – Number of 4KB chunks that have been initialized by TDG.MEM.PAGE.ACCEPT
+            ignore_1     :   37,  // 21-57
+            tdal         :   3,   // 58-60
+            ignore_2     :   3;   // 61-63
+    }; // Misc bits
     struct {
         uint64_t
-            ignore_1     :   12, // 0-11
-            init_counter :   9,  // 12-20  Initialized page counter
-            ignore_2     :   43; // 21-63
-    } accept;
+            reserved_0         :  6,  // 0-5
+            state_encoding_5_6 :  2,  // 6-7   - bits [5:6] of state encoding
+            reserved_1         :  1,  // 8
+            state_encoding_0   :  1,  // 9     – Dirty – bit 0 of state encoding
+            reserved_2         :  43, // 10-52
+            state_encoding_1_4 :  4,  // 53-56 – bits[1:4] of state encoding
+            reserved_3         :  6,  // 57-62
+            supp_ve            :  1;  // 63
+    } state_encoding;
+    struct {
+        uint64_t
+            placeholder_11_0 : 12,  // Bits 11:0
+            mig_epoch        : 32,  // Bits 43:12 - Migration epoch
+            mig_epoch_valid  : 1,   // Bit  44    - Indicates that MIG_EPOCH is valid
+            reserved_51_45   : 7,   // Bits 51:45
+            placeholder_63_52: 12;  // Bits 63:52
+    }; // Mig epoch bits
+    struct
+    {
+        uint64_t
+            r           : 1,  // Bit 0
+            w           : 1,  // Bit 1
+            x           : 1,  // Bit 2
+            mt0_tdrd    : 1,  // Bit 3 : MT[0] / Saved R bit value
+            mt1_tdxs    : 1,  // Bit 4 : MT[1] / Saved Xs bit value
+            mt2_tdxu    : 1,  // Bit 5 : MT[2] / Saved Xu bit value
+            ipat_tdmem  : 1,  // Bit 6 : Ignore PAT / 0: Regular memory / 1: MMIO
+            ps          : 1,  // Bit 7 : 0: Non-Leaf / 1: Leaf (also for 4KB pages)
+            a           : 1,  // Bit 8 : Accessed
+            d           : 1,  // Bit 9 : Dirty
+            xu          : 1,  // Bit 10
+            reserved_11 : 1,  // Bit 11
+            hpa         : 40, // Bits 51:12
+            reserved_52 : 1,  // Bit 52
+            reserved_53 : 1,  // Bit 53
+            reserved_54 : 1,  // Bit 54
+            tdb         : 1,  // Bit 55 : Blocked
+            reserved_56 : 1,  // Bit 56
+            vgp         : 1,  // Bit 57 : Verify Guest Paging
+            pwa         : 1,  // Bit 58 : Paging-Write Access
+            tdwr        : 1,  // Bit 59 : Saved W bit value
+            sss         : 1,  // Bit 60 : Supervisor Shadow Stack
+            reserved_61 : 1,  // Bit 61
+            reserved_62 : 1,  // Bit 62 : Reserved (BlockDMA)
+            sve         : 1;  // Bit 63 : Suppress #VE
+    } l2_encoding;
 } ia32e_sept_t;
 tdx_static_assert(sizeof(ia32e_sept_t) == 8, ia32e_sept_t);
 
@@ -713,7 +805,26 @@ tdx_static_assert(sizeof(loadiwkey_ctl_t) == 4, loadiwkey_ctl_t);
 #define CPUID_KEYLOCKER_SUPPORT_SUBLEAF 0
 
 #define CPUID_EXT_FEATURES_LEAF 7
-#define CPUID_EXT_FEATURES_SUBLEAF 0
+#define CPUID_EXT_FEATURES_SUBLEAF  0
+#define CPUID_EXT_FEATURES2_SUBLEAF 1
+
+#define CPUID_PERFMON_LEAF              0xA
+#define CPUID_PERFMON_MIN_SUPPORTED_VER   5
+#define CPUID_PERFMON_EAX_MASK_LOW          0xF
+#define CPUID_PERFMON_EAX_MASK_HIGH         0x0
+#define CPUID_PERFMON_EAX_EXPECTED_LOW      0x5
+#define CPUID_PERFMON_EAX_EXPECTED_HIGH     0x0
+
+#define CPUID_PERFMON_EDX_MASK_LOW          0x0
+#define CPUID_PERFMON_EDX_MASK_HIGH         (0x1FULL << 32ULL)
+#define CPUID_PERFMON_EDX_EXPECTED_LOW      0x0
+#define CPUID_PERFMON_EDX_EXPECTED_HIGH     (MAX_FIXED_CTR << 32ULL)
+
+#define CPUID_MAXPA_EAX_MASK_LOW            0xFF00
+#define CPUID_MAXPA_EAX_MASK_HIGH           0x0
+#define CPUID_MAXPA_EAX_EXPECTED_LOW_57     0x3900
+#define CPUID_MAXPA_EAX_EXPECTED_LOW_48     0x3000
+#define CPUID_MAXPA_EAX_EXPECTED_HIGH       0x0
 
 #define CPUID_EXT_STATE_ENUM_LEAF       0xD
 #define CPUID_EXT_STATE_ENUM_MAIN_SUBLEAF 0
@@ -736,7 +847,7 @@ tdx_static_assert(sizeof(loadiwkey_ctl_t) == 4, loadiwkey_ctl_t);
 #define CPUID_MAX_PA_BITS BITS(7,0)
 
 #define CPUID_MIN_LAST_CPU_BASE_LEAF     0x1F        // Minimal last value of Intel CPUID range supported by the CPU
-#define CPUID_LAST_BASE_LEAF             0x21        // Last value of virtualized Intel CPUID range
+#define CPUID_LAST_BASE_LEAF             0x23        // Last value of virtualized Intel CPUID range
 #define CPUID_FIRST_EXTENDED_LEAF        0x80000000  // AMD CPUID range first leaf value
 #define CPUID_LAST_EXTENDED_LEAF         0x80000008  // AMD CPUID range last leaf value
 
@@ -759,6 +870,9 @@ typedef union
     uint32_t raw;
 } fms_info_t; //cpuid_01_eax
 tdx_static_assert(sizeof(fms_info_t) == 4, fms_info_t);
+
+#define CPUID_S_MASK          0x0000000FULL   // Mask for the Stepping field
+#define CPUID_FMS_MASK        0x0FFF0FFFULL   // Mask for the Family/Model/Stepping fields
 
 typedef union
 {
@@ -793,6 +907,45 @@ typedef union
     uint32_t raw;
 } cpuid_topology_shift_t;
 tdx_static_assert(sizeof(cpuid_topology_shift_t) == 4, cpuid_topology_shift_t);
+
+typedef union cpuid_0a_eax_u
+{
+    struct
+    {
+        uint32_t version           : 8; // Bits 7:0
+        uint32_t num_gp_counters   : 8; // Bits 15:8
+        uint32_t gp_counters_width : 8; // Bits 23:16
+        uint32_t num_ebx_flags     : 8; // Bits 31:24
+    };
+    uint32_t raw;
+} cpuid_0a_eax_t;
+tdx_static_assert(sizeof(cpuid_0a_eax_t) == 4, cpuid_0a_eax_t);
+
+typedef union cpuid_0a_ecx_u
+{
+    struct
+    {
+        uint32_t fc_ditmap     : 4; // Bits 3:0
+        uint32_t reserved      : 28;
+    };
+    uint32_t raw;
+} cpuid_0a_ecx_t;
+tdx_static_assert(sizeof(cpuid_0a_ecx_t) == 4, cpuid_0a_ecx_t);
+
+typedef union cpuid_0a_edx_u
+{
+    struct
+    {
+        uint32_t num_fcs               : 5; // Bits 4:0
+        uint32_t fc_width              : 8; // Bits 12:5
+        uint32_t reserved_0            : 2;
+        uint32_t any_thread_deprecated : 1; // Bit 15
+        uint32_t reserved_1            : 8;
+        uint32_t bit_vector_length     : 8; // Bits 31:24
+    };
+    uint32_t raw;
+} cpuid_0a_edx_t;
+tdx_static_assert(sizeof(cpuid_0a_edx_t) == 4, cpuid_0a_edx_t);
 
 typedef union cpuid_0d_ecx_u
 {
@@ -1004,6 +1157,70 @@ typedef union cpuid_07_00_edx_u
 } cpuid_07_00_edx_t;
 tdx_static_assert(sizeof(cpuid_07_00_edx_t) == 4, cpuid_07_00_edx_t);
 
+typedef union cpuid_07_01_eax_u
+{
+    struct
+    {
+        uint32_t unspecified_5_0   : 6;
+        uint32_t lass              : 1; // Bit 6
+        uint32_t unspecified_7     : 1;
+        uint32_t perfmon_ext_leaf  : 1; // Bit 8
+        uint32_t unspecified_25_9  : 17;
+        uint32_t lam               : 1;  // Bit 26
+        uint32_t unspecified_31_27 : 5;
+    };
+    uint32_t raw;
+} cpuid_07_01_eax_t;
+tdx_static_assert(sizeof(cpuid_07_01_eax_t) == 4, cpuid_07_01_eax_t);
+
+typedef union cpuid_07_02_edx_u
+{
+    struct
+    {
+        uint32_t psfd          : 1;   // Bit 0
+        uint32_t ipred_ctrl    : 1;   // Bit 1
+        uint32_t rrsba_ctrl    : 1;   // Bit 2
+        uint32_t ddpd          : 1;   // Bit 3
+        uint32_t bhi_ctrl      : 1;   // Bit 4
+        uint32_t mcdt_no       : 1;   // Bit 5
+        uint32_t reserved_0    : 26;  // Bits 31:6
+    };
+    uint32_t raw;
+} cpuid_07_02_edx_t;
+tdx_static_assert(sizeof(cpuid_07_02_edx_t) == 4, cpuid_07_02_edx_t);
+
+typedef union cpuid_80000001_edx_u
+{
+    struct
+    {
+        uint32_t reserved_0     : 11;   // Bits 10:0
+        uint32_t syscall_sysret : 1;   // Bit 12
+        uint32_t reserved_1     : 8;   // Bits 19:12
+        uint32_t xd             : 1;   // Bit 20
+        uint32_t reserved_2     : 5;   // Bits 25:21
+        uint32_t huge_page      : 1;   // Bit 26
+        uint32_t rdtscp_tsx_aux : 1;   // Bit 27
+        uint32_t reserved_3     : 1;   // Bit 28
+        uint32_t intel64        : 1;   // Bit 29
+        uint32_t reserved_4     : 2;   // Bits 31:30
+    };
+    uint32_t raw;
+} cpuid_80000001_edx_t;
+
+#define LA57_LINEAR_ADDRESS_WIDTH           57
+#define LEGACY_LINEAR_ADDRESS_WIDTH         48
+
+typedef union cpuid_80000008_eax_u
+{
+    struct
+    {
+        uint32_t pa_bits  : 8;
+        uint32_t la_bits  : 8;
+        uint32_t reserved : 16;
+    };
+    uint32_t raw;
+} cpuid_80000008_eax_t;
+
 typedef union
 {
     struct
@@ -1122,14 +1339,30 @@ typedef union ia32_apic_icr_u
 } ia32_apic_icr_t;
 tdx_static_assert(sizeof(ia32_apic_icr_t) == 8, ia32_apic_icr_t);
 
+typedef union ia32_apic_register_u
+{
+    struct
+    {
+        volatile uint32_t value;
+        volatile uint32_t reserved[3];
+    };
+
+    volatile uint64_t raw[2];
+} ia32_apic_register_t;
+tdx_static_assert(sizeof(ia32_apic_register_t) == 4*4, ia32_apic_register_t);
+
 #define APIC_MMIO_APICID_OFFSET         0x020
+#define APIC_MMIO_PPR_OFFSET            0x0A0
+#define APIC_MMIO_ISR_OFFSET            0x100
+#define APIC_MMIO_IRR_OFFSET            0x200
 #define APIC_MMIO_ICR_LOW_OFFSET        0x300
 #define APIC_MMIO_ICR_HIGH_OFFSET       0x310
 #define APIC_MMIO_EOI_OFFSET            0x0B0
 
+#define APIC_IRR_ISR_SIZE               8
+
 #define POLY_MASK_32 0xB4BCD35C
 
 #define HW_EXCEPTION       3
-
 
 #endif /* SRC_COMMON_X86_DEFS_X86_DEFS_H_ */

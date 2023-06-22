@@ -2,8 +2,9 @@
 List the steps to build the binary and requirements from build environment
 
 - [Software Requirements](#software-requirements)
-- [Environment dependencies](#environment-dependencies)
 - [Make targets](#make-targets)
+- [Environment dependencies](#environment-dependencies)
+- [Binary file date](#binary-file-date)
 
 
 ## Software Requirements
@@ -18,23 +19,23 @@ List the steps to build the binary and requirements from build environment
 -	Binary padding script 
 
 
--   Compiled in Linux* OS
+- Compiled in Linux* OS
 
 
--	[IPP 2021.4](https://github.com/intel/ipp-crypto/releases/tag/ippcp_2021.4) :
+-	[IPP 2021.7.1](https://github.com/intel/ipp-crypto/releases/tag/ippcp_2021.7.1):
 
-1) IPP can be automatically built by the project's makefile.
+  1) IPP can be automatically built by the project's makefile.
 
-     - IPP sources needs to be placed under ./libs/ipp/ipp-crypto-ippcp_2021.4 folder.
+     - IPP sources needs to be placed under ./libs/ipp/ipp-crypto-ippcp_2021.7.1 folder.
 
-     - Tools that are required to build IPP crypto lib described in the following [link](https://github.com/intel/ipp-crypto/blob/ipp-crypto_2021_4/BUILD.md)
+     - Tools that are required to build IPP crypto lib described in the following [link](https://github.com/intel/ipp-crypto/blob/ippcp_2021.7.1/BUILD.md)
 
   2) It can also be built separately with the following flags:
     
 ```bash
-	cd <PROJ_DIR>/libs/ipp/ipp-crypto-ippcp_2021.4/
+	cd <PROJ_DIR>/libs/ipp/ipp-crypto-ippcp_2021.7.1/
 
-	CC=clang CXX=clang++ cmake CMakeLists.txt -B_build -DARCH=intel64 -DMERGED_BLD:BOOL=off -DPLATFORM_LIST="y8"
+	CC=clang CXX=clang++ cmake CMakeLists.txt -B_build -DARCH=intel64 -DMERGED_BLD:BOOL=off -DPLATFORM_LIST="y8" -DIPPCP_CUSTOM_BUILD="IPPCP_AES_ON;IPPCP_CLMUL_ON;IPPCP_VAES_ON;IPPCP_VCLMUL_ON";
 	
 	cd _build
 	

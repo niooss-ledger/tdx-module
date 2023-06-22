@@ -1,9 +1,9 @@
-// Intel Proprietary 
-// 
+// Intel Proprietary
+//
 // Copyright 2021 Intel Corporation All Rights Reserved.
-// 
+//
 // Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
+//
 // The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
 // of merchantability, non-infringement, title, or fitness for a particular purpose.
 
@@ -21,12 +21,15 @@
 #include "debug/tdx_debug.h"
 #include "tdx_api_defs.h"
 #include "x86_defs/msr_defs.h"
+#include "x86_defs/vmcs_defs.h"
+#include "x86_defs/x86_defs.h"
 #include "auto_gen/cpuid_configurations_defines.h"
 #include "crypto/sha384.h"
 
 #define AES_XTS_128                BIT(0)
 #define AES_XTS_128_WITH_INTEGRITY BIT(1)
 #define AES_XTS_256                BIT(2)
+#define AES_XTS_256_WITH_INTEGRITY BIT(3)
 
 typedef enum
 {
@@ -71,7 +74,7 @@ typedef struct tdx_global_state_s
  *
  * @brief Holds the entry definition of the KOT
  */
-typedef struct kot_entry_s
+typedef struct PACKED kot_entry_s
 {
     /**
      * kot entry state state: KOT_STATE_HKID_FREE = 0, KOT_STATE_HKID_ASSIGNED, KOT_STATE_HKID_RECLAIMED,
@@ -87,7 +90,7 @@ typedef struct kot_entry_s
     uint32_t wbinvd_bitmap;
 } kot_entry_t;
 
-#define MAX_HKIDS 128
+#define MAX_HKIDS 2048
 /**
  * @struct kot_t
  *
@@ -111,7 +114,7 @@ typedef struct kot_s
  *
  *  WBT holds an entry WBINVD scope per package.
  */
-typedef struct wbt_entry_s
+typedef struct PACKED wbt_entry_s
 {
     uint64_t intr_point; /**< WBINDP handle */
     /**
@@ -135,7 +138,7 @@ typedef struct wbt_entry_s
  * @brief Holds a TDMR region representation and its PAMTs
  *
  */
-typedef struct tdmr_entry_s
+typedef struct PACKED tdmr_entry_s
 {
     uint64_t base; /**< base physical address of TDMR */
     uint64_t size; /**< size of TDMR in bytes */
@@ -165,6 +168,7 @@ typedef struct
 
     //MSRs
     ia32_vmx_basic_t                ia32_vmx_basic;
+    ia32_vmx_misc_t                 ia32_vmx_misc;
     ia32_vmx_allowed_bits_t         ia32_vmx_true_pinbased_ctls;
     ia32_vmx_allowed_bits_t         ia32_vmx_true_procbased_ctls;
     ia32_vmx_allowed_bits_t         ia32_vmx_procbased_ctls2;
@@ -181,12 +185,16 @@ typedef struct
     ia32_mtrrcap_t                  ia32_mtrrcap;
 
     ia32_arch_capabilities_t        ia32_arch_capabilities;
+    ia32_xapic_disable_status_t     ia32_xapic_disable_status;
     ia32_tsx_ctrl_t                 ia32_tsx_ctrl;
     ia32_core_capabilities_t        ia32_core_capabilities;
+    ia32_perf_capabilities_t        ia32_perf_capabilities;
 
     ia32_tme_capability_t           ia32_tme_capability;
     ia32_tme_activate_t             ia32_tme_activate;
     ia32_tme_keyid_partitioning_t   ia32_tme_keyid_partitioning;
+
+    ia32_misc_package_ctls_t        ia32_misc_package_ctls;
 
     smrr_range_t smrr[2];
 } platform_common_config_t;
@@ -202,6 +210,33 @@ typedef struct
     uint32_t exit_ctls;
     uint32_t entry_ctls;
 } td_vmcs_values_t;
+
+typedef struct vmcs_fields_info_s
+{
+    uint64_t encoding;
+    uint64_t value;
+} vmcs_fields_info_t;
+
+/**
+ *  @brief Host TD VMCS values
+ */
+typedef struct vmcs_host_values_s
+{
+    vmcs_fields_info_t CR0;
+    vmcs_fields_info_t CR3;
+    vmcs_fields_info_t CR4;
+    vmcs_fields_info_t CS;
+    vmcs_fields_info_t SS;
+    vmcs_fields_info_t FS;
+    vmcs_fields_info_t GS;
+    vmcs_fields_info_t TR;
+    vmcs_fields_info_t IA32_S_CET;
+    vmcs_fields_info_t IA32_PAT;
+    vmcs_fields_info_t IA32_EFER;
+    vmcs_fields_info_t FS_BASE;
+    vmcs_fields_info_t IDTR_BASE;
+    vmcs_fields_info_t GDTR_BASE;
+} vmcs_host_values_t;
 
 typedef struct xsave_component_info_s
 {
@@ -226,14 +261,21 @@ typedef struct tdx_module_global_s
     sys_attributes_t sys_attributes;
     uint64_t hkid_mask; /**< mask hkid bits from physical address */
     uint32_t hkid_start_bit;
-    uint64_t max_mktme_hkids; /**< Number of activated keys available to TME and MK-TME */
     uint64_t max_pa; /**< Maximum PA bits supported by the platform */
     uint32_t num_of_lps; /**< total number of logical processors */
     uint32_t num_of_pkgs; /**< total number of packages */
     uint32_t num_of_init_lps; /**< number of initialized lps */
     uint32_t num_of_init_pkgs; /**< number of initialized packages */
-    // Taken from the SEAM Loader SYS_INFO_TABLE
-    uint64_t shutdown_host_rip;
+    uint16_t module_hv;
+    uint16_t min_update_hv;
+    uint16_t no_downgrade;
+    uint16_t num_handoff_pages;
+
+    /* SEAMDB_INDEX/NONCE are sampled by TDH.SYS.INIT using SEAMOPS(SEAMDB_GETREF).  If TD preserving
+       is not supported by the CPU, they are set to 0. */
+    uint64_t   seamdb_index;
+    uint256_t  seamdb_nonce;
+
     /**
      * Bitmap that indicates on which package the global private key has been configured.
      */
@@ -253,7 +295,7 @@ typedef struct tdx_module_global_s
      * Indicates the number of blocks that need to be invalidated when running a WBINVD cycle.
      */
     uint64_t num_of_cached_sub_blocks;
-    uint32_t max_x2apic_id;               // Maximum value of x2APIC ID across all LPs
+
     uint32_t x2apic_core_id_shift_count;  // # of bits to shift to get Core ID
     uint32_t x2apic_core_id_mask;
     uint32_t x2apic_pkg_id_shift_count;   // # of bits to shift to get Package ID
@@ -263,9 +305,11 @@ typedef struct tdx_module_global_s
     bool_t xfd_supported;
     bool_t hle_supported;
     bool_t rtm_supported;
-
+    bool_t ddpd_supported;
+    bool_t la57_supported;
+	
+    uint64_t crystal_clock_frequency;
     uint64_t native_tsc_frequency;
-
 
     uint32_t xcr0_supported_mask;
     uint32_t ia32_xss_supported_mask;
@@ -278,27 +322,66 @@ typedef struct tdx_module_global_s
     uint32_t cpuid_last_base_leaf;      // Calculated on TDH.SYS.INIT, based on CPUID(0).EAX (may be higher)
     uint32_t cpuid_last_extended_leaf;  // Calculated on TDH.SYS.INIT, based on CPUID(0x80000000).EAX
 
-
     // Values of TD VMCS fields, computed @ TDHSYSINIT
     td_vmcs_values_t td_vmcs_values;
 
-    /* Max LBR depth */
-    uint32_t max_lbr_depth;
+    // Values of L2 VMCS fields, computed @ TDHSYSINIT
+    td_vmcs_values_t l2_vmcs_values;
+
+    // Values of SEAM VMCS host fields. initialized @ TDHSYSINIT
+    // used when a TD VMCS needs to be initialized
+    vmcs_host_values_t seam_vmcs_host_values;
+
+    // Perfmon and tracing information
+    uint32_t         max_lbr_depth;
+    uint8_t          num_fixed_ctrs;
+    uint32_t         fc_bitmap;
+#ifdef PERFMON_MSR_BITMAPS_SUPPORTED
+    uint32_t         pmc_bitmap;
+#endif
+#ifdef PERFMON_ACR_SUPPORTED
+    uint32_t         fc_acr_bitmap;
+    uint32_t         pmc_acr_bitmap;
+#endif
 
     // ATTRIBUTES fixed bits masks
     uint64_t     attributes_fixed0;   // Bit value of 0 means ATTRIBUTES bit must be 0
     uint64_t     attributes_fixed1;   // Bit value of 1 means ATTRIBUTES bit must be 1
 
-    // Hash method buffers for IPP crypto lib - should be initialized before usage
-    hash_method_t sha384_method;
-
     // Array of TDMR info
     tdmr_info_entry_t tdmr_info_copy[MAX_TDMRS];
+
+    seam_ops_capabilities_t seam_capabilities;
+    bool_t     seamverifyreport_available;
+
+    uint8_t num_rdseed_retries;
+    uint8_t num_rdseed_pauses;
+
+    // Hash method buffers for IPP crypto lib - should be initialized before usage
+    hash_method_t         sha384_method;
+
+    fms_info_t      platform_fms;
 
 #ifdef DEBUGFEATURE_TDX_DBG_TRACE
     debug_control_t debug_control;
     debug_message_t trace_buffer[TRACE_BUFFER_SIZE];
 #endif
 } tdx_module_global_t;
+
+tdx_static_assert(offsetof(tdx_module_global_t, global_lock) % 2 == 0, global_lock);
+
+
+// !!! IMPORTANT !!!
+// ALL HANDED-OFF STRUCTURES NEEDS TO BE PACKED TO ELIMINATE POSSIBLE COMPILER BUILD DIFFS
+#define TDX_MIN_HANDOFF_SIZE   sizeof_field(tdx_module_global_t, kot.entries) + \
+                               sizeof_field(tdx_module_global_t, wbt_entries) + \
+                               sizeof_field(tdx_module_global_t, tdmr_table) + \
+                               sizeof_field(tdx_module_global_t, num_of_tdmr_entries) + \
+                               sizeof_field(tdx_module_global_t, hkid) + \
+                               sizeof_field(tdx_module_global_t, pkg_config_bitmap)
+
+#define TDX_MIN_HANDOFF_PAGES  ((ROUND_UP(TDX_MIN_HANDOFF_SIZE, _4KB)) / _4KB)
+
+tdx_static_assert(TDX_MIN_HANDOFF_PAGES > 0, TDX_MIN_HANDOFF_PAGES);
 
 #endif // __TDX_GLOBAL_DATA_H_INCLUDED__

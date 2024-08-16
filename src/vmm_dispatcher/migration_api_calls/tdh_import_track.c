@@ -1,3 +1,24 @@
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 /**
  * @file tdh_export_track
  * @brief TDHEXPORTTRACK API handler
@@ -68,7 +89,7 @@ api_error_type tdh_import_track(uint64_t target_tdr_pa, uint64_t hpa_and_size_pa
     }
 
     // Check the stream index
-    if ((migs_i_and_cmd.migs_index != 0) || migs_i_and_cmd.reserved_31_16 || migs_i_and_cmd.reserved_62_32)
+    if (migs_i_and_cmd.raw != 0)
     {
         return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_R10);
         goto EXIT;
@@ -164,8 +185,10 @@ api_error_type tdh_import_track(uint64_t target_tdr_pa, uint64_t hpa_and_size_pa
 
     if (mbmd_tmp.header.mig_epoch == MIG_EPOCH_OUT_OF_ORDER)
     {
+        // This is a start token. At this point, the exact number of VCPUs should have been imported
         if (tdcs_p->migration_fields.num_migrated_vcpus != tdcs_p->management_fields.num_vcpus)
         {
+            tdcs_p->management_fields.op_state = OP_STATE_FAILED_IMPORT;
             return_val = api_error_fatal(TDX_SOME_VCPUS_NOT_MIGRATED);
             goto EXIT;
         }
@@ -181,11 +204,6 @@ api_error_type tdh_import_track(uint64_t target_tdr_pa, uint64_t hpa_and_size_pa
     migsc_p->expected_mb_counter = 1;   // Restarts at the beginning of an epoch
     (void)_lock_xadd_64b(&tdcs_p->migration_fields.total_mb_count, 1);
      tdcs_p->migration_fields.mig_epoch = mbmd_tmp.header.mig_epoch;
-    if (mbmd_tmp.header.mig_epoch == MIG_EPOCH_OUT_OF_ORDER)
-    {
-        // start the out-of-order phase
-        tdcs_p->management_fields.op_state = OP_STATE_POST_IMPORT;
-    }
 
     return_val = TDX_SUCCESS;
 

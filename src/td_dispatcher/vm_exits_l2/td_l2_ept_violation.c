@@ -1,11 +1,24 @@
-// Intel Proprietary 
-// 
-// Copyright 2021 Intel Corporation All Rights Reserved.
-// 
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file td_ept_violation.c
@@ -56,7 +69,7 @@ void td_l2_ept_violation_exit(vm_vmexit_exit_reason_t vm_exit_reason, vmx_exit_q
     if (are_gpa_bits_above_shared_set(gpa.raw, gpaw, MAX_PA) &&
         exit_qualification.ept_violation.gla_valid)
     {
-        td_l2_to_l1_exit(vm_exit_reason, exit_qualification,exit_inter_info);
+        td_l2_to_l1_exit(vm_exit_reason, exit_qualification, 0, exit_inter_info);
     }
 
     bool_t shared_bit = get_gpa_shared_bit(gpa.raw, gpaw);
@@ -69,18 +82,27 @@ void td_l2_ept_violation_exit(vm_vmexit_exit_reason_t vm_exit_reason, vmx_exit_q
                                             &l1_sept_entry_level, &l1_sept_entry_copy, false);
         
         // L1 leaf SEPT entry found - Check if the EPT violation needs to be handled by the L1 VMM
-        if (// Was the page fully accessible to the TD (as a whole)?
-            sept_state_is_guest_accessible_leaf(l1_sept_entry_copy) ||
-            // Is this a pending page waiting for acceptable by the TD (for L2, this means L2->L1 exit)?
-           (sept_state_is_any_pending_and_guest_acceptable(l1_sept_entry_copy) &&
-            !tdcs_ptr->executions_ctl_fields.attributes.sept_ve_disable))
+        if (sept_state_is_guest_accessible_leaf(l1_sept_entry_copy))
         {
             if (l1_sept_entry_ptr != NULL)
             {
                 free_la(l1_sept_entry_ptr);
             }
             // In each of the above cases, L1 VMM should handle the EPT violation
-            td_l2_to_l1_exit(vm_exit_reason, exit_qualification, exit_inter_info);
+            td_l2_to_l1_exit(vm_exit_reason, exit_qualification, 0, exit_inter_info);
+        }
+        else if (sept_state_is_any_pending_and_guest_acceptable(l1_sept_entry_copy))
+        {
+            if (l1_sept_entry_ptr != NULL)
+            {
+                free_la(l1_sept_entry_ptr);
+            }
+
+            l2_enter_eeq_t eeq = { .raw = 0 };
+            eeq.type = L2_ENTER_EEQ_PEND_EPT_VIOLATION;
+
+            // In each of the above cases, L1 VMM should handle the EPT violation
+            td_l2_to_l1_exit(vm_exit_reason, exit_qualification, eeq.raw, exit_inter_info);
         }
 
         /* At this point we're going to do a TD exit.

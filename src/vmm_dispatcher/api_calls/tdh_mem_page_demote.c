@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file tdh_mem_page_demote
@@ -291,8 +304,7 @@ api_error_type tdh_mem_page_demote(page_info_api_input_t gpa_page_info, td_handl
     if (sept_state_is_any_blocked(split_page_sept_entry_copy))
     {
         unblock_required_flag = true;
-        sept_unblock(&split_page_sept_entry_copy,
-                     tdcs_ptr->executions_ctl_fields.attributes.sept_ve_disable);
+        sept_unblock(&split_page_sept_entry_copy);
     }
     sept_lock_release_local(&split_page_sept_entry_copy); // Local lock release
 
@@ -336,7 +348,8 @@ api_error_type tdh_mem_page_demote(page_info_api_input_t gpa_page_info, td_handl
                 // Else, it remains blocked (L2 has a single blocked state that applies for pending too)
                 ia32e_sept_t l2_sept_entry = *l2_sept_entry_ptr[vm_id];
 
-                if (unblock_required_flag && !sept_state_is_any_pending(split_page_sept_entry_copy))
+                tdx_debug_assert(unblock_required_flag);
+                if (!sept_state_is_any_pending(split_page_sept_entry_copy))
                 {
                     sept_l2_unblock(&l2_sept_entry);
                 }

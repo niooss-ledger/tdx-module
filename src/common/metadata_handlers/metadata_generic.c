@@ -1,3 +1,24 @@
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 /**
  * @file metadata_generic.c
  * @brief Generic metadata handler
@@ -266,7 +287,10 @@ static md_field_id_t md_get_next_cpuid_value_entry(md_field_id_t field_id, bool_
 
     tdx_sanity_check(index != CPUID_LOOKUP_IDX_NA, SCEC_METADATA_HANDLER_SOURCE, 0);
 
-    index = index + 1;
+    do
+    {
+        index = index + 1;
+    } while (!cpuid_lookup[index].valid_entry);
 
     IF_RARE (index >= MAX_NUM_CPUID_LOOKUP)
     {
@@ -773,7 +797,7 @@ static api_error_code_e md_read_field_with_entry(md_context_code_e ctx_code, md_
 
 static api_error_code_e md_write_field_with_entry(md_context_code_e ctx_code, md_field_id_t field_id,
         md_access_t access_type, md_access_qualifier_t access_qual, md_context_ptrs_t md_ctx,
-        uint64_t value[MAX_ELEMENTS_IN_FIELD], uint64_t wr_mask, const md_lookup_t* entry)
+        uint64_t value[MAX_ELEMENTS_IN_FIELD], uint64_t wr_mask, const md_lookup_t* entry, bool_t is_import)
 {
     api_error_code_e retval;
 
@@ -788,7 +812,7 @@ static api_error_code_e md_write_field_with_entry(md_context_code_e ctx_code, md
             retval = md_sys_write_field(field_id, entry, access_type, access_qual, value, wr_mask);
             break;
         case MD_CTX_TD:
-            retval = md_td_write_field(field_id, entry, access_type, access_qual, md_ctx, value, wr_mask);
+            retval = md_td_write_field(field_id, entry, access_type, access_qual, md_ctx, value, wr_mask, is_import);
             break;
         case MD_CTX_VP:
             retval = md_vp_write_field(field_id, entry, access_type, access_qual, md_ctx, value, wr_mask);
@@ -1078,7 +1102,7 @@ _STATIC_INLINE_ bool_t is_required_or_optional_entry(const md_lookup_t* entry, m
 static api_error_code_e md_write_sequence(md_sequence_t* sequence_ptr, md_context_ptrs_t md_ctx,
                                 uint32_t buff_size, md_access_t access_type, md_access_qualifier_t access_qual,
                                 uint32_t* elements_read, lookup_iterator_t* lkp_iter, bool_t skip_non_writable,
-                                uint64_t ext_err_info[2])
+                                uint64_t ext_err_info[2], bool_t is_import)
 {
     md_context_code_e ctx_code = sequence_ptr->sequence_header.context_code;
     uint32_t sequence_idx = 0;
@@ -1086,28 +1110,35 @@ static api_error_code_e md_write_sequence(md_sequence_t* sequence_ptr, md_contex
     uint64_t wr_mask;
     api_error_code_e retval;
 
+    ext_err_info[0] = 0;
+    ext_err_info[1] = 0;
+
     // Check that there's enough remaining size for the minimal sequence (header + 1 field)
     IF_RARE (buff_size < (sizeof(md_field_id_t) + sizeof(uint64_t)))
     {
-        return TDX_METADATA_LIST_OVERFLOW;
+        ext_err_info[0] = lkp_iter->field_id.raw;
+        return api_error_with_l2_details(TDX_METADATA_LIST_OVERFLOW, 0xFFFF, 0);
     }
     // Check the sequence header
     retval = md_check_as_sequence_header(ctx_code, sequence_ptr->sequence_header, access_type);
     IF_RARE (retval != TDX_SUCCESS)
     {
-        return retval;
+        ext_err_info[0] = sequence_ptr->sequence_header.raw;
+        return api_error_with_l2_details(retval, 0xFFFF, 0);
     }
 
     // Check the element size
     IF_RARE (sequence_ptr->sequence_header.element_size_code != lkp_iter->field_id.element_size_code)
     {
+        ext_err_info[0] = sequence_ptr->sequence_header.raw;
         return TDX_METADATA_FIELD_ID_INCORRECT;
     }
 
-    ext_err_info[0] = 0;
-    ext_err_info[1] = 0;
     *elements_read = 0;
     uint32_t num_fields = sequence_ptr->sequence_header.last_field_in_sequence + 1;
+
+    // Subtract the sequence header size from remaining buffer
+    buff_size -= sizeof(md_field_id_t);
 
     for (uint32_t i = 0; i < num_fields; i++)
     {
@@ -1128,14 +1159,15 @@ static api_error_code_e md_write_sequence(md_sequence_t* sequence_ptr, md_contex
         // Check that there's enough remaining size for the minimal sequence (1 field)
         if ((uint64_t)buff_size < ((uint64_t)entry->num_of_elem * sizeof(uint64_t)))
         {
-            return TDX_METADATA_LIST_OVERFLOW;
+            ext_err_info[0] = lkp_iter->field_id.raw;
+            return api_error_with_l2_details(TDX_METADATA_LIST_OVERFLOW, 0xFFFF, 0);
         }
 
         if (!skip_non_writable || is_required_or_optional_entry(entry, access_type))
         {
             retval = md_write_field_with_entry(ctx_code, lkp_iter->field_id,
                                                access_type, access_qual, md_ctx, &sequence_ptr->element[sequence_idx],
-                                               wr_mask, entry);
+                                               wr_mask, entry, is_import);
 
             if (retval != TDX_SUCCESS)
             {
@@ -1159,7 +1191,7 @@ static api_error_code_e md_write_sequence(md_sequence_t* sequence_ptr, md_contex
             (lkp_iter->field_id.class_code != entry->field_id.class_code)))
         {
             ext_err_info[0] = sequence_ptr->sequence_header.raw;
-            return TDX_METADATA_LIST_OVERFLOW;
+            return TDX_METADATA_FIELD_ID_INCORRECT;
         }
     }
 
@@ -1172,7 +1204,7 @@ api_error_code_e md_write_list(md_context_code_e ctx_code, md_field_id_t expecte
                                bool_t check_missing, bool_t skip_non_writable, bool_t is_last,
                                md_context_ptrs_t md_ctx, md_list_header_t* list_header_ptr,
                                md_access_t access_type, md_access_qualifier_t access_qual,
-                               md_field_id_t* next_field_id, uint64_t ext_err_info[2])
+                               md_field_id_t* next_field_id, uint64_t ext_err_info[2], bool_t is_import)
 {
     lookup_iterator_t lkp_iter;
     uint16_t remaining_buff_size;
@@ -1230,12 +1262,21 @@ api_error_code_e md_write_list(md_context_code_e ctx_code, md_field_id_t expecte
     for (uint32_t i = 0; i < list_header_ptr->num_sequences; i++)
     {
         sequence_ptr = (md_sequence_t*)sequence_buffer_ptr;
+
+        // Check context code
+        if (sequence_ptr->sequence_header.context_code != expected_field.context_code)
+        {
+            ext_err_info[0] = sequence_ptr->sequence_header.raw;
+            return api_error_with_l2_details(TDX_METADATA_FIELD_ID_INCORRECT, 0xFFFF, (uint16_t)i);
+        }
+
         // When unordered write list is done, we need to set up the iterator for every new sequence
         if (!check_missing)
         {
             if (md_check_field_and_get_entry(ctx_code, sequence_ptr->sequence_header, md_ctx, &lkp_iter) == NULL)
             {
-                return api_error_with_operand_id(TDX_METADATA_FIELD_ID_INCORRECT, i);
+                ext_err_info[0] = sequence_ptr->sequence_header.raw;
+                return api_error_with_l2_details(TDX_METADATA_FIELD_ID_INCORRECT, 0xFFFF, (uint16_t)i);
             }
         }
 
@@ -1254,11 +1295,12 @@ api_error_code_e md_write_list(md_context_code_e ctx_code, md_field_id_t expecte
             // If we didn't find any match, then a required field is missing
             if (!is_equal_field_id(sequence_ptr->sequence_header, lkp_iter.field_id))
             {
-                return api_error_with_operand_id(TDX_REQUIRED_METADATA_FIELD_MISSING, i);
+                ext_err_info[0] = lkp_iter.field_id.raw;
+                return TDX_REQUIRED_METADATA_FIELD_MISSING;
             }
         }
         retval = md_write_sequence(sequence_ptr, md_ctx, (uint32_t)remaining_buff_size, access_type, access_qual,
-                                   &elements_read, &lkp_iter, skip_non_writable, ext_err_info);
+                                   &elements_read, &lkp_iter, skip_non_writable, ext_err_info, is_import);
         if (retval != TDX_SUCCESS)
         {
             return api_error_with_operand_id(retval, i);

@@ -1,3 +1,24 @@
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 /**
  * @file tdh_export_mem
  * @brief TDH_EXPORT_MEM API handler
@@ -237,7 +258,7 @@ static gpa_list_entry_status_t handle_export_by_order(tdcs_t* tdcs_p, gpa_list_e
 
 static gpa_list_entry_status_t handle_operation(gpa_list_entry_t gpa_list_entry, uint64_t* mig_count_increment,
                                                 ia32e_sept_t* sept_entry_copy, uint64_t* dirty_count_increment,
-                                                page_list_entry_t* mig_buff_list_entry, tdcs_t* tdcs_p)
+                                                page_list_entry_t* mig_buff_list_entry)
 {
     if (gpa_list_entry.operation == GPA_ENTRY_OP_CANCEL)
     {
@@ -251,13 +272,11 @@ static gpa_list_entry_status_t handle_operation(gpa_list_entry_t gpa_list_entry,
         mig_buff_list_entry->invalid = 1;
         if (gpa_list_entry.pending)
         {
-            sept_update_state(sept_entry_copy, SEPT_STATE_PEND_MASK,
-                              tdcs_p->executions_ctl_fields.attributes.sept_ve_disable);
+            sept_update_state(sept_entry_copy, SEPT_STATE_PEND_MASK);
         }
         else
         {
-            sept_update_state(sept_entry_copy, SEPT_STATE_MAPPED_MASK,
-                              tdcs_p->executions_ctl_fields.attributes.sept_ve_disable);
+            sept_update_state(sept_entry_copy, SEPT_STATE_MAPPED_MASK);
             sept_entry_copy->w = 1;
         }
     }
@@ -280,8 +299,7 @@ static gpa_list_entry_status_t handle_operation(gpa_list_entry_t gpa_list_entry,
         {
             // No migration buffer is used
             mig_buff_list_entry->invalid = 1;
-            sept_update_state(sept_entry_copy, SEPT_STATE_PEND_EXP_BLOCKEDW_MASK,
-                              tdcs_p->executions_ctl_fields.attributes.sept_ve_disable);
+            sept_update_state(sept_entry_copy, SEPT_STATE_PEND_EXP_BLOCKEDW_MASK);
         }
         else
         {
@@ -291,8 +309,7 @@ static gpa_list_entry_status_t handle_operation(gpa_list_entry_t gpa_list_entry,
                 //throw GPA_LIST_STATUS(GPA_LIST_ENTRY_t::MIG_BUFFER_NOT_AVAILABLE);
                 return GPA_ENTRY_STATUS_MIG_BUFFER_NOT_AVAILABLE;
             }
-            sept_update_state(sept_entry_copy, SEPT_STATE_EXP_BLOCKEDW_MASK,
-                              tdcs_p->executions_ctl_fields.attributes.sept_ve_disable);
+            sept_update_state(sept_entry_copy, SEPT_STATE_EXP_BLOCKEDW_MASK);
         }
     }
 
@@ -650,7 +667,7 @@ api_error_type tdh_export_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
             gpa_list_entry.l2_map = 0;
 
             if (GPA_ENTRY_STATUS_SUCCESS != (err_status = handle_operation(gpa_list_entry, &mig_count_increment, &sept_entry_copy,
-                                                                           &dirty_count_increment, &mig_buff_list_entry, tdcs_p)))
+                                                                           &dirty_count_increment, &mig_buff_list_entry)))
             {
                 break;
             }
@@ -767,8 +784,9 @@ api_error_type tdh_export_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
         /*--------------------------------------
            Done processing one GPA list entry
         --------------------------------------*/
-        if (TDX_INTERRUPTED_RESUMABLE == (return_val = finish_entry_processing(&entry_num, gpa_list_info, migsc_p, mig_buff_list_pa,
-            mac_list_pa, tdcs_p, problem_ops_count)))
+        if (TDX_INTERRUPTED_RESUMABLE == (return_val = finish_entry_processing(&entry_num, gpa_list_info, migsc_p,
+                                                                               mig_buff_list_pa, mac_list_pa,
+                                                                               tdcs_p, problem_ops_count)))
         {
             break;
         }

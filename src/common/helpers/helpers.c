@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file helpers.c
@@ -813,6 +826,14 @@ api_error_type walk_private_gpa(
                                              sept_entry_ptr, level, cached_sept_entry, &is_sept_locked);
 }
 
+static void inject_ve_and_return_to_td(tdvps_t* tdvps_p, pa_t gpa, vmx_exit_qualification_t exit_qual)
+{
+    tdx_inject_ve(VMEXIT_REASON_EPT_VIOLATION, exit_qual.raw, tdvps_p, gpa.raw, 0);
+    bus_lock_exit();
+    check_pending_voe_on_debug_td_return();
+    tdx_return_to_td(true, false, &tdvps_p->guest_state.gpr_state);
+}
+
 api_error_code_e check_walk_and_map_guest_side_gpa(
         tdcs_t* tdcs_p,
         tdvps_t* tdvps_p,
@@ -872,23 +893,47 @@ api_error_code_e check_walk_and_map_guest_side_gpa(
     exit_qual.ept_violation.gpa_writeable  = accumulated_rwx.w;
     exit_qual.ept_violation.gpa_executable = accumulated_rwx.x;
 
+    vmx_ext_exit_qual_t ext_exit_qual = { .raw = 0 };
+    vm_vmexit_exit_reason_t vm_exit_reason = { .raw = 0 };
+    vm_exit_reason.basic_reason = VMEXIT_REASON_EPT_VIOLATION;
+
+    IF_RARE (!shared_bit && (walk_result != EPT_WALK_SUCCESS))
+    {
+        ia32e_sept_t sept_copy = { .raw = ept_entry_copy.raw };
+
+        if (sept_state_is_any_pending_and_guest_acceptable(sept_copy))
+        {
+            // This is a pending page waiting for acceptable by the TD
+            if (tdcs_p->executions_ctl_fields.td_ctls.pending_ve_disable)
+            {
+                // The TD is configured to TD exit on access to a PENDING page
+                ext_exit_qual.type = VMX_EEQ_PENDING_EPT_VIOLATION;
+                tdx_ept_violation_exit_to_vmm(gpa, vm_exit_reason, exit_qual.raw, ext_exit_qual.raw);
+            }
+            else
+            {
+                // The TD is configured to throw a #VE on access to a PENDING page
+                inject_ve_and_return_to_td(tdvps_p, gpa, exit_qual);
+            }
+        }
+        else
+        {
+            // This is not a PENDING page, do an EPT Violation TD exit
+            tdx_ept_violation_exit_to_vmm(gpa, vm_exit_reason, exit_qual.raw, 0);
+        }
+    }
+
     IF_RARE (walk_result == EPT_WALK_MISCONFIGURATION)
     {
         tdx_ept_misconfig_exit_to_vmm(gpa);
     }
     else IF_RARE (walk_result == EPT_WALK_VIOLATION)
     {
-        vm_vmexit_exit_reason_t vm_exit_reason = { .raw = 0 };
-        vm_exit_reason.basic_reason = VMEXIT_REASON_EPT_VIOLATION;
-
-        tdx_ept_violation_exit_to_vmm(gpa, vm_exit_reason, exit_qual.raw, 0);
+        tdx_ept_violation_exit_to_vmm(gpa, vm_exit_reason, exit_qual.raw, ext_exit_qual.raw);
     }
     else IF_RARE (walk_result == EPT_WALK_CONVERTIBLE_VIOLATION)
     {
-        tdx_inject_ve(VMEXIT_REASON_EPT_VIOLATION, exit_qual.raw, tdvps_p, gpa.raw, 0);
-        bus_lock_exit();
-        check_pending_voe_on_debug_td_return();
-        tdx_return_to_td(true, false, &tdvps_p->guest_state.gpr_state);
+        inject_ve_and_return_to_td(tdvps_p, gpa, exit_qual);
     }
 
     // Else - success
@@ -1026,10 +1071,6 @@ void init_tdvps_fields(tdcs_t * tdcs_ptr, tdvps_t * tdvps_ptr)
         tdvps_ptr->management.shadow_shared_eptp[indx] = NULL_PA;
         tdvps_ptr->management.l2_enter_guest_state_gpa[indx] = NULL_PA;
         tdvps_ptr->management.l2_enter_guest_state_hpa[indx] = NULL_PA;
-#ifdef L2_VE_SUPPORT
-        tdvps_ptr->management.ve_info_gpa[indx] = NULL_PA;
-        tdvps_ptr->management.ve_info_hpa[indx] = NULL_PA;
-#endif
         tdvps_ptr->management.l2_vapic_gpa[indx] = NULL_PA;
         tdvps_ptr->management.l2_vapic_hpa[indx] = NULL_PA;
         tdvps_ptr->management.tsc_deadline[indx] = ~(0ULL);
@@ -1156,7 +1197,7 @@ void inject_pf(uint64_t gla, pfec_t pfec)
         {
             vmx_exit_qualification_t exit_qual = { .raw = 0 };
             vmx_exit_inter_info_t exit_inter_info = { .raw = 0 };
-            td_l2_to_l1_exit(vm_exit_reason, exit_qual, exit_inter_info);
+            td_l2_to_l1_exit(vm_exit_reason, exit_qual, 0, exit_inter_info);
         }
     }
 
@@ -1336,7 +1377,7 @@ cr_write_status_e write_guest_cr4(uint64_t value, tdcs_t* tdcs_p, tdvps_t* tdvps
     return CR_ACCESS_NON_ARCH;
 }
 
-bool_t verify_td_attributes(td_param_attributes_t attributes)
+bool_t verify_td_attributes(td_param_attributes_t attributes, bool_t is_import)
 {
     tdx_module_global_t* tdx_global_data_ptr = get_global_data();
 
@@ -1346,8 +1387,29 @@ bool_t verify_td_attributes(td_param_attributes_t attributes)
         return false;
     }
 
-    // A migratable TD can't be a debug TD and doesn't support PERFMON
-    if ((attributes.debug || attributes.perfmon) && attributes.migratable)
+    if (attributes.migratable)
+    {
+        // A migratable TD can't be a debug TD and doesn't support PERFMON
+        if (attributes.debug || attributes.perfmon)
+        {
+            return false;
+        }
+    }
+    else if (is_import)
+    {
+        // TD must be migratable on import flow
+        return false;
+    }
+
+    return true;
+}
+
+bool_t verify_td_config_flags(config_flags_t config_flags)
+{
+    tdx_module_global_t* tdx_global_data_ptr = get_global_data();
+
+    if (((config_flags.raw & ~tdx_global_data_ptr->config_flags_fixed0.raw) != 0) ||
+        ((config_flags.raw & tdx_global_data_ptr->config_flags_fixed1.raw) != tdx_global_data_ptr->config_flags_fixed1.raw))
     {
         return false;
     }
@@ -1780,10 +1842,15 @@ bool_t check_and_init_imported_td_state_immutable (tdcs_t* tdcs_ptr)
     {
         return false;
     }
+    
+    // num_vcpus sanity check (at this point num_vcpus is already set)
+    if ((tdcs_ptr->management_fields.num_vcpus == 0) || (tdcs_ptr->management_fields.num_vcpus > tdcs_ptr->executions_ctl_fields.max_vcpus))
+    {
+        return false;
+    }
     /**
      * Initialize the TD Management Fields
      */
-    tdcs_ptr->management_fields.num_vcpus = 0;
     tdcs_ptr->management_fields.num_assoc_vcpus = 0;
     tdcs_ptr->epoch_tracking.epoch_and_refcount.td_epoch = 1;
     tdcs_ptr->epoch_tracking.epoch_and_refcount.refcount[0] = 0;
@@ -1793,6 +1860,17 @@ bool_t check_and_init_imported_td_state_immutable (tdcs_t* tdcs_ptr)
      * Execution control fields
      */
     set_xbuff_offsets_and_size(tdcs_ptr, tdcs_ptr->executions_ctl_fields.xfam);
+
+    /** CONFIG_FLAGS is optionally imported since older TDX module versions didn't support it.  Set the GPAW bit
+     *  based on the separate GPAW field that is always imported.
+     */
+    tdcs_ptr->executions_ctl_fields.config_flags.gpaw = (tdcs_ptr->executions_ctl_fields.gpaw != false);
+
+    /** TD_CTLS is optionally imported (later. as part of the mutable state) since older TDX module versions didn't support it.
+     *  Set the PENDING_VE_DISABLE bit based on the ATTRIBUTES field that has already been imported (as part of the immutable
+     *  state). This value may be overwritten later by the immutable state import.
+     */
+    tdcs_ptr->executions_ctl_fields.td_ctls.pending_ve_disable = tdcs_ptr->executions_ctl_fields.attributes.sept_ve_disable;
 
     /**
      *  Build the MSR bitmaps
@@ -1895,7 +1973,6 @@ api_error_code_e get_tdinfo_and_teeinfohash(tdcs_t* tdcs_p, ignore_tdinfo_bitmap
                        SIZE_OF_SHA384_HASH_IN_BYTES);
         }
     }
-
     if (!ignore_tdinfo.servtd_hash)
     {
         tdx_memcpy(td_info->servtd_hash.bytes, sizeof(measurement_t),
@@ -2368,39 +2445,6 @@ bool_t translate_gpas(
      * Translate the soft-translated GPA L2 VMCS fields whose shadow HPA is NULL_PA,
      * using the L1 SEPT.
      */
-#ifdef L2_VE_SUPPORT
-    hpa = tdvps_ptr->management.ve_info_hpa[vm_id];
-    if (hpa == NULL_PA)
-    {
-        gpa = tdvps_ptr->management.ve_info_gpa[vm_id];
-        return_val = check_and_walk_private_gpa_to_leaf(tdcs_ptr, OPERAND_ID_RCX, (pa_t)gpa,
-                                          tdr_ptr->key_management_fields.hkid,
-                                          &sept_entry_ptr, &sept_entry_level, &sept_entry_copy);
-        if (return_val != TDX_SUCCESS)
-        {
-            *failed_gpa = gpa;
-            goto EXIT;
-        }
-
-        if (!sept_state_is_guest_accessible_leaf(sept_entry_copy))
-        {
-            *failed_gpa = gpa;
-            goto EXIT;
-        }
-
-        // Update the HPA
-        hpa = leaf_ept_entry_to_hpa(sept_entry_copy, gpa, sept_entry_level);
-        hpa = set_hkid_to_pa((pa_t)hpa, tdr_ptr->key_management_fields.hkid).raw;
-        tdvps_ptr->management.ve_info_hpa[vm_id] = hpa;
-        ia32_vmwrite(VMX_VIRTUAL_EXCEPTION_INFO_ADDRESS_FULL_ENCODE, hpa);
-
-        if (sept_entry_ptr != NULL)
-        {
-            free_la(sept_entry_ptr);
-            sept_entry_ptr = NULL;
-        }
-    }
-#endif
 
     hpa = tdvps_ptr->management.l2_vapic_hpa[vm_id];
     if (hpa == NULL_PA)
@@ -2446,9 +2490,6 @@ EXIT:
 void invalidate_gpa_translations(tdvps_t *tdvps_ptr, uint16_t vm_id)
 {
     tdvps_ptr->management.l2_enter_guest_state_hpa[vm_id] = NULL_PA;
-#ifdef L2_VE_SUPPORT
-    tdvps_ptr->management.ve_info_hpa[vm_id] = NULL_PA;
-#endif
     tdvps_ptr->management.l2_vapic_hpa[vm_id] = NULL_PA;
 }
 

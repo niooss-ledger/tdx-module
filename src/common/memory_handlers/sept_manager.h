@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file sept_manager.h
@@ -421,17 +434,12 @@ _STATIC_INLINE_ uint32_t l2_sept_get_arch_state(ia32e_sept_t l2_ept_entry)
     return l2_sept_special_flags_lookup[L2_SEPT_CONVERT_TO_ENCODING(l2_ept_entry)].public_state;
 }
 
-_STATIC_INLINE_ void sept_update_supp_ve_bit(ia32e_sept_t* ept_entry, bool_t supress_ve)
-{
-    ept_entry->supp_ve = !sept_state_is_any_pending_and_guest_acceptable(*ept_entry) || supress_ve;
-}
-
-_STATIC_INLINE_ void sept_update_state(ia32e_sept_t* ept_entry, sept_state_mask_t state, bool_t sept_ve_disable)
+_STATIC_INLINE_ void sept_update_state(ia32e_sept_t* ept_entry, sept_state_mask_t state)
 {
     ia32e_sept_t new_septe;
 
     new_septe.raw = (ept_entry->raw & ~SEPT_STATE_ENCODING_MASK) | (state & SEPT_STATE_ENCODING_MASK);
-    sept_update_supp_ve_bit(&new_septe, sept_ve_disable);
+    new_septe.supp_ve = 1;
 
     // Write the new value in a single 64-bit write
     atomic_mem_write_64b(&ept_entry->raw, new_septe.raw);
@@ -669,10 +677,9 @@ _STATIC_INLINE_ bool_t is_secure_ept_leaf_entry(const ia32e_sept_t * ept_entry)
  * @param attributes migration attributes to use to update the ept entry
  * @param page_pa Physical address to map in entry
  * @param state_encoding the new sept entry state
- * @param sept_ve_disable Value to set for SVE bit in EPT entry
  */
 void sept_set_leaf_and_release_locks(ia32e_sept_t * ept_entry, uint64_t attributes,
-                                     pa_t page_pa, uint64_t state_encoding, bool_t sept_ve_disable);
+                                     pa_t page_pa, uint64_t state_encoding);
 
 /**
  * @brief Map a SEPT leaf entry - with a taken entry lock.
@@ -682,16 +689,15 @@ void sept_set_leaf_and_release_locks(ia32e_sept_t * ept_entry, uint64_t attribut
  * @param attributes migration attributes to use to update the ept entry
  * @param page_pa Physical address to map in entry
  * @param state_encoding the new sept entry state
- * @param sept_ve_disable Value to set for SVE bit in EPT entry
  */
 void sept_set_leaf_and_keep_lock(ia32e_sept_t * ept_entry, uint64_t attributes,
-                                 pa_t page_pa, uint64_t state_encoding, bool_t sept_ve_disable);
+                                 pa_t page_pa, uint64_t state_encoding);
 								 
 /**
  * @brief Identical to sept_set_leaf_and_release_locks, but assumes that the current entry is unlocked
  */
 void sept_set_leaf_unlocked_entry(ia32e_sept_t * ept_entry, uint64_t attributes,
-                                  pa_t page_pa, uint64_t state_encoding, bool_t sept_ve_disable);
+                                  pa_t page_pa, uint64_t state_encoding);
 
 /**
  * @brief Map a SEPT non-leaf entry
@@ -752,24 +758,24 @@ _STATIC_INLINE_ void sept_cleanup_if_pending(ia32e_sept_t* ept_entry, ept_level_
  *          - Clear SVE if PENDING
  * @param ept_entry - Pointer to SEPT entry to be unblocked
  */
-_STATIC_INLINE_ void sept_unblock(ia32e_sept_t* ept_entry, bool_t sept_ve_disable)
+_STATIC_INLINE_ void sept_unblock(ia32e_sept_t* ept_entry)
 {
     switch (ept_entry->raw & SEPT_STATE_ENCODING_MASK)
     {
         case SEPT_STATE_NL_BLOCKED_MASK:
-            sept_update_state(ept_entry, SEPT_STATE_NL_MAPPED_MASK, sept_ve_disable);
+            sept_update_state(ept_entry, SEPT_STATE_NL_MAPPED_MASK);
             ept_entry->raw |= SEPT_PERMISSIONS_RWX;
             ept_entry->mt = 0;   // MT bits are reserved for non-leaf entries
             break;
         case SEPT_STATE_BLOCKED_MASK:
-            sept_update_state(ept_entry, SEPT_STATE_MAPPED_MASK, sept_ve_disable);
+            sept_update_state(ept_entry, SEPT_STATE_MAPPED_MASK);
             ept_entry->r = 1;
             ept_entry->w = 1;
             ept_entry->x = 1;
             ept_entry->mt = MT_WB;
             break;
         case SEPT_STATE_PEND_BLOCKED_MASK:
-            sept_update_state(ept_entry, SEPT_STATE_PEND_MASK, sept_ve_disable);
+            sept_update_state(ept_entry, SEPT_STATE_PEND_MASK);
             // Permission bits remain all-0
             break;
         default:
@@ -907,21 +913,5 @@ ia32e_sept_t* secure_ept_walk(ia32e_eptp_t septp, pa_t gpa, uint16_t private_hki
 ept_walk_result_t gpa_translate(ia32e_eptp_t eptp, pa_t gpa, bool_t private_gpa,
                                 uint16_t private_hkid, access_rights_t access_rights,
                                 pa_t* hpa, ia32e_ept_t* cached_ept_entry, access_rights_t* accumulated_rwx);
-
-#ifdef SEPT_AD_BITS_SUPPORTED
-/**
- * @brief Atomically updates given SEPT entry with LOCK-CMPXCHNG,
- *        without changing the A (accessed) and D (dirty) bit values.
- *
- * @param sept_entry_ptr - Pointer to the SEPT entry to update
- * @param expected_entry - Entry value to expect at the given sept_entry_ptr address
- * @param new_entry - New entry to be written to the sept_entry_ptr address
- * @param keep_d_bit - Flag that indicates whether to modify D bit or not
- *
- * @return Whether the update succeeded or not.
- */
-bool_t sept_atomic_xchange_keep_ad_bits(ia32e_sept_t* sept_entry_ptr, ia32e_sept_t expected_entry,
-                                        ia32e_sept_t new_entry, bool_t keep_d_bit);
-#endif
 
 #endif /* SRC_COMMON_MEMORY_HANDLERS_SEPT_MANAGER_H_ */

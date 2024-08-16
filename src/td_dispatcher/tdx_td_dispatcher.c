@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file tdx_td_dispatcher.c
@@ -588,6 +601,13 @@ stepping_filter_e tdx_td_l1_l2_dispatcher_common_prologue(tdx_module_local_t* lo
 
     // Get exit information
     ia32_vmread(VMX_VM_EXIT_REASON_ENCODE, &vm_exit_reason->raw);
+
+    if (vm_exit_reason->vmenter_fail == 0)
+    {
+        // If no failed VMENTRY occurred then the VMCS is launched after a VMEXIT
+        local_data->vp_ctx.tdvps->management.vm_launched[vm_id] = true;
+    }
+
     ia32_vmread(VMX_VM_EXIT_QUALIFICATION_ENCODE, &vm_exit_qualification->raw);
     ia32_vmread(VMX_VM_EXIT_INTERRUPTION_INFO_ENCODE, &vm_exit_inter_info->raw);
 
@@ -904,22 +924,24 @@ void tdx_td_dispatcher(void)
     tdvps_t* tdvps_p = tdx_local_data_ptr->vp_ctx.tdvps;
     set_vm_vmcs_as_active(tdvps_p, tdvps_p->management.curr_vm);
 
-    /* If PEND_NMI was requested, and there's no pending #VE (which should be handled
-       by the guest TD before NMI), set NMI Window Exiting execution control so NMI
-       can be injected at the proper time. */
-    if (tdvps_p->management.pend_nmi && (tdvps_p->ve_info.valid == 0) && !interrupt_occurred)
-    {
-        ia32_vmread(VMX_VM_EXECUTION_CONTROL_PROC_BASED_ENCODE, &vm_procbased_ctls.raw);
-        vm_procbased_ctls.nmi_window_exiting = 1;
-        ia32_vmwrite(VMX_VM_EXECUTION_CONTROL_PROC_BASED_ENCODE, vm_procbased_ctls.raw);
-    }
-
-    // Check if we need to advance guest rip (only if no exception was injected)
+    // Check if exception was injected
     // Entry Interrupt Info valid bit is cleared automatically on every VMEXIT
     vmx_entry_inter_info_t entry_intr_info;
     ia32_vmread(VMX_VM_ENTRY_INTR_INFO_ENCODE, &(entry_intr_info.raw));
+
+    // Check if we need to advance guest rip or handle pend NMI
     if (!entry_intr_info.valid && !interrupt_occurred)
     {
+        // If PEND_NMI was requested, and there's no pending #VE (which should be handled
+        // by the guest TD before NMI), set NMI Window Exiting execution control so NMI
+        // can be injected at the proper time.
+        if (tdvps_p->management.pend_nmi && (tdvps_p->ve_info.valid == 0))
+        {
+            ia32_vmread(VMX_VM_EXECUTION_CONTROL_PROC_BASED_ENCODE, &vm_procbased_ctls.raw);
+            vm_procbased_ctls.nmi_window_exiting = 1;
+            ia32_vmwrite(VMX_VM_EXECUTION_CONTROL_PROC_BASED_ENCODE, vm_procbased_ctls.raw);
+        }
+
         advance_guest_rip();
     }
 

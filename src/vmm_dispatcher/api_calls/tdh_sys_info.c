@@ -1,11 +1,24 @@
-// Intel Proprietary 
-// 
-// Copyright 2021 Intel Corporation All Rights Reserved.
-// 
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file tdh_sys_info.c
@@ -92,9 +105,6 @@ api_error_type tdh_sys_info(uint64_t tdhsysinfo_output_pa,
      * Fill TDHSYSINFO_STRUCT
      */
     tdhsysinfo_output_la->attributes.raw = (uint32_t)0;
-#ifdef DEBUG
-    tdhsysinfo_output_la->attributes.debug_module = 1;
-#endif
     tdhsysinfo_output_la->vendor_id = 0x8086;
     tdhsysinfo_output_la->build_date = TDX_MODULE_BUILD_DATE;
     tdhsysinfo_output_la->build_num = TDX_MODULE_BUILD_NUM;
@@ -125,14 +135,21 @@ api_error_type tdh_sys_info(uint64_t tdhsysinfo_output_pa,
      */
 
     tdhsysinfo_output_la->num_cpuid_config = MAX_NUM_CPUID_CONFIG;
+
     for (uint32_t i = 0; i < MAX_NUM_CPUID_CONFIG; i++)
     {
+        uint32_t lookup_index = cpuid_configurable[i].lookup_index;
+
         tdhsysinfo_output_la->cpuid_config_list[i].leaf_subleaf =
-                cpuid_lookup[i].leaf_subleaf;
-        tdhsysinfo_output_la->cpuid_config_list[i].values.low = cpuid_configurable[i].config_direct.low |
-                (cpuid_configurable[i].allow_direct.low &  tdx_global_data_ptr->cpuid_values[i].values.low);
-        tdhsysinfo_output_la->cpuid_config_list[i].values.high = cpuid_configurable[i].config_direct.high |
-                (cpuid_configurable[i].allow_direct.high & tdx_global_data_ptr->cpuid_values[i].values.high);
+                cpuid_configurable[i].leaf_subleaf;
+
+        tdhsysinfo_output_la->cpuid_config_list[i].values.low =
+                 cpuid_configurable[i].config_direct.low |
+                (cpuid_configurable[i].allow_direct.low & tdx_global_data_ptr->cpuid_values[lookup_index].values.low);
+
+        tdhsysinfo_output_la->cpuid_config_list[i].values.high =
+                 cpuid_configurable[i].config_direct.high |
+                (cpuid_configurable[i].allow_direct.high & tdx_global_data_ptr->cpuid_values[lookup_index].values.high);
     }
 
     /**

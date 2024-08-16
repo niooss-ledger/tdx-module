@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file vmcs_accessors.h
@@ -238,11 +251,7 @@ _STATIC_INLINE_ uint64_t ia32_seamops_capabilities(void)
     uint64_t capabilities = 0;
 
     _ASM_VOLATILE_ (
-#ifdef SEAM_INSTRUCTIONS_SUPPORTED_IN_COMPILER
-            "seamops;"
-#else
             ".byte 0x66; .byte 0x0F; .byte 0x01; .byte 0xCE;"
-#endif
             :"=a"(capabilities) : "a"(leaf)
             :"memory", "cc");
 
@@ -273,11 +282,7 @@ _STATIC_INLINE_ uint64_t ia32_seamops_seamdb_getref(uint64_t* last_entry, uint25
     uint64_t result;
 
     _ASM_VOLATILE_ (
-#ifdef SEAM_INSTRUCTIONS_SUPPORTED_IN_COMPILER
-            "seamops;"
-#else
             ".byte 0x66; .byte 0x0F; .byte 0x01; .byte 0xCE;"
-#endif
             "movq %%r10, %1;"
             "movq %%r11, %2;"
             "movq %%r12, %3;"
@@ -313,11 +318,7 @@ _STATIC_INLINE_ uint64_t ia32_seamops_seamdb_report(void* report_struct_la,
             "movq 0x8(%7),   %%r12\n"
             "movq 0x10(%7),  %%r13\n"
             "movq 0x18(%7),  %%r14\n"
-#ifdef SEAM_INSTRUCTIONS_SUPPORTED_IN_COMPILER
-            "seamops;"
-#else
             ".byte 0x66; .byte 0x0F; .byte 0x01; .byte 0xCE;"
-#endif
             :"=a"(result)
             :"a"(leaf), "c"(report_struct_la), "d"(report_type),
              "r"(report_data_la), "r"(tee_info_hash_la), "r"(entry_idx),
@@ -333,11 +334,7 @@ _STATIC_INLINE_ uint64_t ia32_seamops_seamverify_report(const report_mac_struct_
     uint64_t result;
 
         _ASM_VOLATILE_ (
-#ifdef SEAM_INSTRUCTIONS_SUPPORTED_IN_COMPILER
-            "seamops;"
-#else
             ".byte 0x66; .byte 0x0F; .byte 0x01; .byte 0xCE;"
-#endif
             :"=a"(result)
             :"a"(leaf), "b"(report_mac)
             :"memory", "cc");

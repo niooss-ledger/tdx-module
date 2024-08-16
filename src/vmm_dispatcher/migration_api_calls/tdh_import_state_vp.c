@@ -1,3 +1,24 @@
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 /**
  * @file tdh_import_state_vp.c
  * @brief TDH_IMPORT_STATE_VP API handler
@@ -237,17 +258,6 @@ api_error_type tdh_import_state_vp(uint64_t target_tdvpr_pa, uint64_t hpa_and_si
             goto EXIT;
         }
 
-        /*
-         * Increment the number of imported VCPUs in the TD
-         * Do a sanity check - should not fail
-         */
-        if (_lock_xadd_32b(&tdcs_p->migration_fields.num_migrated_vcpus, 1) >= tdcs_p->management_fields.num_vcpus)
-        {
-            tdcs_p->management_fields.op_state = OP_STATE_FAILED_IMPORT;
-            return_val = api_error_fatal(TDX_ALL_VCPUS_IMPORTED);
-            goto EXIT;
-        }
-
         // Accumulate a MAC over the MAC’ed fields of the MBMD
         reset_to_next_iv(migsc_p, migsc_p->mbmd.header.iv_counter, migs_i);
         migsc_p->mbmd.header.iv_counter = 0;   // not included in the mac and not required anymore
@@ -305,7 +315,7 @@ api_error_type tdh_import_state_vp(uint64_t target_tdvpr_pa, uint64_t hpa_and_si
         }
 
         // Check the VCPU state
-        if (tdvps_p->management.state != VCPU_IMPORT)
+        if ((tdvps_p->management.state != VCPU_IMPORT) && (tdvps_p->management.state != VCPU_DISABLED))
         {
             tdcs_p->management_fields.op_state = OP_STATE_FAILED_IMPORT;
             TDX_ERROR("VCPU in incorrect state (0x%ux)\n", tdvps_p->management.state);
@@ -413,6 +423,8 @@ api_error_type tdh_import_state_vp(uint64_t target_tdvpr_pa, uint64_t hpa_and_si
 
         md_access_qualifier_t access_qual = {.raw = 0};
 
+        uint64_t tmp_ext_error_info[2];
+
         // Import the metadata list
         return_val = md_write_list(MD_CTX_VP, field_id,
                                    _4KB,
@@ -423,7 +435,8 @@ api_error_type tdh_import_state_vp(uint64_t target_tdvpr_pa, uint64_t hpa_and_si
                                    //md_list_hdr_p,
                                    &md_list.hdr,
                                    MD_IMPORT_MUTABLE,
-                                   access_qual, &next_field_id, migsc_p->interrupted_state.extended_err_info);
+                                   access_qual, &next_field_id, tmp_ext_error_info,
+                                   true);
 
         // Restore SEAM VMCS after it was possible switched to VM VMCS by metadata accesses
         set_seam_vmcs_as_active();
@@ -435,6 +448,8 @@ api_error_type tdh_import_state_vp(uint64_t target_tdvpr_pa, uint64_t hpa_and_si
             if (migsc_p->interrupted_state.status == TDX_SUCCESS)
             {
                 migsc_p->interrupted_state.status = return_val;
+                migsc_p->interrupted_state.extended_err_info[0] = tmp_ext_error_info[0];
+                migsc_p->interrupted_state.extended_err_info[1] = tmp_ext_error_info[1];
             }
         }
 
@@ -461,8 +476,12 @@ api_error_type tdh_import_state_vp(uint64_t target_tdvpr_pa, uint64_t hpa_and_si
             /*
              * Update the VCPU state to mark it as being imported. This prevents the VCPU
              * from being used if the import is not resumed and completed
+             * If the VCPU state was imported as disabled, keep it disabled.
              */
-            tdvps_p->management.state = VCPU_IMPORT;
+            if (tdvps_p->management.state != VCPU_DISABLED)
+            {
+                tdvps_p->management.state = VCPU_IMPORT;
+            }
 
             local_data_ptr->vmm_regs.rcx = original_rcx;
             local_data_ptr->vmm_regs.rdx = original_rdx;
@@ -502,8 +521,21 @@ api_error_type tdh_import_state_vp(uint64_t target_tdvpr_pa, uint64_t hpa_and_si
         goto EXIT;
     }
 
+    // Increment the number of imported VCPUs in the TD
+    // Do a sanity check - should not fail
+    if (_lock_xadd_32b(&tdcs_p->migration_fields.num_migrated_vcpus, 1) >= tdcs_p->management_fields.num_vcpus)
+    {
+        tdcs_p->management_fields.op_state = OP_STATE_FAILED_IMPORT;
+        return_val = api_error_fatal(TDX_ALL_VCPUS_IMPORTED);
+        goto EXIT;
+    }
+
     // Update the VCPU state
-    tdvps_p->management.state = VCPU_READY;
+    // If the VCPU state was imported as disabled, keep it disabled.
+    if (tdvps_p->management.state != VCPU_DISABLED)
+    {
+        tdvps_p->management.state = VCPU_READY;
+    }
 
     // Update the migration stream counters and mark as non-interrupted
     (void)_lock_xadd_64b(&tdcs_p->migration_fields.total_mb_count, 1);

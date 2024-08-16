@@ -1,3 +1,24 @@
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 /**
  * @file metadata_sys.c
  * @brief Sys-context (Global system fields) metadata handler
@@ -12,6 +33,7 @@
 #include "helpers/migration.h"
 #include "data_structures/loader_data.h"
 #include "x86_defs/msr_defs.h"
+#include "helpers/cpuid_fms.h"
 
 static bool_t md_sys_get_first_element_val_and_ptr(md_field_id_t field_id, const md_lookup_t* entry,
                                                    uint64_t* value, void** first_elem_ptr,
@@ -105,6 +127,10 @@ static bool_t md_sys_get_first_element_val_and_ptr(md_field_id_t field_id, const
                 tdx_features_0.td_entry_enhancements = 1;
                 tdx_features_0.host_priority_locks = 1;
                 tdx_features_0.config_ia32_arch_cap = 1;
+                tdx_features_0.no_rbp_mod = 1;
+                tdx_features_0.pending_ept_violation_v2 = 1;
+                tdx_features_0.l2_tlb_invd_opt = 1;
+                tdx_features_0.fms_config = 1;
 
                 *value = tdx_features_0.raw;
             }
@@ -186,6 +212,46 @@ static bool_t md_sys_get_first_element_val_and_ptr(md_field_id_t field_id, const
             {
                 *value = global_data->attributes_fixed1;
             }
+            else if (entry->field_id.field_code == MD_SYS_CONFIG_FLAGS_FIXED0_FIELD_CODE)
+            {
+                *value = global_data->config_flags_fixed0.raw;
+            }
+            else if (entry->field_id.field_code == MD_SYS_CONFIG_FLAGS_FIXED1_FIELD_CODE)
+            {
+                *value = global_data->config_flags_fixed1.raw;
+            }
+            else if (entry->field_id.field_code == MD_SYS_NUM_ALLOWED_FMS_FIELD_CODE)
+            {
+                *value = get_num_allowed_fms();
+            }
+            else if (entry->field_id.field_code == MD_SYS_NUM_DISALLOWED_FMS_FIELD_CODE)
+            {
+                *value = NUM_OF_DISALLOWED_FMS;
+            }
+            else if (entry->field_id.field_code == MD_SYS_ALLOWED_FMS_FIELD_CODE)
+            {
+                if (field_num >= (uint32_t)get_num_allowed_fms())
+                {
+                    *value = 0;
+                }
+                else
+                {
+                    *value = get_allowed_fms((uint16_t)field_num).raw;
+                }
+            }
+            else if (entry->field_id.field_code == MD_SYS_DISALLOWED_FMS_FIELD_CODE)
+            {
+                if (field_num >= NUM_OF_DISALLOWED_FMS)
+                {
+                    *value = 0;
+                }
+                else
+                {
+                    lfence();
+
+                    *value = disallowed_fms[field_num].raw;
+                }
+            }
             else if (entry->field_id.field_code == MD_SYS_XFAM_FIXED0_FIELD_CODE)
             {
                 *value = TDX_XFAM_FIXED0 &
@@ -203,25 +269,29 @@ static bool_t md_sys_get_first_element_val_and_ptr(md_field_id_t field_id, const
             {
                 if (field_num >= MAX_NUM_CPUID_CONFIG)
                 {
-                    return false;
+                    *value = ~(0ULL);
                 }
-
-                lfence(); // Prevent speculative access to non-existant array field
-
-                *value = cpuid_configurable[field_num].leaf_subleaf.raw;
+                else
+                {
+                    lfence(); // Prevent speculative access to non-existant array field
+                    *value = cpuid_configurable[field_num].leaf_subleaf.raw;
+                }
             }
             else if (entry->field_id.field_code == MD_SYS_CPUID_CONFIG_VALUES_FIELD_CODE)
             {
                 if (field_num >= MAX_NUM_CPUID_CONFIG)
                 {
-                    return false;
+                    // No configurable bits
+                    *value = 0;
                 }
+                else
+                {
+                    lfence(); // Prevent speculative access to non-existant array field
 
-                lfence(); // Prevent speculative access to non-existant array field
-
-                *value = cpuid_configurable[field_num].config_direct.low;
-                *first_elem_ptr = (void*)cpuid_configurable[field_num].config_direct.values;
-                *array_size = 16;
+                    *value = cpuid_configurable[field_num].config_direct.low;
+                    *first_elem_ptr = (void*)cpuid_configurable[field_num].config_direct.values;
+                    *array_size = 16;
+                }
             }
             else if (entry->field_id.field_code == MD_SYS_IA32_ARCH_CAPABILITIES_CONFIG_MASK_FIELD_CODE)
             {

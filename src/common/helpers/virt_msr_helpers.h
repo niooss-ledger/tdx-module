@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file virt_msr_helpers.h
@@ -80,7 +93,7 @@ _STATIC_INLINE_ uint64_t calc_allowed1_vmx_ctls(uint64_t init, uint64_t variable
 {
     // Set bits that are fixed-0 (bits that are 0 in ALLOWED1).  A bit must be 0 if
     // its init value is 0 and it's not variable.
-    return init & variable_mask;
+    return init | variable_mask;
 }
 
 // Helper function for calculationg allowed bits in 64-bit VMCS control fields.
@@ -102,10 +115,116 @@ _STATIC_INLINE_ void calc_allowed64_vmx_ctls(uint64_t init, uint64_t variable_ma
     tdx_sanity_check((*not_allowed0 & ~(*allowed1)) == 0, SCEC_HELPERS_SOURCE, 31);
 }
 
+/* Calculate the initial value of L2 VMCS' pin-based controls field,
+   using the base value calculated during TDH.SYS.INIT and the TD configuration.
+   See the L2 VMCS' spreadsheet for the definition of initial values.
+*/
+_STATIC_INLINE_ uint32_t calc_l2_vmcs_pinbased_ctls_init(void)
+{
+    // There is no TD-specific configuration, just return the base value
+    return get_global_data()->l2_vmcs_values.pinbased_ctls;
+}
+
+_STATIC_INLINE_ uint32_t calc_l2_vmcs_procbased_ctls_init(tdcs_t* tdcs_p)
+{
+    td_vmcs_values_t* td_vmcs_values_ptr = &get_global_data()->l2_vmcs_values;
+
+    vmx_procbased_ctls_t ctls = { .raw = td_vmcs_values_ptr->procbased_ctls };
+
+    // Set TD-specific configuration
+    ctls.mwait_exiting = ~tdcs_p->executions_ctl_fields.cpuid_flags.monitor_mwait_supported;
+    ctls.rdpmc_exiting = ~tdcs_p->executions_ctl_fields.attributes.perfmon;
+    ctls.monitor_exiting = ~tdcs_p->executions_ctl_fields.cpuid_flags.monitor_mwait_supported;
+
+    return (uint32_t)ctls.raw;
+}
+
+_STATIC_INLINE_ uint32_t calc_l2_vmcs_procbased_ctls2_init(tdcs_t* tdcs_p)
+{
+    td_vmcs_values_t* td_vmcs_values_ptr = &get_global_data()->l2_vmcs_values;
+
+    vmx_procbased_ctls2_t ctls = { .raw = td_vmcs_values_ptr->procbased_ctls2 };
+
+    // Set TD-specific configuration
+    ctls.en_guest_wait_pause = tdcs_p->executions_ctl_fields.cpuid_flags.waitpkg_supported;
+    ctls.en_pconfig = tdcs_p->executions_ctl_fields.cpuid_flags.mktme_supported;
+
+    return (uint32_t)ctls.raw;
+}
+
+_STATIC_INLINE_ uint64_t calc_l2_vmcs_procbased_ctls3_init(void)
+{
+    td_vmcs_values_t* td_vmcs_values_ptr = &get_global_data()->l2_vmcs_values;
+
+    vmx_procbased_ctls3_t ctls = { .raw = td_vmcs_values_ptr->procbased_ctls3 };
+
+    return ctls.raw;
+}
+
+_STATIC_INLINE_ uint32_t calc_l2_vmcs_vm_exit_ctls_init(tdcs_t* tdcs_p)
+{
+    td_vmcs_values_t* td_vmcs_values_ptr = &get_global_data()->l2_vmcs_values;
+
+    uint32_t ctls = td_vmcs_values_ptr->exit_ctls;
+
+    // Set TD-specific configuration
+    if (tdcs_p->executions_ctl_fields.attributes.perfmon || tdcs_p->executions_ctl_fields.attributes.debug)
+    {
+        ctls |= (uint32_t)BIT(VMCS_EXIT_LOAD_PERF_GLBL_CTRL_BIT_LOCATION);
+        ctls |= (uint32_t)BIT(VMCS_EXIT_SAVE_PERF_GLBL_CTRL_BIT_LOCATION);
+    }
+    else
+    {
+        ctls &= ~((uint32_t)BIT(VMCS_EXIT_LOAD_PERF_GLBL_CTRL_BIT_LOCATION));
+        ctls &= ~((uint32_t)BIT(VMCS_EXIT_SAVE_PERF_GLBL_CTRL_BIT_LOCATION));
+    }
+
+    return ctls;
+}
+
+_STATIC_INLINE_ uint32_t calc_l2_vmcs_vm_entry_ctls_init(tdcs_t* tdcs_p)
+{
+    td_vmcs_values_t* td_vmcs_values_ptr = &get_global_data()->l2_vmcs_values;
+
+    uint32_t ctls = td_vmcs_values_ptr->entry_ctls;
+
+    // Set TD-specific configuration
+    if (tdcs_p->executions_ctl_fields.attributes.perfmon || tdcs_p->executions_ctl_fields.attributes.debug)
+    {
+        ctls |= (uint32_t)BIT(VMCS_ENTRY_LOAD_PERF_GLBL_CTRL_BIT_LOCATION);
+    }
+    else
+    {
+        ctls &= ~((uint32_t)BIT(VMCS_ENTRY_LOAD_PERF_GLBL_CTRL_BIT_LOCATION));
+    }
+
+    if (tdcs_p->executions_ctl_fields.attributes.pks || tdcs_p->executions_ctl_fields.attributes.debug)
+    {
+        ctls |= (uint32_t)BIT(VMCS_ENTRY_LOAD_PKRS_BIT_LOCATION);
+    }
+    else
+    {
+        ctls &= ~((uint32_t)BIT(VMCS_ENTRY_LOAD_PKRS_BIT_LOCATION));
+    }
+
+    return ctls;
+}
+
 _STATIC_INLINE_ ia32_vmx_allowed_bits_t calc_virt_ia32_vmx_true_pinbased_ctls(void)
 {
     // calculate the msr value based on constants and cpu enumeration gathered by tdh.sys.init
-    return calc_allowed32_vmx_ctls(get_global_data()->l2_vmcs_values.pinbased_ctls, PINBASED_CTLS_L1_WR_MASK);
+    return calc_allowed32_vmx_ctls(calc_l2_vmcs_pinbased_ctls_init(), PINBASED_CTLS_L1_WR_MASK);
+}
+
+_STATIC_INLINE_ ia32_vmx_allowed_bits_t calc_virt_ia32_vmx_true_procbased_ctls(tdcs_t *tdcs_p)
+{
+    vmx_procbased_ctls_t wr_mask = {.raw = PROCBASED_CTLS_L1_WR_MASK};
+
+    // clear bits that are not allowed to be 1, based on the td configuration
+    wr_mask.rdpmc_exiting = tdcs_p->executions_ctl_fields.attributes.perfmon;
+
+    // calculate the msr value based on constants and cpu enumeration gathered by tdh.sys.init
+    return calc_allowed32_vmx_ctls(calc_l2_vmcs_procbased_ctls_init(tdcs_p), (uint32_t)wr_mask.raw);
 }
 
 _STATIC_INLINE_ ia32_vmx_allowed_bits_t calc_virt_ia32_vmx_procbased_ctls2(tdcs_t *tdcs_ptr)
@@ -117,34 +236,23 @@ _STATIC_INLINE_ ia32_vmx_allowed_bits_t calc_virt_ia32_vmx_procbased_ctls2(tdcs_
     wr_mask.en_pconfig = tdcs_ptr->executions_ctl_fields.cpuid_flags.mktme_supported;
 
     // calculate the msr value based on constants and cpu enumeration gathered by tdh.sys.init
-    return calc_allowed32_vmx_ctls(get_global_data()->l2_vmcs_values.procbased_ctls2, (uint32_t)wr_mask.raw);
-}
-
-_STATIC_INLINE_ ia32_vmx_allowed_bits_t calc_virt_ia32_vmx_true_procbased_ctls(tdcs_t *tdcs_p)
-{
-    vmx_procbased_ctls_t wr_mask = {.raw = PROCBASED_CTLS_L1_WR_MASK};
-
-    // clear bits that are not allowed to be 1, based on the td configuration
-    wr_mask.rdpmc_exiting = tdcs_p->executions_ctl_fields.attributes.perfmon;
-
-    // calculate the msr value based on constants and cpu enumeration gathered by tdh.sys.init
-    return calc_allowed32_vmx_ctls(get_global_data()->l2_vmcs_values.procbased_ctls, (uint32_t)wr_mask.raw);
+    return calc_allowed32_vmx_ctls(calc_l2_vmcs_procbased_ctls2_init(tdcs_ptr), (uint32_t)wr_mask.raw);
 }
 
 _STATIC_INLINE_ uint64_t calc_virt_ia32_vmx_procbased_ctls3(void)
 {
     // calculate the msr value based on constants and cpu enumeration gathered by tdh.sys.init
-    return calc_allowed1_vmx_ctls(get_global_data()->l2_vmcs_values.procbased_ctls3, PROCBASED_CTLS3_L1_WR_MASK);
+    return calc_allowed1_vmx_ctls(calc_l2_vmcs_procbased_ctls3_init(), PROCBASED_CTLS3_L1_WR_MASK);
 }
 
-_STATIC_INLINE_ ia32_vmx_allowed_bits_t calc_virt_ia32_vmx_true_vmentry_ctls(void)
+_STATIC_INLINE_ ia32_vmx_allowed_bits_t calc_virt_ia32_vmx_true_vmexit_ctls(tdcs_t* tdcs_p)
 {
-    return calc_allowed32_vmx_ctls(get_global_data()->l2_vmcs_values.entry_ctls, ENTRY_CTLS_L1_WR_MASK);
+    return calc_allowed32_vmx_ctls(calc_l2_vmcs_vm_exit_ctls_init(tdcs_p), EXIT_CTLS_L1_WR_MASK);
 }
 
-_STATIC_INLINE_ ia32_vmx_allowed_bits_t calc_virt_ia32_vmx_true_vmexit_ctls(void)
+_STATIC_INLINE_ ia32_vmx_allowed_bits_t calc_virt_ia32_vmx_true_vmentry_ctls(tdcs_t* tdcs_p)
 {
-    return calc_allowed32_vmx_ctls(get_global_data()->l2_vmcs_values.exit_ctls, EXIT_CTLS_L1_WR_MASK);
+    return calc_allowed32_vmx_ctls(calc_l2_vmcs_vm_entry_ctls_init(tdcs_p), ENTRY_CTLS_L1_WR_MASK);
 }
 
 _STATIC_INLINE_ ia32_vmx_ept_vpid_cap_t calc_virt_ia32_vmx_ept_vpid_cap(tdcs_t* tdcs_p)

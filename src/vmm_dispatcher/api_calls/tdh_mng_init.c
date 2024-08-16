@@ -1,11 +1,24 @@
-// Intel Proprietary 
-// 
-// Copyright 2021 Intel Corporation All Rights Reserved.
-// 
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file tdh_mng_init
@@ -27,6 +40,7 @@
 #include "crypto/sha384.h"
 #include "auto_gen/msr_config_lookup.h"
 #include "auto_gen/cpuid_configurations.h"
+#include "helpers/cpuid_fms.h"
 
 static void apply_cpuid_xfam_masks(cpuid_config_return_values_t* cpuid_values,
                                    uint64_t xfam,
@@ -63,12 +77,14 @@ static api_error_type read_and_set_td_configurations(tdr_t * tdr_ptr,
 
     // Read and verify ATTRIBUTES
     tmp_attributes.raw = td_params_ptr->attributes.raw;
-    if (!verify_td_attributes(tmp_attributes))
+    if (!verify_td_attributes(tmp_attributes, false))
     {
         return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_ATTRIBUTES);
         goto EXIT;
     }
     tdcs_ptr->executions_ctl_fields.attributes.raw = tmp_attributes.raw;
+
+    tdcs_ptr->executions_ctl_fields.td_ctls.pending_ve_disable = tmp_attributes.sept_ve_disable;
 
     // Read and verify XFAM
     tmp_xfam.raw = td_params_ptr->xfam;
@@ -96,7 +112,6 @@ static api_error_type read_and_set_td_configurations(tdr_t * tdr_ptr,
         return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_NUM_L2_VMS);
         goto EXIT;
     }
-    tdcs_ptr->management_fields.num_l2_vms = num_l2_vms;
 
     // Now that we know the number of L2 VMs, check that enough pages have been allocated for TDCS
     if (!is_required_tdcs_allocated(tdr_ptr, num_l2_vms))
@@ -105,6 +120,9 @@ static api_error_type read_and_set_td_configurations(tdr_t * tdr_ptr,
         goto EXIT;
     }
 
+    // Only now we can safely update TDCS; NUM_L2_VMS is used by TDH.MNG.RD/WR to calculate offset into TDCS
+    tdcs_ptr->management_fields.num_l2_vms = num_l2_vms;
+
     // Check reserved0 bits are 0
     if (!tdx_memcmp_to_zero(td_params_ptr->reserved_0, TD_PARAMS_RESERVED0_SIZE))
     {
@@ -112,11 +130,11 @@ static api_error_type read_and_set_td_configurations(tdr_t * tdr_ptr,
         goto EXIT;
     }
 
-    // Read and verify EXEC_CONTROLS
-    exec_controls_t exec_controls_local_var;
-    exec_controls_local_var.raw = td_params_ptr->exec_controls.raw;
+    // Read and verify CONFIG_FLAGS
+    config_flags_t config_flags_local_var;
+    config_flags_local_var.raw = td_params_ptr->config_flags.raw;
 
-    if (exec_controls_local_var.reserved != 0)
+    if (!verify_td_config_flags(config_flags_local_var))
     {
         return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_EXEC_CONTROLS);
         goto EXIT;
@@ -125,13 +143,14 @@ static api_error_type read_and_set_td_configurations(tdr_t * tdr_ptr,
     // Read and verify EPTP_CONTROLS
     target_eptp.raw = td_params_ptr->eptp_controls.raw;
 
-    if (!verify_and_set_td_eptp_controls(tdr_ptr, tdcs_ptr, exec_controls_local_var.gpaw, target_eptp))
+    if (!verify_and_set_td_eptp_controls(tdr_ptr, tdcs_ptr, config_flags_local_var.gpaw, target_eptp))
     {
         return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_EPTP_CONTROLS);
         goto EXIT;
     }
 
-    tdcs_ptr->executions_ctl_fields.gpaw = exec_controls_local_var.gpaw;
+    tdcs_ptr->executions_ctl_fields.config_flags.raw = config_flags_local_var.raw;
+    tdcs_ptr->executions_ctl_fields.gpaw = config_flags_local_var.gpaw;
 
     uint16_t virt_tsc_freq = td_params_ptr->tsc_frequency;
     if ((virt_tsc_freq < VIRT_TSC_FREQUENCY_MIN) || (virt_tsc_freq > VIRT_TSC_FREQUENCY_MAX))
@@ -217,11 +236,13 @@ static api_error_type read_and_set_cpuid_configurations(tdcs_t * tdcs_ptr,
         final_tdcs_values.low = global_data_ptr->cpuid_values[cpuid_index].values.low;
         final_tdcs_values.high = global_data_ptr->cpuid_values[cpuid_index].values.high;
 
-        if (cpuid_index < MAX_NUM_CPUID_CONFIG)
-        {
-            config_values = td_params_ptr->cpuid_config_vals[cpuid_index];
+        uint32_t config_index = cpuid_lookup[cpuid_index].config_index;
 
-            tdx_debug_assert((cpuid_leaf_subleaf.raw == cpuid_configurable[cpuid_index].leaf_subleaf.raw));
+        if (cpuid_lookup[cpuid_index].valid_entry && (config_index != CPUID_CONFIG_NULL_IDX))
+        {
+            config_values = td_params_ptr->cpuid_config_vals[config_index];
+
+            tdx_debug_assert((cpuid_leaf_subleaf.raw == cpuid_configurable[config_index].leaf_subleaf.raw));
 
             // Loop on all 4 CPUID values
             for (uint32_t i = 0; i < 4; i++)
@@ -230,8 +251,8 @@ static api_error_type read_and_set_cpuid_configurations(tdcs_t * tdcs_ptr,
                 //   - Directly Configurable, or
                 //   - Directly Allowable
                 if ((config_values.values[i] &
-                     ~(cpuid_configurable[cpuid_index].config_direct.values[i] |
-                       cpuid_configurable[cpuid_index].allow_direct.values[i])) != 0)
+                     ~(cpuid_configurable[config_index].config_direct.values[i] |
+                       cpuid_configurable[config_index].allow_direct.values[i])) != 0)
                 {
                     local_data_ptr->vmm_regs.rcx = cpuid_leaf_subleaf.raw;
                     return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_CPUID_CONFIG);
@@ -248,16 +269,45 @@ static api_error_type read_and_set_cpuid_configurations(tdcs_t * tdcs_ptr,
                 final_tdcs_values.values[i] |= cpuid_lookup[cpuid_index].fixed1.values[i];
 
                 // Set any bits that are CONFIG_DIRECT to their input values
-                final_tdcs_values.values[i] &= ~cpuid_configurable[cpuid_index].config_direct.values[i];
-                final_tdcs_values.values[i] |= config_values.values[i] & cpuid_configurable[cpuid_index].config_direct.values[i];
+                final_tdcs_values.values[i] &= ~cpuid_configurable[config_index].config_direct.values[i];
+                final_tdcs_values.values[i] |= config_values.values[i] & cpuid_configurable[config_index].config_direct.values[i];
 
                 // Clear to 0 any bits that are ALLOW_DIRECT, if their input value is 0
-                final_tdcs_values.values[i] &= config_values.values[i] | ~cpuid_configurable[cpuid_index].allow_direct.values[i];
+                final_tdcs_values.values[i] &= config_values.values[i] | ~cpuid_configurable[config_index].allow_direct.values[i];
             }
         }
 
         if (cpuid_leaf_subleaf.leaf == CPUID_VER_INFO_LEAF)
         {
+            // CPUID(1).EAX is the virtual Family/Model/Stepping configuration
+            fms_info_t cpuid_01_eax = { .raw = final_tdcs_values.eax };
+
+            if (cpuid_01_eax.raw == 0)
+            {
+                // A value of 0 means use the native configuration
+                cpuid_01_eax = global_data_ptr->platform_fms;
+
+                final_tdcs_values.eax = cpuid_01_eax.raw;
+            }
+
+            if (tdcs_ptr->executions_ctl_fields.attributes.migratable)
+            {
+                if (!check_fms_config(cpuid_01_eax))
+                {
+                    // The configured F/M/S value is not valid
+                    local_data_ptr->vmm_regs.rcx = cpuid_leaf_subleaf.raw;
+                    return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_CPUID_CONFIG);
+                    goto EXIT;
+                }
+            }
+            else if (cpuid_01_eax.raw != global_data_ptr->platform_fms.raw)
+            {
+                // For a non-migratable TD, only a value of 0 (updated above) or the native FMS is allowed
+                local_data_ptr->vmm_regs.rcx = cpuid_leaf_subleaf.raw;
+                return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_CPUID_CONFIG);
+                goto EXIT;
+            }
+
             // Leaf 0x1 has ECX bits configurable by AVX (XFAM[2]).
             // If XFAM[2] is 0, the applicable bits are cleared.
             if (!xfam.avx)
@@ -271,6 +321,14 @@ static api_error_type read_and_set_cpuid_configurations(tdcs_t * tdcs_ptr,
             tdcs_ptr->executions_ctl_fields.cpuid_flags.monitor_mwait_supported = cpuid_01_ecx.monitor;
             tdcs_ptr->executions_ctl_fields.cpuid_flags.dca_supported = cpuid_01_ecx.dca;
             tdcs_ptr->executions_ctl_fields.cpuid_flags.tsc_deadline_supported = cpuid_01_ecx.tsc_deadline;
+        }
+        else if (cpuid_leaf_subleaf.leaf == 5)
+        {
+            if (!tdcs_ptr->executions_ctl_fields.cpuid_flags.monitor_mwait_supported)
+            {
+                final_tdcs_values.low = 0;
+                final_tdcs_values.high = 0;
+            }
         }
         else if (cpuid_leaf_subleaf.leaf == CPUID_EXT_FEATURES_LEAF)
         {
@@ -341,33 +399,6 @@ static api_error_type read_and_set_cpuid_configurations(tdcs_t * tdcs_ptr,
                 final_tdcs_values.low = 0;
                 final_tdcs_values.high = 0;
             }
-#ifdef PERFMON_MIGRATION_SUPPORTED
-            else
-            {
-                // Leaf 0xA must be a configurable leaf
-                tdx_debug_assert(cpuid_index < MAX_NUM_CPUID_CONFIG);
-
-                /* CPUID(0xA).EAX[31:24] (number of flags in EBX) is virtualized as ALLOW_ATTRIBUTES_MIN,
-                   which means that the virtual value is the minimum of the h/w-enumerated value and the
-                   configured value. */
-
-                cpuid_0a_eax_t cpuid_0a_eax = { .raw = final_tdcs_values.eax };
-                cpuid_0a_eax_t cpuid_0a_eax_config = { .raw = config_values.eax };
-
-                if (cpuid_0a_eax.num_ebx_flags > cpuid_0a_eax_config.num_ebx_flags)
-                {
-                    cpuid_0a_eax.num_ebx_flags = cpuid_0a_eax_config.num_ebx_flags;
-                    final_tdcs_values.eax = cpuid_0a_eax.raw;
-                }
-
-                /* CPUID(0xA).EBX (event not available bitmap) is virtualized as ALLOW_ATTRIBUTES_DISABLE,
-                   which means that the virtual value is the bitwise-or of the h/w-enumerated value and the
-                   configured value.  This allows the TD configuration to set bits and thus virtualize specific
-                   events as disabled. */
-
-                final_tdcs_values.ebx |= config_values.ebx;
-            }
-#endif
         }
         else if (cpuid_leaf_subleaf.leaf == CPUID_EXT_STATE_ENUM_LEAF)
         {
@@ -516,7 +547,7 @@ api_error_type tdh_mng_init(uint64_t target_tdr_pa, uint64_t target_td_params_pa
     // Boot NT4 bit should not be set
     if ((ia32_rdmsr(IA32_MISC_ENABLES_MSR_ADDR) & MISC_EN_BOOT_NT4_BIT ) != 0)
     {
-        return_val = TDX_BOOT_NT4_SET;
+        return_val = TDX_LIMIT_CPUID_MAXVAL_SET;
         goto EXIT;
     }
 

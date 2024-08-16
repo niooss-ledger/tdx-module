@@ -1,11 +1,24 @@
-// Intel Proprietary 
-// 
-// Copyright 2021 Intel Corporation All Rights Reserved.
-// 
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file td_ept_violation.c
@@ -72,14 +85,52 @@ void td_ept_violation_exit(vmx_exit_qualification_t exit_qualification, vm_vmexi
         return;
     }
 
-    // At this point we're going to do a TD exit. If the GPA is private, log suspected 0-step
-    // attacks that repeatedly cause EPT violations with the same RIP.
+    vmx_ext_exit_qual_t ext_exit_qual = { .raw = 0 };
+    ext_exit_qual.type = VMX_EEQ_NONE;
+
     bool_t shared_bit = get_gpa_shared_bit(gpa.raw, gpaw);
 
     if (!shared_bit)
     {
+        // Check if the EPT violation happened due to an access to a PENDING page.
+        // If so, there are two options:
+        //  - #VE injection to the guest TD.
+        //  - TD exit with Extended Exit Qualification set to denote a PENDING page.
+
+        // Walk the L1 SEPT to locate the leaf entry.
+        tdr_t* tdr_p = tdx_local_data_ptr->vp_ctx.tdr;
+
+        ept_level_t level = LVL_PT; // Walk till leaf entry
+        ia32e_sept_t  sept_entry;
+        ia32e_sept_t* sept_entry_ptr = secure_ept_walk(tdcs_p->executions_ctl_fields.eptp, gpa,
+                                                       tdr_p->key_management_fields.hkid, &level,
+                                                       &sept_entry, false);
+
+        free_la(sept_entry_ptr);
+
+        if (sept_state_is_any_pending_and_guest_acceptable(sept_entry))
+        {
+            // This is a pending page waiting for acceptable by the TD
+            if (tdcs_p->executions_ctl_fields.td_ctls.pending_ve_disable)
+            {
+                // The TD is configured to TD exit on access to a PENDING page
+                ext_exit_qual.type = VMX_EEQ_PENDING_EPT_VIOLATION;
+            }
+            else
+            {
+                // The TD is configured to throw a #VE on access to a PENDING page
+                uint64_t gla;
+                ia32_vmread(VMX_VM_EXIT_GUEST_LINEAR_ADDRESS_ENCODE, &gla);
+                tdx_inject_ve(vm_exit_reason.raw, exit_qualification.raw,
+                                tdx_local_data_ptr->vp_ctx.tdvps, gpa.raw, gla);
+                return;
+            }
+        }
+
+        // At this point we're going to do a TD exit. If the GPA is private, log suspected 0-step
+        // attacks that repeatedly cause EPT violations with the same RIP.
         td_exit_epf_stepping_log(gpa);
     }
 
-    tdx_ept_violation_exit_to_vmm(gpa, vm_exit_reason, exit_qualification.raw, 0);
+    tdx_ept_violation_exit_to_vmm(gpa, vm_exit_reason, exit_qualification.raw, ext_exit_qual.raw);
 }

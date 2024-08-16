@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file tdh_mem_range_block
@@ -23,15 +36,14 @@
 #include "accessors/ia32_accessors.h"
 #include "accessors/data_accessors.h"
 
-static void block_sept_entry(tdcs_t* tdcs_ptr, ia32e_sept_t* sept_entry, ept_level_t level)
+static void block_sept_entry(ia32e_sept_t* sept_entry, ept_level_t level)
 {
     sept_cleanup_if_pending(sept_entry, level);
     switch (sept_entry->raw & SEPT_STATE_ENCODING_MASK)
     {
         case SEPT_STATE_NL_MAPPED_MASK:
             // No need to save the permission bits
-            sept_update_state(sept_entry, SEPT_STATE_NL_BLOCKED_MASK,
-                              tdcs_ptr->executions_ctl_fields.attributes.sept_ve_disable);
+            sept_update_state(sept_entry, SEPT_STATE_NL_BLOCKED_MASK);
             // Clean up the permissions to mark as not-present
             // No need to save the permissions bits as the unlock will set it back defaults
             sept_entry->raw &= ~SEPT_PERMISSIONS_MASK;
@@ -40,14 +52,12 @@ static void block_sept_entry(tdcs_t* tdcs_ptr, ia32e_sept_t* sept_entry, ept_lev
         case SEPT_STATE_BLOCKEDW_MASK:
             // No need to save the L1 permission bits; their values are implicit
             sept_entry->raw &= ~SEPT_PERMISSIONS_MASK;    // set permissions to NONE
-            sept_update_state(sept_entry, SEPT_STATE_BLOCKED_MASK,
-                              tdcs_ptr->executions_ctl_fields.attributes.sept_ve_disable);
+            sept_update_state(sept_entry, SEPT_STATE_BLOCKED_MASK);
             break;
         case SEPT_STATE_PEND_MASK:
         case SEPT_STATE_PEND_BLOCKEDW_MASK:
             // No need to save the permission bits
-            sept_update_state(sept_entry, SEPT_STATE_PEND_BLOCKED_MASK,
-                              tdcs_ptr->executions_ctl_fields.attributes.sept_ve_disable);
+            sept_update_state(sept_entry, SEPT_STATE_PEND_BLOCKED_MASK);
             break;
         default:
             FATAL_ERROR();
@@ -220,21 +230,10 @@ api_error_type tdh_mem_range_block(page_info_api_input_t sept_level_and_gpa,
     ia32e_sept_t new_septe_val;
     new_septe_val.raw = page_sept_entry_copy.raw;
 
-    block_sept_entry(tdcs_ptr, &new_septe_val, sept_level_and_gpa.level);
-
-#ifdef SEPT_AD_BITS_SUPPORTED
-    // Try to update the whole 64-bit EPT entry in an atomic operation, keep the A and D bits.
-    // May fail if a concurrent TDG.MEM.PAGE.ACCEPT update the EPT entry.
-    // In this case, we return an error code and the host VMM is expected to retry the operation.
-    if (!sept_atomic_xchange_keep_ad_bits(page_sept_entry_ptr, page_sept_entry_copy, new_septe_val, true))
-    {
-        return_val = api_error_with_operand_id(TDX_OPERAND_BUSY, OPERAND_ID_RCX);
-        goto EXIT;
-    }
-#else
+    block_sept_entry(&new_septe_val, sept_level_and_gpa.level);
+    
     // Update the SEPT entry in memory
     atomic_mem_write_64b(&page_sept_entry_ptr->raw, new_septe_val.raw);
-#endif
 
     // Block any L2 aliases
     // This is done after blocking the L1 SEPT entry.  This way, if there's an EPT violation in an

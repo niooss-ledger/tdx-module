@@ -1,11 +1,24 @@
-// Intel Proprietary 
-// 
-// Copyright 2021 Intel Corporation All Rights Reserved.
-// 
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file vmcs_defs.h
@@ -42,8 +55,8 @@ typedef enum
     PROCBASED_CTLS2_UNKNOWN    = 0x00000000,
 
     // Note that PROCBASED_CTLS3 enumerates 64 bits
-    PROCBASED_CTLS3_INIT       = 0x0000000000000000,
-    PROCBASED_CTLS3_VARIABLE   = 0x00000000000000A0,
+    PROCBASED_CTLS3_INIT       = 0x0000000000000080,
+    PROCBASED_CTLS3_VARIABLE   = 0x0000000000000020,
     PROCBASED_CTLS3_UNKNOWN    = 0xFFFFFFFFFFFFFF40,
 
     EXIT_CTLS_INIT             = 0x1F3C8204,
@@ -77,18 +90,18 @@ typedef enum
     PINBASED_CTLS_L1_WR_MASK      = 0x00000000,
 
     PROCBASED_CTLS_L2_INIT        = 0x91220088,
-    PROCBASED_CTLS_L2_VARIABLE    = 0x68F81E04,
+    PROCBASED_CTLS_L2_VARIABLE    = 0x68D81E04,
     PROCBASED_CTLS_L2_UNKNOWN     = 0x04046173,
-    PROCBASED_CTLS_L1_WR_MASK     = 0x48F99A04,
+    PROCBASED_CTLS_L1_WR_MASK     = 0x48D99A04,
 
     PROCBASED_CTLS2_L2_INIT       = 0x1338B3FA,
-    PROCBASED_CTLS2_L2_VARIABLE   = 0x0C513F0C,
+    PROCBASED_CTLS2_L2_VARIABLE   = 0x0C513E0C,
     PROCBASED_CTLS2_L2_UNKNOWN    = 0x00000000,
-    PROCBASED_CTLS2_L1_WR_MASK    = 0x0C513F0C,
+    PROCBASED_CTLS2_L1_WR_MASK    = 0x0C513E0C,
 
     // Note that PROCBASED_CTLS3 enumerates 64 bits
-    PROCBASED_CTLS3_L2_INIT       = 0x0000000000000000,
-    PROCBASED_CTLS3_L2_VARIABLE   = 0x00000000000000AE,
+    PROCBASED_CTLS3_L2_INIT       = 0x0000000000000080,
+    PROCBASED_CTLS3_L2_VARIABLE   = 0x000000000000002E,
     PROCBASED_CTLS3_L2_UNKNOWN    = 0xFFFFFFFFFFFFFF40,
     PROCBASED_CTLS3_L1_WR_MASK    = 0x000000000000000E,
 
@@ -401,7 +414,8 @@ typedef enum vmx_eeq_type_e
     VMX_EEQ_GPA_DETAILS                  = 2,
     VMX_EEQ_TD_ENTRY_MSR_LOAD_FAILURE    = 3,
     VMX_EEQ_TD_ENTRY_XSTATE_LOAD_FAILURE = 4,
-    VMX_EEQ_ATTR_WR                      = 5
+    VMX_EEQ_ATTR_WR                      = 5,
+    VMX_EEQ_PENDING_EPT_VIOLATION        = 6
 } vmx_eeq_type_t;
 
 typedef union vmx_ext_exit_qual_u
@@ -418,7 +432,21 @@ typedef union vmx_ext_exit_qual_u
 } vmx_ext_exit_qual_t;
 tdx_static_assert(sizeof(vmx_ext_exit_qual_t) == 8, vmx_ext_exit_qual_t);
 
-typedef union seam_ops_capabilities_s {
+#define L2_ENTER_EEQ_PEND_EPT_VIOLATION             6
+
+typedef union l2_enter_eeq_u
+{
+    struct
+    {
+        uint64_t type                  : 4;
+        uint64_t reserved              : 60;
+    };
+    uint64_t raw;
+} l2_enter_eeq_t;
+tdx_static_assert(sizeof(l2_enter_eeq_t) == 8, l2_enter_eeq_t);
+
+typedef union seam_ops_capabilities_s
+{
     struct
     {
         uint64_t capabilities  : 1; // 0
@@ -433,7 +461,8 @@ typedef union seam_ops_capabilities_s {
 } seam_ops_capabilities_t;
 tdx_static_assert(sizeof(seam_ops_capabilities_t) == 8, seam_ops_capabilities_t);
 
-typedef union vmx_entry_inter_info_s {
+typedef union vmx_entry_inter_info_s
+{
     struct
     {
         uint32_t vector             : 8;
@@ -447,8 +476,8 @@ typedef union vmx_entry_inter_info_s {
 } vmx_entry_inter_info_t;
 tdx_static_assert(sizeof(vmx_entry_inter_info_t) == 8, vmx_entry_inter_info_t);
 
-typedef union vmx_exit_inter_info_s {
-
+typedef union vmx_exit_inter_info_s
+{
     struct
     {
         uint32_t vector                     : 8;
@@ -463,7 +492,8 @@ typedef union vmx_exit_inter_info_s {
 } vmx_exit_inter_info_t;
 tdx_static_assert(sizeof(vmx_exit_inter_info_t) == 8, vmx_exit_inter_info_t);
 
-typedef union vmx_idt_vectoring_info_s {
+typedef union vmx_idt_vectoring_info_s
+{
     struct
     {
         uint32_t vector             : 8;

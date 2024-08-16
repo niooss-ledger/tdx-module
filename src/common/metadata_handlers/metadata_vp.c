@@ -1,3 +1,24 @@
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 /**
  * @file metadata_vp.c
  * @brief VP-context (TDVPS and TD-VMCS) metadata handler
@@ -147,71 +168,131 @@ _STATIC_INLINE_ bool_t apply_cr0_cr4_controls_for_write(uint64_t old_cr, uint64_
 }
 
 
-static bool_t check_l2_procbased_exec_ctls(const tdcs_t* tdcs_p, vmx_procbased_ctls_t old_ctls,
-                                           vmx_procbased_ctls_t new_ctls)
+static bool_t check_l2_procbased_exec_ctls(const tdcs_t* tdcs_p, uint32_t wr_mask,
+                                           vmx_procbased_ctls_t ctls, md_access_t access)
 {
     tdx_module_global_t* global_data = get_global_data();
 
-    // This field's writable bits is not static.  In addition to the write mask that was
-    // applied by the caller, we need to check compatibility with the value read on TDH_SYS_INIT from
-    // the IA32_VMX_PROCBASED_CTLS2 MSR.
-    if ((~new_ctls.raw & global_data->plt_common_config.ia32_vmx_true_procbased_ctls.not_allowed0) |
-        (new_ctls.raw & ~global_data->plt_common_config.ia32_vmx_true_procbased_ctls.allowed1))
+    if ((access == MD_HOST_WR) && tdcs_p->executions_ctl_fields.attributes.debug)
     {
-        return false;
+        // For debugger writes, this field's writable bits properties have been checked by TDH_SYS_INIT to be compatible
+        // with the allowed values enumerated by the CPU using IA32_VMX_PROCBASED_CTLS MSR.
+        // However, for debug TDs the write mask may be more permissive.  Thus, we check the actual value here.
+        // Bits that are not 1 in the write mask are not modified from the current value and therefore are not checked.
+        if (wr_mask & ((~ctls.raw & global_data->plt_common_config.ia32_vmx_true_procbased_ctls.not_allowed0) |
+                       (ctls.raw & ~global_data->plt_common_config.ia32_vmx_true_procbased_ctls.allowed1)))
+        {
+            TDX_ERROR("check_l2_procbased_exec_ctls error - debugger write\n");
+            TDX_ERROR("wr_mask = 0x%llx , ctls = 0x%llx\n", wr_mask, ctls.raw);
+            TDX_ERROR("not_allowed0 = 0x%llx , allowed1 = 0x%llx\n",
+                    global_data->plt_common_config.ia32_vmx_true_procbased_ctls.not_allowed0,
+                    global_data->plt_common_config.ia32_vmx_true_procbased_ctls.allowed1);
+            return false;
+        }
     }
-
-    // RDPMC_EXITING is writable only if the value of the TD's ATTRIBUTES.PERFMON is 1
-    if ((new_ctls.rdpmc_exiting != old_ctls.rdpmc_exiting) && !tdcs_p->executions_ctl_fields.attributes.perfmon)
+    else
     {
-        return false;
+        // For production TDs, this field's writable bits properties must comply with the virtual value of
+        // IA32_VMX_TRUE_PROCBASED_CTLS, as known to L1.  This takes into account the TD configuration.
+        // Bits that are not 1 in the write mask are not modified from the current value and therefore are not checked.
+        if (wr_mask & ((~ctls.raw & tdcs_p->virt_msrs.virt_ia32_vmx_true_procbased_ctls.not_allowed0) |
+                       (ctls.raw & ~tdcs_p->virt_msrs.virt_ia32_vmx_true_procbased_ctls.allowed1)))
+        {
+            TDX_ERROR("check_l2_procbased_exec_ctls error - production write\n");
+            TDX_ERROR("wr_mask = 0x%llx , ctls = 0x%llx\n", wr_mask, ctls.raw);
+            TDX_ERROR("not_allowed0 = 0x%llx , allowed1 = 0x%llx\n",
+                    tdcs_p->virt_msrs.virt_ia32_vmx_true_procbased_ctls.not_allowed0,
+                    tdcs_p->virt_msrs.virt_ia32_vmx_true_procbased_ctls.allowed1);
+            return false;
+        }
     }
 
     return true;
 }
 
-static bool_t check_l2_procbased_exec_ctls2(const tdcs_t* tdcs_p, vmx_procbased_ctls2_t old_ctls2,
-                                            vmx_procbased_ctls2_t new_ctls2)
+static bool_t check_l2_procbased_exec_ctls2(const tdcs_t* tdcs_p, uint32_t wr_mask,
+                                            vmx_procbased_ctls2_t ctls2, md_access_t access)
 {
     tdx_module_global_t* global_data = get_global_data();
 
-    // This field's writable bits is not static.  In addition to the write mask that was
-    // applied above, we need to check compatibility with the value read on TDH_SYS_INIT from
-    // the IA32_VMX_PROCBASED_CTLS2 MSR.
-    if ((~new_ctls2.raw & global_data->plt_common_config.ia32_vmx_procbased_ctls2.not_allowed0) |
-        (new_ctls2.raw & ~global_data->plt_common_config.ia32_vmx_procbased_ctls2.allowed1))
+    if ((access == MD_HOST_WR) && tdcs_p->executions_ctl_fields.attributes.debug)
     {
-        return false;
+        // For debugger writes, this field's writable bits properties have been checked by TDH_SYS_INIT to be compatible
+        // with the allowed values enumerated by the CPU using IA32_VMX_PROCBASED_CTLS2 MSR.
+        // However, for debug TDs the write mask may be more permissive.  Thus, we check the actual value here.
+        // Bits that are not 1 in the write mask are not modified from the current value and therefore are not checked. */
+        if (wr_mask & ((~ctls2.raw & global_data->plt_common_config.ia32_vmx_procbased_ctls2.not_allowed0) |
+                       (ctls2.raw & ~global_data->plt_common_config.ia32_vmx_procbased_ctls2.allowed1)))
+        {
+            TDX_ERROR("check_l2_procbased_exec_ctls2 error - debugger write\n");
+            TDX_ERROR("wr_mask = 0x%llx , ctls = 0x%llx\n", wr_mask, ctls2.raw);
+            TDX_ERROR("not_allowed0 = 0x%llx , allowed1 = 0x%llx\n",
+                    global_data->plt_common_config.ia32_vmx_procbased_ctls2.not_allowed0,
+                    global_data->plt_common_config.ia32_vmx_procbased_ctls2.allowed1);
+            return false;
+        }
     }
 
-    // enable_user_level_wait_and_pause is writable only if the value of the
-    // TD's virtualized CPUID(0x7,0x0).ECX[5] (WAITPKG) is 1
-    if ((new_ctls2.en_guest_wait_pause != old_ctls2.en_guest_wait_pause) &&
-        !tdcs_p->executions_ctl_fields.cpuid_flags.waitpkg_supported)
+    else
     {
-        return false;
-    }
-
-    // enable_pconfig is writable only if the value of the
-    // TD's virtualized CPUID(0x7,0x0).EDX[18] (PCONFIG) is 1
-    if ((new_ctls2.en_pconfig != old_ctls2.en_pconfig) &&
-        !tdcs_p->executions_ctl_fields.cpuid_flags.mktme_supported)
-    {
-        return false;
+        // For production TDs, this field's writable bits properties must comply with the virtual value of
+        // IA32_VMX_PROCBASED_CTLS2, as known to L1.  This takes into account the TD configuration.
+        // Bits that are not 1 in the write mask are not modified from the current value and therefore are not checked. */
+        if (wr_mask & ((~ctls2.raw & tdcs_p->virt_msrs.virt_ia32_vmx_procbased_ctls2.not_allowed0) |
+                       (ctls2.raw & ~tdcs_p->virt_msrs.virt_ia32_vmx_procbased_ctls2.allowed1)))
+        {
+            TDX_ERROR("check_l2_procbased_exec_ctls error - production write\n");
+            TDX_ERROR("wr_mask = 0x%llx , ctls = 0x%llx\n", wr_mask, ctls2.raw);
+            TDX_ERROR("not_allowed0 = 0x%llx , allowed1 = 0x%llx\n",
+                    tdcs_p->virt_msrs.virt_ia32_vmx_procbased_ctls2.not_allowed0,
+                    tdcs_p->virt_msrs.virt_ia32_vmx_procbased_ctls2.allowed1);
+            return false;
+        }
     }
 
     return true;
 }
 
-static bool_t check_l1_procbased_exec_ctls2(const tdcs_t* tdcs_p, vmx_procbased_ctls2_t new_ctls2)
+static bool_t check_l2_procbased_exec_ctls3(const tdcs_t* tdcs_p, uint64_t wr_mask,
+                                            vmx_procbased_ctls3_t ctls3, md_access_t access)
 {
     tdx_module_global_t* global_data = get_global_data();
 
-    // This field's writable bits is not static.  In addition to the write mask that was
-    // applied above, we need to check compatibility with the value read on TDH_SYS_INIT from
-    // the IA32_VMX_PROCBASED_CTLS2 MSR.
-    if ((~new_ctls2.raw & global_data->plt_common_config.ia32_vmx_procbased_ctls2.not_allowed0) |
-        (new_ctls2.raw & ~global_data->plt_common_config.ia32_vmx_procbased_ctls2.allowed1))
+    if ((access == MD_HOST_WR) && tdcs_p->executions_ctl_fields.attributes.debug)
+    {
+        // For debugger writes, this field's writable bits properties have been checked by TDH_SYS_INIT to be compatible
+        // with the allowed values enumerated by the CPU using IA32_VMX_PROCBASED_CTLS3 MSR.
+        // However, for debug TDs the write mask may be more permissive.  Thus, we check the actual value here.
+        // Bits that are not 1 in the write mask are not modified from the current value and therefore are not checked. */
+        if (ctls3.raw & wr_mask & ~global_data->plt_common_config.ia32_vmx_procbased_ctls3)
+        {
+            return false;
+        }
+    }
+    else
+    {
+        // For production TDs, this field's writable bits properties must comply with the virtual value of
+        // IA32_VMX_PROCBASED_CTLS3, as known to L1.  This takes into account the TD configuration.
+        // Bits that are not 1 in the write mask are not modified from the current value and therefore are not checked. */
+        if (ctls3.raw & wr_mask & ~tdcs_p->virt_msrs.virt_ia32_vmx_procbased_ctls3)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool_t check_l1_procbased_exec_ctls2(const tdcs_t* tdcs_p, uint32_t wr_mask, vmx_procbased_ctls2_t new_ctls2)
+{
+    tdx_module_global_t* global_data = get_global_data();
+
+    // For production TDs, this field's writable bits properties have been checked by TDH_SYS_INIT to be compatible
+    // with the allowed values enumerated by the CPU using IA32_VMX_PROCBASED_CTLS2 MSR.
+    // However, for debug TDs the write mask may be more permissive.  Thus, we check the actual value here.
+    // Bits that are not 1 in the write mask are not modified from the current value and therefore are not checked. */
+    if (wr_mask & ((~new_ctls2.raw & global_data->plt_common_config.ia32_vmx_procbased_ctls2.not_allowed0) |
+                   (new_ctls2.raw & ~global_data->plt_common_config.ia32_vmx_procbased_ctls2.allowed1)))
     {
         return false;
     }
@@ -229,23 +310,6 @@ static bool_t check_l1_procbased_exec_ctls2(const tdcs_t* tdcs_p, vmx_procbased_
     }
 
     return true;
-}
-
-static uint32_t get_msr_index_from_shadow_msr_bitmap_field_id(md_field_id_t field_id)
-{
-    uint32_t index;
-
-    // For MSR bitmaps, the field code is the offset (in 8 bytes units) in the MSR bitmaps page.
-    index = field_id.field_code * 64;
-    // Isolate index in the read exit bitmaps (lower two bitmaps)
-    index &= (2 * MSR_RANGE_SIZE) - 1;
-    if (index >= MSR_RANGE_SIZE)
-    {
-        // 2nd read and 2nd write bitmaps are for the high range
-        index = index - MSR_RANGE_SIZE + HIGH_MSR_START;
-    }
-
-    return index;
 }
 
 static uint64_t md_vp_get_element_special_rd_handle(md_field_id_t field_id, md_access_t access_type,
@@ -369,14 +433,6 @@ static uint64_t md_vp_get_element_special_rd_handle(md_field_id_t field_id, md_a
                 }
                 break;
             }
-#ifdef L1_VM_DOS_POLICY_SUPPORT
-            case VMX_NOTIFY_WINDOW_ENCODE:
-            {
-                // Read the shadow value
-                read_value = md_ctx.tdvps_ptr->management.shadow_notify_window[vm_id];
-                break;
-            }
-#endif
             case VMX_PAUSE_LOOP_EXITING_GAP_ENCODE:
             {
                 if ((access_type == MD_GUEST_RD) || (access_type == MD_GUEST_WR) || (access_type == MD_EXPORT_IMMUTABLE))
@@ -397,12 +453,6 @@ static uint64_t md_vp_get_element_special_rd_handle(md_field_id_t field_id, md_a
                 // before the special read handling
                 break;
             }
-            case VMX_VM_EXECUTION_CONTROL_SECONDARY_PROC_BASED_ENCODE:
-            {
-                // Read the shadow value
-                read_value = md_ctx.tdvps_ptr->management.shadow_procbased_exec_ctls2[vm_id];
-                break;
-            }
             case VMX_GUEST_SHARED_EPT_POINTER_FULL_ENCODE:
             {
                 // Read the shadow value;
@@ -416,14 +466,6 @@ static uint64_t md_vp_get_element_special_rd_handle(md_field_id_t field_id, md_a
                 read_value = md_ctx.tdvps_ptr->management.l2_vapic_gpa[vm_id];
                 break;
             }
-#ifdef L2_VE_SUPPORT
-            case VMX_VIRTUAL_EXCEPTION_INFO_ADDRESS_FULL_ENCODE:
-            {
-                // Read the shadow GPA value
-                read_value = md_ctx.tdvps_ptr->management.ve_info_gpa[vm_id];
-                break;
-            }
-#endif
             default:
                 tdx_debug_assert(0);
                 break;
@@ -680,7 +722,7 @@ _STATIC_INLINE_ void write_element_to_mem(void* element_ptr, uint64_t value, uin
 }
 
 static api_error_code_e md_vp_element_vmcs_wr_handle(md_field_id_t field_id, md_context_ptrs_t md_ctx,
-                                                     uint64_t* wr_value, bool_t* write_done)
+                                                     uint64_t wr_mask, uint64_t* wr_value, bool_t* write_done)
 {
     *write_done = false;
 
@@ -704,6 +746,10 @@ static api_error_code_e md_vp_element_vmcs_wr_handle(md_field_id_t field_id, md_
             return TDX_METADATA_FIELD_VALUE_NOT_VALID;
         }
 
+        break;
+    }
+    case VMX_GUEST_CR3_ENCODE:
+    {
         break;
     }
     case VMX_GUEST_CR4_ENCODE:
@@ -742,31 +788,6 @@ static api_error_code_e md_vp_element_vmcs_wr_handle(md_field_id_t field_id, md_
 
     case VMX_NOTIFY_WINDOW_ENCODE:
     {
-#ifdef L1_VM_DOS_POLICY_SUPPORT
-        uint32_t l2_notify_window;
-        vmx_procbased_ctls2_t shadow_procbased_exec_ctls2 =
-                { .raw = md_ctx.tdvps_ptr->management.shadow_procbased_exec_ctls2[0] };
-
-        if ((~(uint32_t)*wr_value != md_ctx.tdvps_ptr->management.shadow_notify_window[0]) &&
-                shadow_procbased_exec_ctls2.notification_exiting)
-        {
-            // Combine the L1 policy to create the actual value in L2 VMCS
-            for (uint16_t vm_id = 1; vm_id <= md_ctx.tdcs_ptr->management_fields.num_l2_vms; vm_id++)
-            {
-                l2_notify_window = crystal_clock_virt_to_real(md_ctx.tdvps_ptr->management.shadow_notify_window[vm_id]);
-                if (shadow_procbased_exec_ctls2.notification_exiting)
-                {
-                    l2_notify_window = (l2_notify_window < (uint32_t)*wr_value) ? l2_notify_window : (uint32_t)*wr_value;
-                }
-                set_vm_vmcs_as_active(md_ctx.tdvps_ptr, vm_id);
-                ia32_vmwrite(VMX_NOTIFY_WINDOW_ENCODE, l2_notify_window);
-            }
-
-            set_vm_vmcs_as_active(md_ctx.tdvps_ptr, 0);
-        }
-        // Save the written value (in real units) to the shadow
-        md_ctx.tdvps_ptr->management.shadow_notify_window[0] = (uint32_t)*wr_value;
-#endif
         break;
     }
     case VMX_VM_EXECUTION_CONTROL_PIN_BASED_ENCODE:
@@ -826,46 +847,10 @@ static api_error_code_e md_vp_element_vmcs_wr_handle(md_field_id_t field_id, md_
     {
         vmx_procbased_ctls2_t new_ctls2;
         new_ctls2.raw = *wr_value;
-        if (!check_l1_procbased_exec_ctls2(md_ctx.tdcs_ptr, new_ctls2))
+        if (!check_l1_procbased_exec_ctls2(md_ctx.tdcs_ptr, (uint32_t)wr_mask, new_ctls2))
         {
             return TDX_METADATA_FIELD_VALUE_NOT_VALID;
         }
-
-#ifdef L1_VM_DOS_POLICY_SUPPORT
-        if ((uint32_t)new_ctls2.raw != md_ctx.tdvps_ptr->management.shadow_procbased_exec_ctls2[0])
-        {
-            // Since the host VMM is changing the TD's bus lock detections and/or notification settings,
-            // We need to combine the L1 policy to create the actual value in L2 VMCS.
-            for (uint16_t vm_id = 1; vm_id <= md_ctx.tdcs_ptr->management_fields.num_l2_vms; vm_id++)
-            {
-                set_vm_vmcs_as_active(md_ctx.tdvps_ptr, vm_id);
-
-                vmx_procbased_ctls2_t l2_ctls2 = new_ctls2;
-                vmx_procbased_ctls2_t shadow_ctls2 =
-                    { .raw = md_ctx.tdvps_ptr->management.shadow_procbased_exec_ctls2[vm_id] };
-
-                l2_ctls2.buslock_detect |= shadow_ctls2.buslock_detect;
-                l2_ctls2.notification_exiting |= shadow_ctls2.notification_exiting;
-
-                ia32_vmwrite(VMX_VM_EXECUTION_CONTROL_SECONDARY_PROC_BASED_ENCODE, l2_ctls2.raw);
-
-                // Update the L2 notification window
-                uint32_t l2_notify_window = crystal_clock_virt_to_real(
-                        md_ctx.tdvps_ptr->management.shadow_notify_window[vm_id]);
-                if (new_ctls2.notification_exiting)
-                {
-                    l2_notify_window = MIN(l2_notify_window, md_ctx.tdvps_ptr->management.shadow_notify_window[0]);
-                }
-
-                ia32_vmwrite(VMX_NOTIFY_WINDOW_ENCODE, l2_notify_window);
-            }
-
-            set_vm_vmcs_as_active(md_ctx.tdvps_ptr, 0);
-        }
-
-        // Write the shadow value for easy access on VM exit from L2
-        md_ctx.tdvps_ptr->management.shadow_procbased_exec_ctls2[0] = (uint32_t)new_ctls2.raw;
-#endif
 
         break;
     }
@@ -884,8 +869,8 @@ static api_error_code_e md_vp_element_vmcs_wr_handle(md_field_id_t field_id, md_
 }
 
 static api_error_code_e md_vp_element_l2_vmcs_wr_handle(md_field_id_t field_id, md_access_t access_type,
-                                                        md_context_ptrs_t md_ctx, uint64_t read_value, uint64_t* wr_value,
-                                                        bool_t* write_done)
+                                                        md_context_ptrs_t md_ctx, uint64_t wr_mask,
+                                                        uint64_t* wr_value, bool_t* write_done)
 {
     *write_done = false;
 
@@ -990,24 +975,6 @@ static api_error_code_e md_vp_element_l2_vmcs_wr_handle(md_field_id_t field_id, 
         // Checking as private GPA was done before
         break;
     }
-#ifdef L1_VM_DOS_POLICY_SUPPORT
-    case VMX_NOTIFY_WINDOW_ENCODE:
-    {
-        // Save the written value (in virtual units) to the shadow
-        md_ctx.tdvps_ptr->management.shadow_notify_window[vm_id] = (uint32_t)*wr_value;
-
-        vmx_procbased_ctls2_t vmx_procbased_ctls2;
-        vmx_procbased_ctls2.raw = md_ctx.tdvps_ptr->management.shadow_procbased_exec_ctls2[0];
-
-        if (vmx_procbased_ctls2.notification_exiting)
-        {
-            // Set the window to the minimum of the values set by L1 and L2 to the L2 VMCS
-            *wr_value = MIN(md_ctx.tdvps_ptr->management.shadow_notify_window[0],
-                           crystal_clock_virt_to_real((uint32_t)*wr_value));
-        }
-        break;
-    }
-#endif
     case VMX_PAUSE_LOOP_EXITING_GAP_ENCODE:
     case VMX_PAUSE_LOOP_EXITING_WINDOW_ENCODE:
     {
@@ -1044,9 +1011,11 @@ static api_error_code_e md_vp_element_l2_vmcs_wr_handle(md_field_id_t field_id, 
     case VMX_VM_EXECUTION_CONTROL_PROC_BASED_ENCODE:
     {
         vmx_procbased_ctls_t new_ctls = { .raw = *wr_value };
-        vmx_procbased_ctls_t old_ctls = { .raw = read_value };
-        if (!check_l2_procbased_exec_ctls(md_ctx.tdcs_ptr, old_ctls, new_ctls))
+
+        if (!check_l2_procbased_exec_ctls(md_ctx.tdcs_ptr, (uint32_t)wr_mask, new_ctls, access_type))
         {
+            TDX_ERROR("L2 VM_EXECUTION_CONTROL_PROC_BASED - failed checks. wr_mask = 0x%llx, wr_val = 0x%llx\n",
+                    wr_mask, new_ctls.raw);
             return TDX_METADATA_FIELD_VALUE_NOT_VALID;
         }
         break;
@@ -1054,42 +1023,26 @@ static api_error_code_e md_vp_element_l2_vmcs_wr_handle(md_field_id_t field_id, 
     case VMX_VM_EXECUTION_CONTROL_SECONDARY_PROC_BASED_ENCODE:
     {
         vmx_procbased_ctls2_t new_ctls2 = { .raw = *wr_value };
-        vmx_procbased_ctls2_t old_ctls2 = { .raw = read_value };
 
-        if (!check_l2_procbased_exec_ctls2(md_ctx.tdcs_ptr, old_ctls2, new_ctls2))
+        if (!check_l2_procbased_exec_ctls2(md_ctx.tdcs_ptr, (uint32_t)wr_mask, new_ctls2, access_type))
         {
+            TDX_ERROR("L2 VM_EXECUTION_CONTROL_SEC_PROC_BASED - failed checks. wr_mask = 0x%llx, wr_val = 0x%llx\n",
+                    wr_mask, new_ctls2.raw);
             return TDX_METADATA_FIELD_VALUE_NOT_VALID;
         }
 
-        // Save the write value to the shadow
-        md_ctx.tdvps_ptr->management.shadow_procbased_exec_ctls2[vm_id] = (uint32_t)new_ctls2.raw;
+        break;
+    }
+    case VMX_VM_EXECUTION_CONTROL_TERTIARY_PROC_BASED_FULL_ENCODE:
+    {
+        vmx_procbased_ctls3_t new_ctls = { .raw = *wr_value };
 
-#ifdef L1_VM_DOS_POLICY_SUPPORT
-
-        // Combine the L1 policy to create the actual value in L2 VMCS
-        vmx_procbased_ctls2_t l1_ctls2 = { .raw = md_ctx.tdvps_ptr->management.shadow_procbased_exec_ctls2[0] };
-        new_ctls2.buslock_detect   |= l1_ctls2.buslock_detect;
-        new_ctls2.notification_exiting |= l1_ctls2.notification_exiting;
-
-        ia32_vmwrite(VMX_VM_EXECUTION_CONTROL_SECONDARY_PROC_BASED_ENCODE, new_ctls2.raw);
-
-        if (new_ctls2.notification_exiting)
+        if (!check_l2_procbased_exec_ctls3(md_ctx.tdcs_ptr, wr_mask, new_ctls, access_type))
         {
-            // Update the notification window
-            uint32_t l2_notify_window =
-                    crystal_clock_virt_to_real(md_ctx.tdvps_ptr->management.shadow_notify_window[vm_id]);
-            if (l1_ctls2.notification_exiting)
-            {
-                l2_notify_window = MIN(l2_notify_window, md_ctx.tdvps_ptr->management.shadow_notify_window[0]);
-            }
-
-            ia32_vmwrite(VMX_NOTIFY_WINDOW_ENCODE, l2_notify_window);
+            TDX_ERROR("L2 VM_EXECUTION_CONTROL_TER_PROC_BASED - failed checks. wr_mask = 0x%llx, wr_val = 0x%llx\n",
+                    wr_mask, new_ctls.raw);
+            return TDX_METADATA_FIELD_VALUE_NOT_VALID;
         }
-
-        *write_done = true;
-
-#endif
-
         break;
     }
     case VMX_GUEST_SHARED_EPT_POINTER_FULL_ENCODE:
@@ -1111,17 +1064,6 @@ static api_error_code_e md_vp_element_l2_vmcs_wr_handle(md_field_id_t field_id, 
         *write_done = true;
         break;
     }
-#ifdef L2_VE_SUPPORT
-    case VMX_VIRTUAL_EXCEPTION_INFO_ADDRESS_FULL_ENCODE:
-    {
-        // Checking as private GPA was done before
-
-        md_ctx.tdvps_ptr->management.ve_info_gpa[vm_id] = *wr_value;
-        md_ctx.tdvps_ptr->management.ve_info_hpa[vm_id] = NULL_PA;
-        *write_done = true;
-        break;
-    }
-#endif
     default:
         tdx_debug_assert(0); // The cases above should handle all special write handling.
         break;
@@ -1164,6 +1106,19 @@ static api_error_code_e md_vp_element_tdvps_wr_handle(md_field_id_t field_id, md
                 {
                     return TDX_METADATA_FIELD_NOT_WRITABLE;
                 }
+
+                // Prevent modification of the IA32_RTIT_CTL MSR image in XBUFF.
+                // This image resides at offset 0 of the PT component of XBUFF.
+                // XBUFF is defined as an array of 8-byte metadata fields. Therefore, FIELD_CODE is offset / 8.
+
+                ia32_xcr0_t xfam = { .raw = md_ctx.tdcs_ptr->executions_ctl_fields.xfam };
+
+                if ((xfam.pt) &&
+                    (field_id.field_code ==
+                     md_ctx.tdcs_ptr->executions_ctl_fields.xbuff_offsets[XCR0_PT_BIT] / 8))
+                {
+                    return TDX_METADATA_FIELD_NOT_WRITABLE;
+                }
             }
             break;
         }
@@ -1172,6 +1127,13 @@ static api_error_code_e md_vp_element_tdvps_wr_handle(md_field_id_t field_id, md
             if (field_id.field_code == MD_TDVPS_IA32_SPEC_CTRL_FIELD_CODE)
             {
                 *wr_value = calculate_real_ia32_spec_ctrl(md_ctx.tdcs_ptr, *wr_value);
+            }
+            else if (field_id.field_code == MD_TDVPS_IA32_XSS_FIELD_CODE)
+            {
+                if (*wr_value & ~md_ctx.tdcs_ptr->executions_ctl_fields.xfam)
+                {
+                    return TDX_METADATA_FIELD_VALUE_NOT_VALID;
+                }
             }
             else
             {
@@ -1183,12 +1145,60 @@ static api_error_code_e md_vp_element_tdvps_wr_handle(md_field_id_t field_id, md
         {
             switch (field_id.field_code)
             {
-                case MD_TDVPS_XFAM_FIELD_CODE:
+                case MD_TDVPS_VCPU_STATE_FIELD_CODE:
                 {
-                    if (!check_xfam((ia32_xcr0_t)*wr_value))
+                    // Write the imported VCPU state only if the VCPU is disabled
+                    if ((uint64_t)md_ctx.tdvps_ptr->management.state != VCPU_DISABLED)
+                    {
+                        *write_done = true;
+                    }
+                    break;
+                }
+                case MD_TDVPS_VCPU_INDEX_FIELD_CODE:
+                {
+                    if (*wr_value >= (uint64_t)md_ctx.tdcs_ptr->management_fields.num_vcpus)
                     {
                         return TDX_METADATA_FIELD_VALUE_NOT_VALID;
                     }
+                    break;
+                }
+                case MD_TDVPS_LAST_TD_EXIT_FIELD_CODE:
+                {
+                    if ((*wr_value != LAST_EXIT_ASYNC_FAULT) &&
+                        (*wr_value != LAST_EXIT_ASYNC_TRAP)  &&
+                        (*wr_value != LAST_EXIT_TDVMCALL))
+                    {
+                        return TDX_METADATA_FIELD_VALUE_NOT_VALID;
+                    }
+                    break;
+                }
+                case MD_TDVPS_CURR_VM_FIELD_CODE:
+                {
+                    if (*wr_value > (uint64_t)md_ctx.tdcs_ptr->management_fields.num_l2_vms)
+                    {
+                        return TDX_METADATA_FIELD_VALUE_NOT_VALID;
+                    }
+                    break;
+                }
+                case MD_TDVPS_L2_EXIT_HOST_ROUTING_FIELD_CODE:
+                {
+                    if ((*wr_value != HOST_ROUTED_NONE) &&
+                        (*wr_value != HOST_ROUTED_ASYNC)  &&
+                        (*wr_value != HOST_ROUTED_TDVMCALL))
+                    {
+                        return TDX_METADATA_FIELD_VALUE_NOT_VALID;
+                    }
+                    break;
+                }
+                case MD_TDVPS_XFAM_FIELD_CODE:
+                {
+                    // TODO @@@ This is a temporary solution for TDX 1.5.01 to avoid spreadsheet changes
+                    return TDX_METADATA_FIELD_NOT_WRITABLE;
+
+                    //if (!check_xfam((ia32_xcr0_t)*wr_value))
+                    //{
+                    //    return TDX_METADATA_FIELD_VALUE_NOT_VALID;
+                    //}
                     break;
                 }
                 case MD_TDVPS_L2_CTLS_FIELD_CODE:
@@ -1305,21 +1315,11 @@ static api_error_code_e md_vp_element_tdvps_wr_handle(md_field_id_t field_id, md
             *write_done = true;
 
             // Write the real MSR bitmaps page used by the CPU
-            uint32_t msr_index = get_msr_index_from_shadow_msr_bitmap_field_id(field_id);
-
-            if ((msr_index >= IA32_X2APIC_START) && (msr_index <= IA32_X2APIC_END))
-            {
-                // For X2APIC MSRs, the MSR bitmaps value is directly written
-                md_ctx.tdvps_ptr->l2_vm_ctrl[vm_id-1].l2_msr_bitmaps[field_id.field_code] = *wr_value;
-            }
-            else
-            {
-                // The MSR bitmaps value is a bitwise - or of the TD's MSR bitmaps value and the shadow value.
-                // Map the TD's MSR bitmaps page (it is typically unmapped).
-                uint64_t* td_msr_bitmaps_page_p = (uint64_t*)md_ctx.tdcs_ptr->MSR_BITMAPS;
-                md_ctx.tdvps_ptr->l2_vm_ctrl[vm_id-1].l2_msr_bitmaps[field_id.field_code] =
-                        td_msr_bitmaps_page_p[field_id.field_code] | *wr_value;
-            }
+            // The MSR bitmaps value is a bitwise - or of the TD's MSR bitmaps value and the shadow value.
+            // Map the TD's MSR bitmaps page (it is typically unmapped).
+            uint64_t* td_msr_bitmaps_page_p = (uint64_t*)md_ctx.tdcs_ptr->MSR_BITMAPS;
+            md_ctx.tdvps_ptr->l2_vm_ctrl[vm_id-1].l2_msr_bitmaps[field_id.field_code] =
+                    td_msr_bitmaps_page_p[field_id.field_code] | *wr_value;
 
             break;
         }
@@ -1330,7 +1330,7 @@ static api_error_code_e md_vp_element_tdvps_wr_handle(md_field_id_t field_id, md
 }
 
 static api_error_code_e md_vp_element_special_wr_handle(md_field_id_t field_id, md_access_t access_type,
-                                                        md_context_ptrs_t md_ctx, uint64_t read_value,
+                                                        md_context_ptrs_t md_ctx, uint64_t wr_mask,
                                                         uint64_t* wr_value, bool_t* write_done)
 {
     api_error_code_e retval = TDX_SUCCESS;
@@ -1338,13 +1338,14 @@ static api_error_code_e md_vp_element_special_wr_handle(md_field_id_t field_id, 
 
     if (field_id.class_code == MD_TDVPS_VMCS_CLASS_CODE)
     {
-        retval = md_vp_element_vmcs_wr_handle(field_id, md_ctx, wr_value, write_done);
+        retval = md_vp_element_vmcs_wr_handle(field_id, md_ctx, wr_mask, wr_value, write_done);
     }
     else if ((field_id.class_code == MD_TDVPS_VMCS_1_CLASS_CODE) ||
              (field_id.class_code == MD_TDVPS_VMCS_2_CLASS_CODE) ||
              (field_id.class_code == MD_TDVPS_VMCS_3_CLASS_CODE))
     {
-        retval = md_vp_element_l2_vmcs_wr_handle(field_id, access_type, md_ctx, read_value, wr_value, write_done);
+        retval = md_vp_element_l2_vmcs_wr_handle(field_id, access_type, md_ctx, wr_mask,
+                                                 wr_value, write_done);
     }
     else
     {
@@ -1454,6 +1455,9 @@ api_error_code_e md_vp_write_element(md_field_id_t field_id, const md_lookup_t* 
 
     if (!md_check_forbidden_bits_unchanged(read_value, wr_value, wr_request_mask, wr_mask))
     {
+        TDX_ERROR("Attempt to change forbidden bits, field_id = 0x%llx\n", field_id.raw);
+        TDX_ERROR("read_value = 0x%llx , wr_value = 0x%llx , wr_request_mask = 0x%llx , wr_mask = 0x%llx\n",
+                read_value, wr_value, wr_request_mask, wr_mask);
         return TDX_METADATA_FIELD_VALUE_NOT_VALID;
     }
 
@@ -1471,7 +1475,8 @@ api_error_code_e md_vp_write_element(md_field_id_t field_id, const md_lookup_t* 
 
     if (entry->special_wr_handling)
     {
-        status = md_vp_element_special_wr_handle(field_id, access_type, md_ctx, read_value, &wr_value, &write_done);
+        status = md_vp_element_special_wr_handle(field_id, access_type, md_ctx, wr_mask,
+                                                 &wr_value, &write_done);
         if (status != TDX_SUCCESS)
         {
             return status;

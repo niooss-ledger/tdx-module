@@ -1,3 +1,24 @@
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 /**
  * @file metadata_td.c
  * @brief TD-context (TDR and TDCS) metadata handler
@@ -12,6 +33,7 @@
 #include "helpers/helpers.h"
 #include "helpers/virt_msr_helpers.h"
 #include "accessors/ia32_accessors.h"
+#include "helpers/cpuid_fms.h"
 
 _STATIC_INLINE_ uint64_t get_element_num(md_field_id_t field_id, const md_lookup_t* entry, uint32_t cpuid_lookup_index)
 {
@@ -133,11 +155,13 @@ static bool_t check_cpuid_compatibility_and_set_flags(tdcs_t* tdcs_ptr, uint32_t
             return false;
         }
 
+        uint32_t config_index = cpuid_lookup[cpuid_index].config_index;
+
         // configurable (CONFIG_DIRECT or ALLOW_DIRECT) CPUID leaf/sub-leaf
-        if (cpuid_index < MAX_NUM_CPUID_CONFIG)
+        if (config_index != CPUID_CONFIG_NULL_IDX)
         {
             // Any bit whose value is 1 and is ALLOW_DIRECT must be natively 1
-            uint32_t masked_cpuid_value = cpuid_value & cpuid_configurable[cpuid_index].allow_direct.values[i];
+            uint32_t masked_cpuid_value = cpuid_value & cpuid_configurable[config_index].allow_direct.values[i];
             if (masked_cpuid_value != (masked_cpuid_value & global_data_ptr->cpuid_values[cpuid_index].values.values[i]))
             {
                 return false;
@@ -152,6 +176,15 @@ static bool_t check_cpuid_compatibility_and_set_flags(tdcs_t* tdcs_ptr, uint32_t
 
     if (leaf == CPUID_VER_INFO_LEAF)
     {
+        //  CPUID(1).EAX is the virtual Family/Model/Stepping configuration
+        fms_info_t cpuid_01_eax = { .raw = cpuid_values.eax };
+
+        if (!check_fms_config(cpuid_01_eax))
+        {
+            // The configured F/M/S value is not valid
+            return false;
+        }
+
         // Leaf 0x1 has ECX bits configurable by AVX (XFAM[2]).
         // If XFAM[2] is 0, the applicable bits must be 0.
         if (!xfam.avx && (cpuid_values.ecx & xfam_mask_0x1_0xffffffff[2].ecx))
@@ -166,6 +199,36 @@ static bool_t check_cpuid_compatibility_and_set_flags(tdcs_t* tdcs_ptr, uint32_t
         tdcs_ptr->executions_ctl_fields.cpuid_flags.dca_supported = cpuid_01_ecx.dca;
         tdcs_ptr->executions_ctl_fields.cpuid_flags.tsc_deadline_supported = cpuid_01_ecx.tsc_deadline;
     }
+    else if (leaf == 0x5)
+    {
+        // CPUID(5) is virtualized as ALLOW_CPUID, based on CPUID(1).ECX(3) (MONITOR)
+        // which was checked above.  On import, if enabled, the following checks are done:
+        // - Virtual CPUID(5) bits that are known by the TDX module to be reserved are checked to be 0.
+        //   This was done above.
+        // - Virtual CPUID(5) bits that are not known by the TDX module to be reserved are checked for exact
+        //   match with the native CPUID(5) values.
+        if (tdcs_ptr->executions_ctl_fields.cpuid_flags.monitor_mwait_supported)
+        {
+            // MONITOR/MWAIT is supported, CPUID(5) is expected to be
+            for (uint32_t i = 0; i < 4; i++)
+            {
+                // Compare to the native value and mask out fixed-0 bits
+                if (((cpuid_values.values[i] ^ global_data_ptr->cpuid_values[cpuid_index].values.values[i]) &
+                     ~cpuid_lookup[cpuid_index].fixed0_or_dynamic.values[i]) != 0)
+                {
+                    return false;
+                }
+            }
+        }
+        else
+        {
+            // MONITOR/MWAIT is not supported, CPUID(5) is expected to be all-0
+            if ((cpuid_values.low != 0) || (cpuid_values.high != 0))
+            {
+                return false;
+            }
+        }
+    }
     else if (leaf == CPUID_EXT_FEATURES_LEAF)
     {
         // Sub-leaves 0 and 1 have bits configurable by multiple XFAM bits.
@@ -176,10 +239,7 @@ static bool_t check_cpuid_compatibility_and_set_flags(tdcs_t* tdcs_ptr, uint32_t
             cpuid_07_00_ecx_t cpuid_07_00_ecx;
             cpuid_07_00_edx_t cpuid_07_00_edx;
 
-            cpuid_07_00_ecx.raw = cpuid_values.ecx;
-
-            if (!check_cpuid_xfam_masks(&cpuid_values, xfam.raw, xfam_mask_0x7_0x0) ||
-                 cpuid_07_00_ecx.pks != attributes.pks || cpuid_07_00_ecx.kl_supported != 0)
+            if (!check_cpuid_xfam_masks(&cpuid_values, xfam.raw, xfam_mask_0x7_0x0))
             {
                 return false;
             }
@@ -198,6 +258,12 @@ static bool_t check_cpuid_compatibility_and_set_flags(tdcs_t* tdcs_ptr, uint32_t
             }
 
             tdcs_ptr->executions_ctl_fields.cpuid_flags.tsx_supported = cpuid_07_00_ebx.hle;
+            cpuid_07_00_ecx.raw = cpuid_values.ecx;
+
+            if (cpuid_07_00_ecx.pks != attributes.pks || cpuid_07_00_ecx.kl_supported != 0)
+            {
+                return false;
+            }
 
             tdcs_ptr->executions_ctl_fields.cpuid_flags.waitpkg_supported = cpuid_07_00_ecx.waitpkg;
             tdcs_ptr->executions_ctl_fields.cpuid_flags.tme_supported = cpuid_07_00_ecx.tme;
@@ -677,57 +743,6 @@ api_error_code_e md_td_write_element(md_field_id_t field_id, const md_lookup_t* 
 
         switch (entry->field_id.raw)
         {
-            case MD_TDCS_CPUID_VALUES_FIELD_ID:
-            {
-                // CPUID(1).EAX, which contains Family/Model/Stepping enumeration, can be written by a Migration TD.
-                // Special handling is required mainly because the spreadsheet definition applies to all CPUID_VALUES entries.
-
-                // Writing F/M/S by MigTD is only allowed for migratable TDs
-                if (!md_ctx.tdcs_ptr->executions_ctl_fields.attributes.migratable)
-                {
-                    return TDX_METADATA_FIELD_NOT_WRITABLE;
-                }
-
-                // Writing F/M/S by MigTD is only allowed if the TD has not been finalized (by TDH.MR.FINALIZE)
-                if (!op_state_is_cpuid_writable_by_mig_td(md_ctx.tdcs_ptr->management_fields.op_state))
-                {
-                    return TDX_OP_STATE_INCORRECT;
-                }
-
-                uint32_t leaf, subleaf;
-                md_cpuid_field_id_get_leaf_subleaf(field_id, &leaf, &subleaf);
-
-                // Only CPUID leaf 1 is writable by the MigTD and only EBX/EAX element is writable by the MigTD
-                if ((leaf != 1) || (field_id.cpuid_field_code.element != 0))
-                {
-                    return TDX_METADATA_FIELD_NOT_WRITABLE;
-                }
-
-                // Only EAX value, which is in the lower 32 bits of the 64-bit EBX/EAX element, is allowed to be written.
-                // For simplicity, we only allow a write mask for the full EAX.
-                if (combined_wr_mask != BIT_MASK_32BITS)
-                {
-                    return TDX_METADATA_WR_MASK_NOT_VALID;
-                }
-
-                fms_info_t cpuid_fms = { .raw = (uint32_t)wr_value };
-
-                // Non-FMS bits must be 0
-                if (cpuid_fms.processor_type || cpuid_fms.rsvd0 || cpuid_fms.rsvd1 != 0)
-                {
-                    return TDX_METADATA_FIELD_VALUE_NOT_VALID;
-                }
-
-                // If the new value, except stepping, is the same as the h/w value, then the MigTD is not
-                // allowed to set a newer stepping value.
-                if (((cpuid_fms.raw & ~CPUID_S_MASK) == (get_global_data()->platform_fms.raw & ~CPUID_S_MASK)) &&
-                    (cpuid_fms.stepping_id > get_global_data()->platform_fms.stepping_id))
-                {
-                    return TDX_METADATA_FIELD_VALUE_NOT_VALID;
-                }
-
-                break;
-            }
             case MD_TDCS_MIG_DEC_KEY_FIELD_ID:
                 // Note that we actually set this flag before MIG_KEY is written below.
                 // This is OK because the relevant case (writing by MigTD)
@@ -761,6 +776,23 @@ api_error_code_e md_td_write_element(md_field_id_t field_id, const md_lookup_t* 
                 wr_value = tsc;
                 *elem_ptr = wr_value;
                 write_done = true;
+
+                break;
+            }
+            case MD_TDCS_TD_CTLS_FIELD_ID:
+            {
+                if (access_type == MD_GUEST_WR)
+                {
+                    if (!md_ctx.tdcs_ptr->executions_ctl_fields.config_flags.flexible_pending_ve)
+                    {
+                        // The guest TD is not allowed to change TD_CTLS.PENDING_VE_DISABLE
+                        td_ctls_t td_ctls_modified_bits = { .raw = wr_value ^ read_value };
+                        if (td_ctls_modified_bits.pending_ve_disable)
+                        {
+                            return TDX_METADATA_FIELD_VALUE_NOT_VALID;
+                        }
+                    }
+                }
 
                 break;
             }
@@ -850,7 +882,7 @@ _STATIC_INLINE_ api_error_code_e check_and_import_servtd_binding(tdcs_t* tdcs_pt
 
 api_error_code_e md_td_write_field(md_field_id_t field_id, const md_lookup_t* entry,md_access_t access_type,
         md_access_qualifier_t access_qual, md_context_ptrs_t md_ctx, uint64_t value[MAX_ELEMENTS_IN_FIELD],
-        uint64_t wr_request_mask)
+        uint64_t wr_request_mask, bool_t is_import)
 {
     // Since we read a multiple elements of the same field, we would like to directly access the ptr of
     // the first element of the field, which will save us the time of searching the offset and size
@@ -899,6 +931,10 @@ api_error_code_e md_td_write_field(md_field_id_t field_id, const md_lookup_t* en
         //----------------------------------
         switch (entry->field_id.raw)
         {
+            case MD_TDCS_NUM_VCPUS_FIELD_ID:
+            {
+                break;
+            }
             case MD_TDR_TD_UUID_FIELD_ID:
             {
                 // TD_UUID is only written on import.
@@ -918,7 +954,17 @@ api_error_code_e md_td_write_field(md_field_id_t field_id, const md_lookup_t* en
                 tdx_debug_assert(entry->num_of_elem == 1);
                 td_param_attributes_t attributes;
                 attributes.raw = value[0] & combined_wr_mask;
-                if (!verify_td_attributes(attributes))
+                if (!verify_td_attributes(attributes, is_import))
+                {
+                    return TDX_METADATA_FIELD_VALUE_NOT_VALID;
+                }
+                break;
+            }
+            case MD_TDCS_CONFIG_FLAGS_FIELD_ID:
+            {
+                config_flags_t config_flags;
+                config_flags.raw = value[0] & combined_wr_mask;
+                if (!verify_td_config_flags(config_flags))
                 {
                     return TDX_METADATA_FIELD_VALUE_NOT_VALID;
                 }
@@ -977,6 +1023,11 @@ api_error_code_e md_td_write_field(md_field_id_t field_id, const md_lookup_t* en
 
                 write_done = true;   // Value is only checked
 
+                break;
+            }
+            case MD_TDCS_TD_CTLS_FIELD_ID:
+            {
+                // No special handling on import
                 break;
             }
             case MD_TDCS_VIRTUAL_TSC_FIELD_ID:

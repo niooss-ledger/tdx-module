@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file tdx_global_data.h
@@ -69,25 +82,29 @@ typedef struct tdx_global_state_s
 #define KOT_STATE_HKID_ASSIGNED  1
 #define KOT_STATE_HKID_FLUSHED   2
 #define KOT_STATE_HKID_RESERVED  3
+
+#define KOT_ENTRY_ALIGNMENT      4
+#define WBT_ENTRY_ALIGNMENT      8
+#define TDMR_ENTRY_ALIGNMENT     8
+
 /**
  * @struct kot_entry_t
  *
  * @brief Holds the entry definition of the KOT
  */
-typedef struct PACKED kot_entry_s
+typedef struct ALIGN(KOT_ENTRY_ALIGNMENT) PACKED kot_entry_s
 {
+    /**
+     * Bitmap of packages indicating a TDWBINVD is required before the HKID can be freed.
+     * If WBINVD_BITMAP[n] is 1, then the entry’s HKID has been reclaimed
+     * (by TDHMNGKEYRECLAIMID), but TDWBINVD has not been completed yet on package n.
+     */
+    uint32_t wbinvd_bitmap;
     /**
      * kot entry state state: KOT_STATE_HKID_FREE = 0, KOT_STATE_HKID_ASSIGNED, KOT_STATE_HKID_RECLAIMED,
      *                        KOT_STATE_HKID_FLUSHED, KOT_STATE_HKID_RESERVED
      */
     uint8_t state;
-    /**
-     * Bitmap of packages indicating a TDWBINVD is required before the HKID can be freed.
-     * If WBINVD_BITMAP[n] is 1, then the entry’s HKID has been reclaimed
-     * (by TDHMNGKEYRECLAIMID), but TDWBINVD has not been completed yet on package n.
-     *
-     */
-    uint32_t wbinvd_bitmap;
 } kot_entry_t;
 
 #define MAX_HKIDS 2048
@@ -114,7 +131,7 @@ typedef struct kot_s
  *
  *  WBT holds an entry WBINVD scope per package.
  */
-typedef struct PACKED wbt_entry_s
+typedef struct ALIGN(WBT_ENTRY_ALIGNMENT) PACKED wbt_entry_s
 {
     uint64_t intr_point; /**< WBINDP handle */
     /**
@@ -138,7 +155,7 @@ typedef struct PACKED wbt_entry_s
  * @brief Holds a TDMR region representation and its PAMTs
  *
  */
-typedef struct PACKED tdmr_entry_s
+typedef struct ALIGN(TDMR_ENTRY_ALIGNMENT) PACKED tdmr_entry_s
 {
     uint64_t base; /**< base physical address of TDMR */
     uint64_t size; /**< size of TDMR in bytes */
@@ -149,14 +166,14 @@ typedef struct PACKED tdmr_entry_s
     uint64_t pamt_4k_base; /**< Base address of the PAMT_4K range */
 
     uint32_t num_of_pamt_blocks; /**< number of PAMT blocks in this TDMR region */
+    uint32_t num_of_rsvd_areas;
 
     struct
     {
+        // NOTE: this struct is un-reachable for checking natural alignment, take it under consideration if/when adding more fields to the struct.
         uint64_t offset; /**< Offset of reserved range 0 within the TDMR. 4K aligned. */
         uint64_t size;   /**< Size of reserved range 0 within the TDMR. A size of 0 indicates a null entry. 4K aligned. */
     } rsvd_areas[MAX_RESERVED_AREAS];
-
-    uint32_t num_of_rsvd_areas;
 
     mutex_lock_t lock; /**< mutex for the initialization process of this TDMR region */
 } tdmr_entry_t;
@@ -186,7 +203,6 @@ typedef struct
 
     ia32_arch_capabilities_t        ia32_arch_capabilities;
     ia32_xapic_disable_status_t     ia32_xapic_disable_status;
-    ia32_tsx_ctrl_t                 ia32_tsx_ctrl;
     ia32_core_capabilities_t        ia32_core_capabilities;
     ia32_perf_capabilities_t        ia32_perf_capabilities;
 
@@ -336,17 +352,14 @@ typedef struct tdx_module_global_s
     uint32_t         max_lbr_depth;
     uint8_t          num_fixed_ctrs;
     uint32_t         fc_bitmap;
-#ifdef PERFMON_MSR_BITMAPS_SUPPORTED
-    uint32_t         pmc_bitmap;
-#endif
-#ifdef PERFMON_ACR_SUPPORTED
-    uint32_t         fc_acr_bitmap;
-    uint32_t         pmc_acr_bitmap;
-#endif
 
     // ATTRIBUTES fixed bits masks
     uint64_t     attributes_fixed0;   // Bit value of 0 means ATTRIBUTES bit must be 0
     uint64_t     attributes_fixed1;   // Bit value of 1 means ATTRIBUTES bit must be 1
+
+    // CONFIG_FLAGS fixed bits masks
+    config_flags_t config_flags_fixed0;
+    config_flags_t config_flags_fixed1;
 
     // Array of TDMR info
     tdmr_info_entry_t tdmr_info_copy[MAX_TDMRS];
@@ -369,6 +382,39 @@ typedef struct tdx_module_global_s
 } tdx_module_global_t;
 
 tdx_static_assert(offsetof(tdx_module_global_t, global_lock) % 2 == 0, global_lock);
+
+// validate that all variables in kot are aligned to their natural size
+tdx_static_assert(sizeof(kot_t) == 16388, kot_t);
+tdx_static_assert((offsetof(tdx_module_global_t, kot) + offsetof(kot_t, lock)) % sizeof(sharex_lock_t) == 0, kot_t);
+tdx_static_assert((offsetof(tdx_module_global_t, kot) + offsetof(kot_t, entries) + offsetof(kot_entry_t, wbinvd_bitmap)) % sizeof_field(kot_entry_t, wbinvd_bitmap) == 0, kot_t);
+
+// validate that all variables in wbt_entries are aligned to their natural size
+tdx_static_assert(sizeof(wbt_entry_t) == 2064, wbt_entry_t);
+tdx_static_assert((offsetof(tdx_module_global_t, wbt_entries) + offsetof(wbt_entry_t, intr_point)) % sizeof(uint64_t) == 0, wbt_entry_t);
+
+// validate that all variables in tdmr_table are aligned to their natural size
+tdx_static_assert(sizeof(tdmr_entry_t) == 320, tdmr_entry_t);
+tdx_static_assert((offsetof(tdx_module_global_t, tdmr_table) + offsetof(tdmr_entry_t, base)) % sizeof_field(tdmr_entry_t, base) == 0, tdmr_entry_t);
+tdx_static_assert((offsetof(tdx_module_global_t, tdmr_table) + offsetof(tdmr_entry_t, size)) % sizeof_field(tdmr_entry_t, size) == 0, tdmr_entry_t);
+tdx_static_assert((offsetof(tdx_module_global_t, tdmr_table) + offsetof(tdmr_entry_t, last_initialized)) % sizeof_field(tdmr_entry_t, last_initialized) == 0, tdmr_entry_t);
+tdx_static_assert((offsetof(tdx_module_global_t, tdmr_table) + offsetof(tdmr_entry_t, pamt_4k_base)) % sizeof_field(tdmr_entry_t, pamt_4k_base) == 0, tdmr_entry_t);
+tdx_static_assert((offsetof(tdx_module_global_t, tdmr_table) + offsetof(tdmr_entry_t, pamt_2m_base)) % sizeof_field(tdmr_entry_t, pamt_2m_base) == 0, tdmr_entry_t);
+tdx_static_assert((offsetof(tdx_module_global_t, tdmr_table) + offsetof(tdmr_entry_t, pamt_1g_base)) % sizeof_field(tdmr_entry_t, pamt_1g_base) == 0, tdmr_entry_t);
+tdx_static_assert((offsetof(tdx_module_global_t, tdmr_table) + offsetof(tdmr_entry_t, num_of_pamt_blocks)) % sizeof_field(tdmr_entry_t, num_of_pamt_blocks) == 0, tdmr_entry_t);
+tdx_static_assert((offsetof(tdx_module_global_t, tdmr_table) + offsetof(tdmr_entry_t, num_of_rsvd_areas)) % sizeof_field(tdmr_entry_t, num_of_rsvd_areas) == 0, tdmr_entry_t);
+tdx_static_assert((offsetof(tdx_module_global_t, tdmr_table) + offsetof(tdmr_entry_t, rsvd_areas)) % sizeof(uint64_t) == 0, tdmr_entry_t);
+
+// validate that all variables in tdmr_info_copy are aligned to their natural size
+tdx_static_assert(sizeof(tdmr_info_entry_t) == 320, tdmr_info_entry_t);
+tdx_static_assert((offsetof(tdx_module_global_t, tdmr_info_copy) + offsetof(tdmr_info_entry_t, tdmr_base)) % sizeof_field(tdmr_info_entry_t, tdmr_base) == 0, tdmr_info_entry_t);
+tdx_static_assert((offsetof(tdx_module_global_t, tdmr_info_copy) + offsetof(tdmr_info_entry_t, tdmr_size)) % sizeof_field(tdmr_info_entry_t, tdmr_size) == 0, tdmr_info_entry_t);
+tdx_static_assert((offsetof(tdx_module_global_t, tdmr_info_copy) + offsetof(tdmr_info_entry_t, pamt_1g_base)) % sizeof_field(tdmr_info_entry_t, pamt_1g_base) == 0, tdmr_info_entry_t);
+tdx_static_assert((offsetof(tdx_module_global_t, tdmr_info_copy) + offsetof(tdmr_info_entry_t, pamt_1g_size)) % sizeof_field(tdmr_info_entry_t, pamt_1g_size) == 0, tdmr_info_entry_t);
+tdx_static_assert((offsetof(tdx_module_global_t, tdmr_info_copy) + offsetof(tdmr_info_entry_t, pamt_2m_base)) % sizeof_field(tdmr_info_entry_t, pamt_2m_base) == 0, tdmr_info_entry_t);
+tdx_static_assert((offsetof(tdx_module_global_t, tdmr_info_copy) + offsetof(tdmr_info_entry_t, pamt_2m_size)) % sizeof_field(tdmr_info_entry_t, pamt_2m_size) == 0, tdmr_info_entry_t);
+tdx_static_assert((offsetof(tdx_module_global_t, tdmr_info_copy) + offsetof(tdmr_info_entry_t, pamt_4k_base)) % sizeof_field(tdmr_info_entry_t, pamt_4k_base) == 0, tdmr_info_entry_t);
+tdx_static_assert((offsetof(tdx_module_global_t, tdmr_info_copy) + offsetof(tdmr_info_entry_t, pamt_4k_size)) % sizeof_field(tdmr_info_entry_t, pamt_4k_size) == 0, tdmr_info_entry_t);
+tdx_static_assert((offsetof(tdx_module_global_t, tdmr_info_copy) + offsetof(tdmr_info_entry_t, rsvd_areas)) % sizeof(uint64_t) == 0, tdmr_info_entry_t);
 
 
 // !!! IMPORTANT !!!

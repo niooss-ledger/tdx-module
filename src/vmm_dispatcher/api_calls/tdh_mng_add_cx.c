@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file tdh_mng_add_cx.c
@@ -127,6 +140,13 @@ api_error_type tdh_mng_add_cx(uint64_t target_tdcx_pa, uint64_t target_tdr_pa)
         fill_area_cacheline(tdcx_ptr, TDX_PAGE_SIZE_IN_BYTES, SEPTE_L2_INIT_VALUE);
     }
 
+    /* OP_STATE is assumed to reside in the first TDCS page, and its value is 0 so there's no need
+           to initialize it separately. */
+    tdx_sanity_check(offsetof(tdcs_t, management_fields) + offsetof(tdcs_management_fields_t, op_state) <=
+                     _4KB - sizeof(tdcs_p->management_fields.op_state),
+                     SCEC_SEAMCALL_SOURCE(TDH_MNG_ADDCX_LEAF), 0);  // Ensure it fits in the first page
+    tdx_sanity_check(0 == OP_STATE_UNINITIALIZED, SCEC_SEAMCALL_SOURCE(TDH_MNG_ADDCX_LEAF), 0);
+
     if ((tdcx_index_num + 1) >= MIN_NUM_TDCS_PAGES)
     {
         // With the new page, we have enough TDCS pages to do some initializations and checks.
@@ -136,8 +156,6 @@ api_error_type tdh_mng_add_cx(uint64_t target_tdcx_pa, uint64_t target_tdr_pa)
 
         if ((tdcx_index_num + 1) == MIN_NUM_TDCS_PAGES)
         {
-            tdcs_p->management_fields.op_state = OP_STATE_UNINITIALIZED;
-
             // Generate a 256-bit encryption key for the next migration session
             if (!generate_256bit_random(&tdcs_p->migration_fields.mig_enc_key))
             {

@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file td_other_exits.c
@@ -229,25 +242,14 @@ void tdx_ept_misconfig_exit_to_vmm(pa_t gpa)
     async_tdexit_to_vmm(TDX_SUCCESS, vm_exit_reason, 0, 0, gpa.raw, 0);
 }
 
-void tdx_inject_ve(uint32_t vm_exit_reason, uint64_t exit_qualification, tdvps_t* tdvps_p,
+void tdx_inject_ve(uint64_t vm_exit_reason, uint64_t exit_qualification, tdvps_t* tdvps_p,
         uint64_t gpa, uint64_t gla)
 {
     bool_t ve_info_mapped = false;
     tdvps_ve_info_t* ve_info_p;
 
     // Before we inject a #VE, reinject IDT vectoring events that happened during VM exit, if any
-#ifdef L2_VE_SUPPORT
-    if (tdvps_p->management.curr_vm != 0)
-    {
-        reinject_idt_vectoring_event();
-
-        ve_info_p = map_pa((void*)tdvps_p->management.ve_info_hpa[vm_id], TDX_RANGE_RW);
-        ve_info_mapped = true;
-    }
-    else
-#else
     tdx_debug_assert(tdvps_p->management.curr_vm == 0);
-#endif
     {
         ve_info_p = &tdvps_p->ve_info;
     }
@@ -267,7 +269,7 @@ void tdx_inject_ve(uint32_t vm_exit_reason, uint64_t exit_qualification, tdvps_t
         ia32_vmread(VMX_VM_EXIT_INSTRUCTION_LENGTH_ENCODE, &length);
         ia32_vmread(VMX_VM_EXIT_INSTRUCTION_INFO_ENCODE, &info);
 
-        ve_info_p->exit_reason = vm_exit_reason;
+        ve_info_p->exit_reason = (uint32_t)vm_exit_reason;
         ve_info_p->exit_qualification = exit_qualification;
         ve_info_p->gla = gla;
         ve_info_p->gpa = gpa;

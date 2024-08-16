@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file tdh_vp_enter
@@ -254,33 +267,14 @@ static void restore_guest_td_state_before_td_entry(tdcs_t* tdcs_ptr, tdvps_t* td
             if ((global_data->fc_bitmap & BIT(i)) != 0)
             {
                 safe_wrmsr(IA32_FIXED_CTR0_MSR_ADDR + i, tdvps_ptr->guest_msr_state.ia32_fixed_ctr[i], tdcs_ptr);
-#ifdef PERFMON_ACR_SUPPORTED
-                if ((global_data->fc_acr_bitmap & BIT(i)) != 0)
-                {
-                    // TODO - add correct MSR ranges
-                    safe_wrmsr(IA32_FIXED_CTR_EXTx + i, tdvps_p->IA32_FIXED_CTR_EXT[i], tdcs_ptr);
-                    safe_wrmsr(IA32_FIXED_CTR_RELOAD_CFGx + i, tdvps_p->IA32_FIXED_CTR_RELOAD_CFG[i], tdcs_ptr);
-                }
-#endif
             }
         }
 
         for (uint32_t i = 0; i < NUM_PMC; i++)
         {
-#ifdef PERFMON_MSR_BITMAPS_SUPPORTED
-            if ((global_data->pmc_bitmap & BIT(i)) != 0)
-#endif
             {
                 safe_wrmsr(IA32_A_PMC0_MSR_ADDR + i, tdvps_ptr->guest_msr_state.ia32_a_pmc[i], tdcs_ptr);
                 safe_wrmsr(IA32_PERFEVTSEL0_MSR_ADDR + i, tdvps_ptr->guest_msr_state.ia32_perfevtsel[i], tdcs_ptr);
-#ifdef PERFMON_ACR_SUPPORTED
-                if ((global_data->pmc_acr_bitmap & BIT(i)) != 0)
-                {
-                    // TODO - add correct MSR ranges
-                    safe_wrmsr(IA32_PMC_EXTx + i, tdvps_p->IA32_PMC_EXT[i], tdcs_ptr);
-                    safe_wrmsr(IA32_PMC_RELOAD_CFGx + i, tdvps_p->IA32_PMC_RELOAD_CFG[i], tdcs_ptr);
-                }
-#endif
             }
         }
 
@@ -590,7 +584,7 @@ api_error_type tdh_vp_enter(uint64_t vcpu_handle_and_flags)
     // Boot NT4 bit should not be set
     if (misc_enable.boot_nt4)
     {
-        return_val = TDX_BOOT_NT4_SET;
+        return_val = TDX_LIMIT_CPUID_MAXVAL_SET;
         goto EXIT_FAILURE;
     }
 
@@ -933,7 +927,6 @@ api_error_type tdh_vp_enter(uint64_t vcpu_handle_and_flags)
     }
     else
     {
-        tdvps_ptr->management.vm_launched[tdvps_ptr->management.curr_vm] = true;
         tdx_return_to_td(false, true, &tdvps_ptr->guest_state.gpr_state);
     }
 

@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file tdg_vp_enter.c
@@ -46,8 +59,8 @@ typedef union vm_and_flags_u
 {
     struct
     {
-        uint64_t do_invept      : 1;    // Bit 0 - used for TDG_VP_ENTER input
-        uint64_t reserved0      : 51;   // Bits 51:1
+        uint64_t do_invept      : 2;    // Bit 0-1 - used for TDG_VP_ENTER input
+        uint64_t reserved0      : 50;   // Bits 51:1
         uint64_t vm             : 2;    // Bits 52:53
         uint64_t reserved1      : 10;   // Bits 54:63
     };
@@ -55,6 +68,12 @@ typedef union vm_and_flags_u
     uint64_t raw;
 } vm_and_flags_t;
 tdx_static_assert(sizeof(vm_and_flags_t) == 8, vm_and_flags_t);
+
+#define VM_AND_FLAGS_NO_INVEPT                            0
+#define VM_AND_FLAGS_INVEPT_TYPE_1                        1
+#define VM_AND_FLAGS_INVEPT_TYPE_1_NO_EPXE_FLUSH          2
+#define VM_AND_FLAGS_INVEPT_TYPE_3                        3
+
 
 api_error_type tdg_vp_enter(uint64_t flags, uint64_t reg_list_gpa)
 {
@@ -131,10 +150,35 @@ api_error_type tdg_vp_enter(uint64_t flags, uint64_t reg_list_gpa)
     // Before entering the VM, update LP-dependent host state (e.g., RSP)
     update_host_state_in_td_vmcs(tdx_local_data_ptr, tdvps_p, vm_id);
 
-    if (vm_flags.do_invept)
+    // Prepare the INVVPID descriptor to be used below
+    invvpid_descriptor_t   descriptor;
+
+    descriptor.raw_low = 0;
+    descriptor.vpid = compose_vpid(vm_id, tdr_p->key_management_fields.hkid);
+
+    switch (vm_flags.do_invept)
     {
-        // Invalidate the L2 VM's GPA translations held by the CPU
+    case VM_AND_FLAGS_NO_INVEPT:
+        // Do nothing
+        break;
+
+    case VM_AND_FLAGS_INVEPT_TYPE_1:
+        // Invalidate all TLB entries and extended paging-structure translations (EPxE) associated with the L2 VM being entered
         flush_td_asid(tdr_p, tdcs_p, vm_id);
+        break;
+
+    case VM_AND_FLAGS_INVEPT_TYPE_1_NO_EPXE_FLUSH:
+        // Invalidate all TLB entries associated with the L2 VM being entered
+        (void)ia32_invvpid(&descriptor, INVVPID_SINGLE_CONTEXT);
+        break;
+
+    case VM_AND_FLAGS_INVEPT_TYPE_3:
+        // Invalidate TLB entries associated with the L2 VM being entered, excluding global translations
+        (void)ia32_invvpid(&descriptor, INVVPID_SINGLE_CONTEXT_RETAINING_GLOBAL);
+        break;
+    default:
+        FATAL_ERROR();
+        break;
     }
 
     // Set the VMX preemption timer, if TSC deadline is enabled
@@ -161,7 +205,6 @@ api_error_type tdg_vp_enter(uint64_t flags, uint64_t reg_list_gpa)
     }
     else
     {
-        tdvps_p->management.vm_launched[vm_id] = true;
         tdx_return_to_td(false, false, &tdvps_p->guest_state.gpr_state);
     }
 

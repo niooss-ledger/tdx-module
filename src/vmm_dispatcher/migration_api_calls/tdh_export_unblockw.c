@@ -1,3 +1,24 @@
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 /**
  * @file tdh_export_unblockw
  * @brief TDHEXPORTUNBLOCKW API handler
@@ -75,10 +96,6 @@ api_error_type tdh_export_unblockw(uint64_t page_pa, uint64_t target_tdr_pa)
         goto EXIT;
     }
     op_state_locked_flag = true;
-
-#ifdef NON_LEAF_MIGRATION_SUPPORTED
-    tdx_debug_assert(0); // Allowed levels will be updated when non-leaf migration is supported
-#endif
 
     // Verify that level input is 4KB
 
@@ -166,24 +183,20 @@ api_error_type tdh_export_unblockw(uint64_t page_pa, uint64_t target_tdr_pa)
     switch (page_sept_entry_copy.raw & SEPT_STATE_ENCODING_MASK)
     {
         case SEPT_STATE_BLOCKEDW_MASK:
-            sept_update_state(&new_septe, SEPT_STATE_MAPPED_MASK,
-                              tdcs_p->executions_ctl_fields.attributes.sept_ve_disable);
+            sept_update_state(&new_septe, SEPT_STATE_MAPPED_MASK);
             new_septe.w = 1;
             break;
         case SEPT_STATE_EXP_BLOCKEDW_MASK:
         case SEPT_STATE_EXP_DIRTY_BLOCKEDW_MASK:
-            sept_update_state(&new_septe, SEPT_STATE_EXP_DIRTY_MASK,
-                              tdcs_p->executions_ctl_fields.attributes.sept_ve_disable);
+            sept_update_state(&new_septe, SEPT_STATE_EXP_DIRTY_MASK);
             new_septe.w = 1;
             break;
         case SEPT_STATE_PEND_BLOCKEDW_MASK:
-            sept_update_state(&new_septe, SEPT_STATE_PEND_MASK,
-                              tdcs_p->executions_ctl_fields.attributes.sept_ve_disable);
+            sept_update_state(&new_septe, SEPT_STATE_PEND_MASK);
             break;
         case SEPT_STATE_PEND_EXP_BLOCKEDW_MASK:
         case SEPT_STATE_PEND_EXP_DIRTY_BLOCKEDW_MASK:
-            sept_update_state(&new_septe, SEPT_STATE_PEND_EXP_DIRTY_MASK,
-                              tdcs_p->executions_ctl_fields.attributes.sept_ve_disable);
+            sept_update_state(&new_septe, SEPT_STATE_PEND_EXP_DIRTY_MASK);
             break;
         default:
             FATAL_ERROR();

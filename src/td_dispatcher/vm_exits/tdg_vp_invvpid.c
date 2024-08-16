@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file tdg_vp_invept.c
@@ -25,18 +38,18 @@
 #include "data_structures/td_vmcs_init.h"
 
 // Execute INVVPID on the GLA range specified by the GLA list entry
-static api_error_type invvpid_gla_list_entry(page_gla_list_entry_t gla_list_entry, uint16_t vpid)
+static api_error_type invvpid_gla_list_entry(gla_list_entry_t gla_list_entry, uint16_t vpid)
 {
-    page_gla_list_entry_t  la;
+    gla_list_entry_t  la;
     invvpid_descriptor_t   descriptor;
 
     descriptor.raw_low = 0;
     descriptor.vpid = vpid;
 
     la.raw = gla_list_entry.raw;
-    la.last_page = 0;
+    la.last_gla_index = 0;
 
-    for (uint32_t i = 0; i <= gla_list_entry.last_page; i++)
+    for (uint32_t i = 0; i <= gla_list_entry.last_gla_index; i++)
     {
         descriptor.la = la.raw;
 
@@ -74,9 +87,9 @@ api_error_type tdg_vp_invvpid(uint64_t flags, uint64_t entry_or_list, bool_t* in
     tdcs_t*  tdcs_p  = tdx_local_data_ptr->vp_ctx.tdcs;
     tdvps_t* tdvps_p = tdx_local_data_ptr->vp_ctx.tdvps;
 
-    page_gla_list_info_t   gla_list_info;
-    page_gla_list_entry_t  gla_list_entry;
-    page_gla_list_entry_t* gla_list_p = NULL;
+    gla_list_info_t   gla_list_info;
+    gla_list_entry_t  gla_list_entry;
+    gla_list_entry_t* gla_list_p = NULL;
     pa_t                   gla_list_gpa;
 
     uint16_t               vm_id;

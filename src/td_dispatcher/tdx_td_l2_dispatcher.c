@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file tdx_td_l2_dispatcher.c
@@ -41,23 +54,8 @@ static void bus_lock_exit_l2(tdx_module_local_t* local_data_ptr, vmx_exit_inter_
         vm_vmexit_exit_reason_t vm_exit_reason = {.raw = 0};
         vm_exit_reason.basic_reason = VMEXIT_REASON_BUS_LOCK;
 
-#ifdef L1_VM_DOS_POLICY_SUPPORT
-        // If the host VMM configured a TD exit on bus lock, do it. Else, exit to the L1 VMM.
-        vmx_procbased_ctls2_t shadow_procbased_exec_ctls2 = { .raw =
-                local_data_ptr->vp_ctx.tdvps->management.shadow_procbased_exec_ctls2[0] };
-
-        if (shadow_procbased_exec_ctls2.buslock_detect)
-        {
-            async_tdexit_to_vmm(TDX_SUCCESS, vm_exit_reason, 0, 0, 0, 0);
-        }
-        else
-        {
-            td_l2_to_l1_exit(vm_exit_reason, 0, vm_exit_inter_info);
-        }
-#else
         UNUSED(vm_exit_inter_info);
         async_tdexit_to_vmm(TDX_SUCCESS, vm_exit_reason, 0, 0, 0, 0);
-#endif
     }
 }
 
@@ -73,7 +71,7 @@ static void handle_l2_vm_entry_failures(vm_vmexit_exit_reason_t vm_exit_reason,
         {
             case VMEXIT_REASON_FAILED_VMENTER_GS:
                 // Invalid guest state is (typically) caused by L1 VMM operation
-                td_l2_to_l1_exit(vm_exit_reason, vm_exit_qualification, vm_exit_inter_info);
+                td_l2_to_l1_exit(vm_exit_reason, vm_exit_qualification, 0, vm_exit_inter_info);
                 break;
             case VMEXIT_REASON_FAILED_VMENTER_MC:
                 // This VM entry failure was due to a #MC, disable the TD
@@ -145,7 +143,7 @@ void tdx_td_l2_dispatcher(void)
                 // A posted interrupt has been injected by the VM exit handler to L1.
                 // Do an L2->L1 exit so that uCode will process the interrupt.
                 td_l2_to_l1_exit_with_exit_case(TDX_L2_EXIT_PENDING_INTERRUPT, vm_exit_reason,
-                                                vm_exit_qualification, vm_exit_inter_info);
+                                                vm_exit_qualification, 0, vm_exit_inter_info);
                 break;
 
             default:
@@ -171,21 +169,8 @@ void tdx_td_l2_dispatcher(void)
                     vm_exit_reason, vm_exit_qualification.raw, 0, 0, vm_exit_inter_info.raw);
             break;
         case VMEXIT_REASON_BUS_LOCK:
-#ifdef L1_VM_DOS_POLICY_SUPPORT
-            // If the host VMM configured a TD exit on bus lock, do it. Else, exit to the L1 VMM.
-            // Note that if both host VMM and L1 VMM didn't configure a VM exit on bus lock, we wouldn't get here.
-            if (procbased_exec_ctls2.buslock_detect)
-            {
-                async_tdexit_to_vmm(TDX_SUCCESS, vm_exit_reason, vm_exit_qualification.raw, 0, 0, 0);
-            }
-            else
-            {
-                td_l2_to_l1_exit(vm_exit_reason, vm_exit_qualification, vm_exit_inter_info);
-            }
-#else
             UNUSED(procbased_exec_ctls2);
             async_tdexit_to_vmm(TDX_SUCCESS, vm_exit_reason, vm_exit_qualification.raw, 0, 0, 0);
-#endif
             break;
         case VMEXIT_REASON_NOTIFICATION:
             // If the context is corrupted, always TD exit.
@@ -196,9 +181,6 @@ void tdx_td_l2_dispatcher(void)
             {
                 async_tdexit_to_vmm(TDX_NON_RECOVERABLE_TD, vm_exit_reason, vm_exit_qualification.raw, 0, 0, 0);
             }
-#ifdef L1_VM_DOS_POLICY_SUPPORT
-            else if (procbased_exec_ctls2.notification_exiting)
-#endif
             {
                 // EPT violation is one case where NMI may have been unblocked by an IRET instruction
                 // before the VM exit happened.  NMI unblocking is only applicable is no IDT vectoring is indicated.
@@ -211,12 +193,6 @@ void tdx_td_l2_dispatcher(void)
 
                 async_tdexit_to_vmm(TDX_SUCCESS, vm_exit_reason, vm_exit_qualification.raw, 0, 0, 0);
             }
-#ifdef L1_VM_DOS_POLICY_SUPPORT
-            else
-            {
-                td_l2_to_l1_exit(vm_exit_reason, vm_exit_qualification, vm_exit_inter_info);
-            }
-#endif
 
             break;
 
@@ -268,7 +244,7 @@ void tdx_td_l2_dispatcher(void)
         case VMEXIT_REASON_XSETBV_INSTRUCTION:
         case VMEXIT_REASON_TPR_BELOW_THRESHOLD:
         case VMEXIT_REASON_VIRTUALIZED_EOI:
-            td_l2_to_l1_exit(vm_exit_reason, vm_exit_qualification, vm_exit_inter_info);
+            td_l2_to_l1_exit(vm_exit_reason, vm_exit_qualification, 0, vm_exit_inter_info);
             break;
 
         // L2->L1 exit or #VE injection, depending of TDVPS.ENABLE_EXTENDED_VE
@@ -279,15 +255,8 @@ void tdx_td_l2_dispatcher(void)
         case VMEXIT_REASON_MONITOR_INSTRUCTION:
         case VMEXIT_REASON_WBINVD_INSTRUCTION:
         case VMEXIT_REASON_PCONFIG:
-#ifdef L2_VE_SUPPORT
-            if (tdvps_p->management.l2_ctls[vm_id].enable_extended_ve)
             {
-                td_generic_ve_exit(vm_exit_reason, vm_exit_qualification.raw);
-            }
-            else
-#endif
-            {
-                td_l2_to_l1_exit(vm_exit_reason, vm_exit_qualification, vm_exit_inter_info);
+                td_l2_to_l1_exit(vm_exit_reason, vm_exit_qualification, 0, vm_exit_inter_info);
             }
             break;
 
@@ -301,16 +270,9 @@ void tdx_td_l2_dispatcher(void)
                 {
                     inject_gp(0);
                 }
-#ifdef L2_VE_SUPPORT
-                else if ((status == CR_ACCESS_NON_ARCH) &&
-                          tdvps_p->management.l2_ctls[vm_id].enable_extended_ve)
-                {
-                    td_generic_ve_exit(vm_exit_reason, 0);
-                }
-#endif
                 else
                 {
-                    td_l2_to_l1_exit(vm_exit_reason, vm_exit_qualification, vm_exit_inter_info);
+                    td_l2_to_l1_exit(vm_exit_reason, vm_exit_qualification, 0, vm_exit_inter_info);
                 }
             }
 
@@ -328,16 +290,9 @@ void tdx_td_l2_dispatcher(void)
                 {
                     inject_gp(0);
                 }
-#ifdef L2_VE_SUPPORT
-                else if ((status == TD_MSR_ACCESS_MSR_NON_ARCH_EXCEPTION) &&
-                          tdvps_p->management.l2_ctls[vm_id].enable_extended_ve)
-                {
-                    td_generic_ve_exit(vm_exit_reason, 0);
-                }
-#endif
                 else
                 {
-                    td_l2_to_l1_exit(vm_exit_reason, vm_exit_qualification, vm_exit_inter_info);
+                    td_l2_to_l1_exit(vm_exit_reason, vm_exit_qualification, 0, vm_exit_inter_info);
                 }
             }
             break;
@@ -361,7 +316,7 @@ void tdx_td_l2_dispatcher(void)
             }
             else
             {
-                td_l2_to_l1_exit(vm_exit_reason, vm_exit_qualification, vm_exit_inter_info);
+                td_l2_to_l1_exit(vm_exit_reason, vm_exit_qualification, 0, vm_exit_inter_info);
             }
             break;
         }
@@ -417,7 +372,7 @@ EXIT:
     {
         // Convert the VOE fields in VMCS to exit information fields and do an L2->L1 exit
         convert_l2_voe_to_l1_exit();
-        td_l2_to_l1_exit(vm_exit_reason, vm_exit_qualification, vm_exit_inter_info);
+        td_l2_to_l1_exit(vm_exit_reason, vm_exit_qualification, 0, vm_exit_inter_info);
     }
 
     // If NMI unblocking by IRET was indicated during VM exit, re-block NMI
@@ -434,3 +389,4 @@ EXIT:
     //Unreachable code. panic
     tdx_sanity_check(0, SCEC_TD_DISPATCHER_SOURCE, 50);
 }
+

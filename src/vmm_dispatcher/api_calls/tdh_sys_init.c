@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file tdh_sys_init.c
@@ -122,8 +135,8 @@ _STATIC_INLINE_ bool_t check_allowed1_vmx_ctls(uint64_t* dest,
 
     // Return the value used for initializing the TD VMCS field (incl. unknown bits)
     *dest = init;
-    return true;
 
+    return true;
 }
 
 _STATIC_INLINE_ bool_t is_smrr_mask_valid_for_tdx(smrr_base_t smrr_base, smrr_mask_t smrr_mask)
@@ -308,7 +321,7 @@ _STATIC_INLINE_ api_error_type check_cpuid_configurations(tdx_module_global_t* g
     // Boot NT4 bit should not be set
     if ((ia32_rdmsr(IA32_MISC_ENABLES_MSR_ADDR) & MISC_EN_BOOT_NT4_BIT ) != 0)
     {
-    	return TDX_BOOT_NT4_SET;
+    	return TDX_LIMIT_CPUID_MAXVAL_SET;
     }
 
     uint32_t last_base_leaf, last_extended_leaf;
@@ -332,6 +345,11 @@ _STATIC_INLINE_ api_error_type check_cpuid_configurations(tdx_module_global_t* g
 
     for (uint32_t i = 0; i < MAX_NUM_CPUID_LOOKUP; i++)
     {
+        if (!cpuid_lookup[i].valid_entry)
+        {
+            continue;
+        }
+
         cpuid_config.leaf_subleaf = cpuid_lookup[i].leaf_subleaf;
 
         if ((cpuid_config.leaf_subleaf.leaf <= last_base_leaf) ||
@@ -489,12 +507,6 @@ _STATIC_INLINE_ api_error_type check_cpuid_configurations(tdx_module_global_t* g
             // FxCtr[i]_is_supported := ECX[i] || (EDX[4:0] > i)
             // So, set all bitmap bits per EDX[4:0] and OR with the bitmap in ECX.
             global_data_ptr->fc_bitmap = (uint32_t)((BIT(cpuid_0a_edx.num_fcs) - 1) | cpuid_0a_ecx.raw);
-
-#ifdef PERFMON_MSR_BITMAPS_SUPPORTED
-            // Set default value for PMC_BITMAP as all-1, e.g. if num_pmcs = 8 then pmc_bitmap = 0xFF
-            // Will be overwritten by leaf 0x23 if supported.
-            global_data_ptr->pmc_bitmap = BIT(cpuid_0a_eax.num_gp_counters) - 1;
-#endif
         }
 
         /* Get the supported extended features.  Allow only features that are recognized
@@ -694,24 +706,6 @@ _STATIC_INLINE_ api_error_type check_cpuid_configurations(tdx_module_global_t* g
         else if (cpuid_config.leaf_subleaf.leaf == 0x23)
         {
             tdx_sanity_check(perfmon_ext_leaf_checked == true, SCEC_SEAMCALL_SOURCE(TDH_SYS_INIT_LEAF), 9);
-
-            if (perfmon_ext_leaf_supported)
-            {
-#ifdef PERFMON_MSR_BITMAPS_SUPPORTED
-                if (cpuid_config.leaf_subleaf.subleaf == 1)
-                {
-                    global_data_ptr->pmc_bitmap = cpuid_config.values.eax;
-                    // TODO:  EBX contains fixed counters bitmap
-                }
-#endif
-#ifdef PERFMON_ACR_SUPPORTED
-                else if (cpuid_config.leaf_subleaf.subleaf == 2)
-                {
-                    global_data_ptr->pmc_acr_bitmap = cpuid_config.values.eax;
-                    global_data_ptr->fc_acr_bitmap = cpuid_config.values.ebx;
-                }
-#endif
-            }
         }
         else if (cpuid_config.leaf_subleaf.leaf == CPUID_GET_MAX_PA_LEAF)
         {
@@ -819,7 +813,8 @@ _STATIC_INLINE_ bool_t check_cmrs()
     return true;
 }
 
-_STATIC_INLINE_ api_error_type check_msrs(tdx_module_global_t* tdx_global_data_ptr, bool_t* tsx_ctrl_modified_flag)
+_STATIC_INLINE_ api_error_type check_msrs(tdx_module_global_t* tdx_global_data_ptr, bool_t* tsx_ctrl_modified_flag,
+                                          ia32_tsx_ctrl_t* tsx_ctrl_original, ia32_tsx_ctrl_t* tsx_ctrl_modified)
 {
     platform_common_config_t* msr_values_ptr = &tdx_global_data_ptr->plt_common_config;
 
@@ -842,15 +837,15 @@ _STATIC_INLINE_ api_error_type check_msrs(tdx_module_global_t* tdx_global_data_p
 
     if (msr_values_ptr->ia32_arch_capabilities.tsx_ctrl)
     {
-    	ia32_tsx_ctrl_t tsx_ctrl = { .raw = ia32_rdmsr(IA32_TSX_CTRL_MSR_ADDR)};
-        msr_values_ptr->ia32_tsx_ctrl.raw = tsx_ctrl.raw;
-        if (tsx_ctrl.tsx_cpuid_clear)
+    	tsx_ctrl_original->raw = ia32_rdmsr(IA32_TSX_CTRL_MSR_ADDR);
+        if (tsx_ctrl_original->tsx_cpuid_clear)
         {
             // TSX_CPUID_CLEAR forces CPUID(7,0).EBX bits 4 and 11 to 0.
             // In order to get their real values, clear this bit.
             // It will be restored later, after we sample CPUID.
-            tsx_ctrl.tsx_cpuid_clear = 0;
-            ia32_wrmsr(IA32_TSX_CTRL_MSR_ADDR, tsx_ctrl.raw);
+            tsx_ctrl_modified->raw = tsx_ctrl_original->raw;
+            tsx_ctrl_modified->tsx_cpuid_clear = 0;
+            ia32_wrmsr(IA32_TSX_CTRL_MSR_ADDR, tsx_ctrl_modified->raw);
             *tsx_ctrl_modified_flag = true;
         }
     }
@@ -1081,8 +1076,10 @@ _STATIC_INLINE_ api_error_type check_vmx_msrs(tdx_module_global_t* tdx_global_da
     return check_l2_vmx_msrs(tdx_global_data_ptr);
 }
 
-_STATIC_INLINE_ api_error_type check_platform_config_and_cpu_enumeration(
-        tdx_module_global_t* tdx_global_data_ptr, bool_t* tsx_ctrl_modified_flag)
+_STATIC_INLINE_ api_error_type check_platform_config_and_cpu_enumeration(tdx_module_global_t* tdx_global_data_ptr,
+                                                                         bool_t* tsx_ctrl_modified_flag,
+                                                                         ia32_tsx_ctrl_t* tsx_ctrl_original,
+                                                                         ia32_tsx_ctrl_t* tsx_ctrl_modified)
 {
 
     api_error_type err;
@@ -1090,7 +1087,7 @@ _STATIC_INLINE_ api_error_type check_platform_config_and_cpu_enumeration(
     /*---------------------------------------------------
         Sample and Check MSR's
     ---------------------------------------------------*/
-    if ((err = check_msrs(tdx_global_data_ptr, tsx_ctrl_modified_flag)) != TDX_SUCCESS)
+    if ((err = check_msrs(tdx_global_data_ptr, tsx_ctrl_modified_flag, tsx_ctrl_original, tsx_ctrl_modified)) != TDX_SUCCESS)
     {
         TDX_ERROR("Check of MSR's failed\n");
         return err;
@@ -1188,7 +1185,7 @@ _STATIC_INLINE_ api_error_type tdx_init_stack_canary(void)
     uint64_t canary;
     if (!ia32_rdrand(&canary))
     {
-        return TDX_SYS_BUSY;
+        return TDX_RND_NO_ENTROPY;
     }
 
     sysinfo_table_t* sysinfo_table = get_sysinfo_table();
@@ -1264,6 +1261,8 @@ api_error_type tdh_sys_init(sys_attributes_t tmp_sys_attributes)
     api_error_type retval = TDX_SYS_BUSY;
     api_error_type err;
 
+    ia32_tsx_ctrl_t tsx_ctrl_original = { .raw = 0 };
+    ia32_tsx_ctrl_t tsx_ctrl_modified = { .raw = 0 };
     bool_t tsx_ctrl_modified_flag = false;
 
     td_param_attributes_t attributes_fixed0;
@@ -1300,7 +1299,8 @@ api_error_type tdh_sys_init(sys_attributes_t tmp_sys_attributes)
         goto EXIT;
     }
 
-    if ((err = check_platform_config_and_cpu_enumeration(tdx_global_data_ptr, &tsx_ctrl_modified_flag)) != TDX_SUCCESS)
+    if ((err = check_platform_config_and_cpu_enumeration(tdx_global_data_ptr, &tsx_ctrl_modified_flag,
+                                                         &tsx_ctrl_original, &tsx_ctrl_modified))!= TDX_SUCCESS)
     {
         TDX_ERROR("Failed to check and config CPU enumeration\n");
         retval = err;
@@ -1342,6 +1342,17 @@ api_error_type tdh_sys_init(sys_attributes_t tmp_sys_attributes)
     tdx_global_data_ptr->attributes_fixed0 = attributes_fixed0.raw;
     tdx_global_data_ptr->attributes_fixed1 = attributes_fixed1.raw;
 
+    config_flags_t config_flags_fixed0 = { .raw = CONFIG_FLAGS_FIXED0 };
+    config_flags_t config_flags_fixed1 = { .raw = CONFIG_FLAGS_FIXED1 };
+
+    if (tdx_global_data_ptr->max_pa <= 48)
+    {
+        config_flags_fixed1.gpaw = 0;
+    }
+
+    tdx_global_data_ptr->config_flags_fixed0.raw = config_flags_fixed0.raw;
+    tdx_global_data_ptr->config_flags_fixed1.raw = config_flags_fixed1.raw;
+
     if (tdx_init_stack_canary() != TDX_SUCCESS)
     {
         retval = TDX_RND_NO_ENTROPY;
@@ -1357,7 +1368,7 @@ api_error_type tdh_sys_init(sys_attributes_t tmp_sys_attributes)
     // Restore the original value of IA32_TSX_CTRL, if modified above
     if (tsx_ctrl_modified_flag)
     {
-        ia32_wrmsr(IA32_TSX_CTRL_MSR_ADDR, tdx_global_data_ptr->plt_common_config.ia32_tsx_ctrl.raw);
+        ia32_wrmsr(IA32_TSX_CTRL_MSR_ADDR, tsx_ctrl_original.raw);
     }
 
     if (global_lock_acquired)

@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file helpers.h
@@ -1400,10 +1413,21 @@ cr_write_status_e write_guest_cr4(uint64_t value, tdcs_t* tdcs_p, tdvps_t* tdvsp
  * @brief Checks the validity the TD attributes that will be set in the TDCS
  *
  * @param attributes to be checked
+ * 
+ * @param is_import specifies whether the function was called during import flow
  *
  * @return true of false
  */
-bool_t verify_td_attributes(td_param_attributes_t attributes);
+bool_t verify_td_attributes(td_param_attributes_t attributes, bool_t is_import);
+
+/**
+ * @brief Checks the validity of the TD config flags that will be set in the TDCS
+ *
+ * @param flags to be checked
+ *
+ * @return true of false
+ */
+bool_t verify_td_config_flags(config_flags_t config_flags);
 
 /**
  * @brief Checks the validity the XFAM that will be set in the TDCS
@@ -1527,12 +1551,6 @@ _STATIC_INLINE_ bool_t op_state_is_import_in_progress(op_state_e op_state)
 {
     tdx_debug_assert(op_state < NUM_OP_STATES);
     return state_flags_lookup[op_state].import_in_progress;
-}
-
-_STATIC_INLINE_ bool_t op_state_is_cpuid_writable_by_mig_td(op_state_e op_state)
-{
-    tdx_debug_assert(op_state < NUM_OP_STATES);
-    return state_flags_lookup[op_state].cpuid_writable_by_migtd;
 }
 
 _STATIC_INLINE_ bool_t op_state_is_seamcall_allowed(seamcall_leaf_opcode_t current_leaf,
@@ -1837,6 +1855,7 @@ _STATIC_INLINE_ void reset_to_next_iv(migsc_t *migsc, uint64_t iv_counter, uint1
         FATAL_ERROR();
     }
 }
+
 
 _STATIC_INLINE_ bool_t is_td_guest_in_64b_mode(void)
 {

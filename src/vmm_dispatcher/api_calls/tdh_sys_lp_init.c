@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file tdH_sys_lp_init.c
@@ -46,15 +59,6 @@ _STATIC_INLINE_ api_error_type check_msrs(tdx_module_global_t* tdx_global_data_p
             tdx_global_data_ptr->plt_common_config.ia32_arch_capabilities.raw)
     {
         return api_error_with_operand_id(TDX_INCONSISTENT_MSR, IA32_ARCH_CAPABILITIES_MSR_ADDR);
-    }
-
-    if (tdx_global_data_ptr->plt_common_config.ia32_arch_capabilities.tsx_ctrl)
-    {
-        if (ia32_rdmsr(IA32_TSX_CTRL_MSR_ADDR) !=
-                tdx_global_data_ptr->plt_common_config.ia32_tsx_ctrl.raw)
-        {
-            return api_error_with_operand_id(TDX_INCONSISTENT_MSR, IA32_TSX_CTRL_MSR_ADDR);
-        }
     }
 
     if (ia32_rdmsr(IA32_MISC_PACKAGE_CTLS_MSR_ADDR) !=
@@ -119,10 +123,11 @@ _STATIC_INLINE_ api_error_type check_smrr_smrr2_config(tdx_module_global_t* tdx_
     return TDX_SUCCESS;
 }
 
-_STATIC_INLINE_ api_error_type compare_cpuid_configuration(
-        tdx_module_global_t* tdx_global_data_ptr,
-        tdx_module_local_t *tdx_local_data_ptr,
-        bool_t* tsx_ctrl_modified_flag)
+_STATIC_INLINE_ api_error_type compare_cpuid_configuration(tdx_module_global_t* tdx_global_data_ptr,
+                                                           tdx_module_local_t *tdx_local_data_ptr,
+                                                           bool_t* tsx_ctrl_modified_flag,
+                                                           ia32_tsx_ctrl_t* tsx_ctrl_original,
+                                                           ia32_tsx_ctrl_t* tsx_ctrl_modified)
 {
 
     //Check consistency with global configuration
@@ -133,16 +138,17 @@ _STATIC_INLINE_ api_error_type compare_cpuid_configuration(
 
     platform_common_config_t* msr_values_ptr = &tdx_global_data_ptr->plt_common_config;
 
-    ia32_tsx_ctrl_t tsx_ctrl = { .raw = msr_values_ptr->ia32_tsx_ctrl.raw };
     if (msr_values_ptr->ia32_arch_capabilities.tsx_ctrl)
     {
-        if (tsx_ctrl.tsx_cpuid_clear)
+        tsx_ctrl_original->raw = ia32_rdmsr(IA32_TSX_CTRL_MSR_ADDR);
+        if (tsx_ctrl_original->tsx_cpuid_clear)
         {
             // TSX_CPUID_CLEAR forces CPUID(7,0).EBX bits 4 and 11 to 0.
             // In order to get their real values, clear this bit.
             // It will be restored later, after we sample CPUID.
-            tsx_ctrl.tsx_cpuid_clear = 0;
-            ia32_wrmsr(IA32_TSX_CTRL_MSR_ADDR, tsx_ctrl.raw);
+            tsx_ctrl_modified->raw = tsx_ctrl_original->raw;
+            tsx_ctrl_modified->tsx_cpuid_clear = 0;
+            ia32_wrmsr(IA32_TSX_CTRL_MSR_ADDR, tsx_ctrl_modified->raw);
             *tsx_ctrl_modified_flag = true;
         }
     }
@@ -150,17 +156,35 @@ _STATIC_INLINE_ api_error_type compare_cpuid_configuration(
     // Boot NT4 bit should not be set
     if ((ia32_rdmsr(IA32_MISC_ENABLES_MSR_ADDR) & MISC_EN_BOOT_NT4_BIT ) != 0)
     {
-        return TDX_BOOT_NT4_SET;
+        return TDX_LIMIT_CPUID_MAXVAL_SET;
     }
+
+    uint32_t last_base_leaf, last_extended_leaf;
+    uint32_t ebx, ecx, edx;
+
+    ia32_cpuid(CPUID_MAX_INPUT_VAL_LEAF, 0, &last_base_leaf, &ebx, &ecx, &edx);
+    ia32_cpuid(CPUID_MAX_EXTENDED_VAL_LEAF, 0, &last_extended_leaf, &ebx, &ecx, &edx);
 
     for (uint32_t i = 0; i < MAX_NUM_CPUID_LOOKUP; i++)
     {
+        if (!cpuid_lookup[i].valid_entry)
+        {
+            continue;
+        }
+
         tmp_cpuid_config.leaf_subleaf =
                 cpuid_lookup[i].leaf_subleaf;
 
         ia32_cpuid(tmp_cpuid_config.leaf_subleaf.leaf, tmp_cpuid_config.leaf_subleaf.subleaf,
                 &tmp_cpuid_config.values.eax, &tmp_cpuid_config.values.ebx,
                 &tmp_cpuid_config.values.ecx, &tmp_cpuid_config.values.edx);
+
+        if (!((tmp_cpuid_config.leaf_subleaf.leaf <= last_base_leaf) ||
+            ((tmp_cpuid_config.leaf_subleaf.leaf >= CPUID_FIRST_EXTENDED_LEAF) &&
+             (tmp_cpuid_config.leaf_subleaf.leaf <= last_extended_leaf))))
+        {
+            continue;
+        }
 
         tmp_verify_same_mask.values.low = (tmp_cpuid_config.values.low & cpuid_lookup[i].verify_same.low);
         tmp_verify_same_mask.values.high = (tmp_cpuid_config.values.high & cpuid_lookup[i].verify_same.high);
@@ -336,9 +360,10 @@ _STATIC_INLINE_ api_error_type compare_key_management_config(tdx_module_global_t
     return TDX_SUCCESS;
 }
 
-_STATIC_INLINE_ api_error_type check_enumeration_and_compare_configuration(
-        tdx_module_global_t* tdx_global_data_ptr,
-        bool_t* tsx_ctrl_modified_flag)
+_STATIC_INLINE_ api_error_type check_enumeration_and_compare_configuration(tdx_module_global_t* tdx_global_data_ptr,
+                                                                           bool_t* tsx_ctrl_modified_flag,
+                                                                           ia32_tsx_ctrl_t* tsx_ctrl_original,
+                                                                           ia32_tsx_ctrl_t* tsx_ctrl_modified)
 {
 
     tdx_module_local_t *tdx_local_data_ptr = get_local_data();
@@ -349,7 +374,8 @@ _STATIC_INLINE_ api_error_type check_enumeration_and_compare_configuration(
         return err;
     }
 
-    if ((err = compare_cpuid_configuration(tdx_global_data_ptr, tdx_local_data_ptr, tsx_ctrl_modified_flag)) != TDX_SUCCESS)
+    if ((err = compare_cpuid_configuration(tdx_global_data_ptr, tdx_local_data_ptr, tsx_ctrl_modified_flag,
+                                           tsx_ctrl_original, tsx_ctrl_modified)) != TDX_SUCCESS)
     {
         return err;
     }
@@ -434,6 +460,8 @@ api_error_type tdh_sys_lp_init(void)
 
     api_error_type retval = TDX_SYS_BUSY;
 
+    ia32_tsx_ctrl_t tsx_ctrl_original = { .raw = 0 };
+    ia32_tsx_ctrl_t tsx_ctrl_modified = { .raw = 0 };
     bool_t tsx_ctrl_modified_flag = false;
 
     tdx_local_data_ptr->vmm_regs.rcx = 0ULL;
@@ -474,7 +502,7 @@ api_error_type tdh_sys_lp_init(void)
     }
     tdx_local_data_ptr->single_step_def_state.lfsr_value = lfsr_value;
 
-    /* Do a global EPT flush.  This is required to guarantee security in case of
+    /* Do a global EPT flush.  This is required to help ensure security in case of
        a TDX-SEAM module update. */
     const ept_descriptor_t zero_descriptor = { 0 };
     ia32_invept(&zero_descriptor, INVEPT_GLOBAL);
@@ -490,7 +518,8 @@ api_error_type tdh_sys_lp_init(void)
         goto EXIT;
     }
 
-    if ((retval = check_enumeration_and_compare_configuration(tdx_global_data_ptr, &tsx_ctrl_modified_flag)) != TDX_SUCCESS)
+    if ((retval = check_enumeration_and_compare_configuration(tdx_global_data_ptr, &tsx_ctrl_modified_flag,
+                                                              &tsx_ctrl_original, &tsx_ctrl_modified)) != TDX_SUCCESS)
     {
         TDX_ERROR("comparing LP configuration with platform failed\n");
         goto EXIT;
@@ -504,7 +533,7 @@ api_error_type tdh_sys_lp_init(void)
     // Restore the original value of IA32_TSX_CTRL, if modified above
     if (tsx_ctrl_modified_flag)
     {
-        ia32_wrmsr(IA32_TSX_CTRL_MSR_ADDR, tdx_global_data_ptr->plt_common_config.ia32_tsx_ctrl.raw);
+        ia32_wrmsr(IA32_TSX_CTRL_MSR_ADDR, tsx_ctrl_original.raw);
     }
 
     if (tmp_global_lock_acquired)

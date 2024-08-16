@@ -1,3 +1,24 @@
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 /**
  * @file tdh_import_mem
  * @brief TDH_IMPORT_MEM API handler
@@ -175,13 +196,13 @@ static api_error_type check_mbmd(migs_index_and_cmd_t migs_i_and_cmd, gpa_list_i
 }
 
 static api_error_type compare_macs_and_update_error_statuses(uint8_t* mac, uint8_t mac_size, uint8_t* page_mac,
-                                                             gpa_list_error_type_t* gpa_list_error_type, tdcs_t* tdcs_p,
+                                                             gpa_list_error_type_t* gpa_list_error_type,
                                                              api_error_type* return_val, gpa_list_entry_status_t* err_status)
 {
     if (!tdx_memcmp_safe(mac, page_mac, mac_size))
     {
         *gpa_list_error_type = GPA_LIST_ERROR_TYPE_LIST_ABORT;
-        *return_val = abort_import_session(tdcs_p, TDX_INVALID_PAGE_MAC, OPERAND_ID_GPA_LIST_ENTRY);
+        *return_val = api_error_with_operand_id(TDX_INVALID_PAGE_MAC, OPERAND_ID_GPA_LIST_ENTRY);
         *err_status = GPA_ENTRY_STATUS_INVALID_PAGE_MAC;
         return *return_val;
     }
@@ -237,9 +258,10 @@ static api_error_type handle_import(page_list_entry_t* new_page_list_p, page_lis
          * The migration buffer must be valid - it will become the new TD page.
          * If not PENDING, copy the migration buffer to a temporary buffer and use that as
          * the source.
-         *     Flush all its cache lines as a preparation to converting to a private page.
-         *     Since a shared HKID has been used until now, these cache lines will not
-         *     get overwritten when the page is re-initialized as a private page.
+         * Note:  The host VMM is responsible to ensure that no cache lines of the migration
+         *        buffer is in a MODIFIED state.  Since a shared HKID has been used until now,
+         *        these cache lines will not get overwritten when the page is re-initialized as
+         *        a private page.
          */
         if (mig_buff_list_entry.invalid == 1)
         {
@@ -248,15 +270,26 @@ static api_error_type handle_import(page_list_entry_t* new_page_list_p, page_lis
             return api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_MIG_BUFF_LIST_ENTRY);
         }
 
-        if (!gpa_list_entry.pending)
+        if (gpa_list_entry.pending)
+        {
+            // Flush the cache lines of the migration buffer, we're going to convert is to a private page
+            invalidate_cache_lines((uint64_t)(*mig_buff_p), _4KB);
+        }
+        else
         {
             tdx_debug_assert(*mig_buff_mapped);
+            // Copy the migration buffer to a temporary buffer
             tdx_memcpy(*buff_4k, _4KB, *mig_buff_p, _4KB);
+
+            // Flush the cache lines of the migration buffer, we're going to convert is to a private page
+            invalidate_cache_lines((uint64_t)(*mig_buff_p), _4KB);
             free_la(*mig_buff_p);
             *mig_buff_mapped = false;
+
+            // Further on, use the temporary buffer as the source
             *mig_buff_p = *buff_4k;
         }
-        invalidate_cache_lines((uint64_t)(*mig_buff_p), _4KB);
+
         *td_page_pa = set_hkid_to_pa((pa_t)mig_buff_list_entry.raw, 0);
     }
     else
@@ -265,7 +298,10 @@ static api_error_type handle_import(page_list_entry_t* new_page_list_p, page_lis
            The new TD page is provided separately. HKID bits must be 0.
         */
         td_page_pa->raw = new_page_list_entry.raw;
-        if (!is_addr_aligned_pwr_of_2(td_page_pa->raw, TDX_PAGE_SIZE_IN_BYTES))
+
+        if (!is_addr_aligned_pwr_of_2(td_page_pa->raw, TDX_PAGE_SIZE_IN_BYTES) ||
+            !is_pa_smaller_than_max_pa(td_page_pa->raw) ||
+            (get_hkid_from_pa(*td_page_pa) != 0))
         {
             TDX_ERROR("Failed on new page list shared HPA 0x%llx check\n", td_page_pa->raw);
             *gpa_list_error_type = GPA_LIST_ERROR_TYPE_LIST_ABORT;
@@ -678,7 +714,7 @@ api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
             }
 
             if (TDX_SUCCESS != compare_macs_and_update_error_statuses(mac, sizeof(mac), page_mac,
-                                                                      &gpa_list_error_type, tdcs_p,
+                                                                      &gpa_list_error_type,
                                                                       &return_val, &err_status))
             {
                 goto FINALIZE_ENTRY;
@@ -699,9 +735,12 @@ api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
 
         if (!check_and_get_gpa_from_entry(gpa_list_entry, tdcs_p->executions_ctl_fields.gpaw, &page_gpa))
         {
-            return_val = api_error_with_operand_id_fatal(TDX_OPERAND_INVALID, OPERAND_ID_GPA_LIST_ENTRY);
             TDX_ERROR("Invalid GPA entry in the list - 0x%llx\n", gpa_list_entry.raw);
-            goto EXIT;
+
+            return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_GPA_LIST_ENTRY);
+            gpa_list_error_type = GPA_LIST_ERROR_TYPE_LIST_ABORT;
+            err_status = GPA_ENTRY_STATUS_GPA_LIST_ENTRY_INVALID;
+            goto FINALIZE_ENTRY;
         }
 
         sept_entry_level = LVL_PT;
@@ -749,7 +788,7 @@ api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
         {
             gpa_list_error_type = GPA_LIST_ERROR_TYPE_LIST_ABORT;
             return_val = TDX_OP_STATE_INCORRECT;
-            err_status = GPA_ENTRY_STATUS_SEPT_ENTRY_STATE_INCORRECT;
+            err_status = GPA_ENTRY_STATUS_OP_STATE_INCORRECT;
             goto FINALIZE_ENTRY;
         }
 
@@ -835,7 +874,7 @@ api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
             }
 
             if (TDX_SUCCESS != compare_macs_and_update_error_statuses(mac, sizeof(mac), page_mac,
-                                                                      &gpa_list_error_type, tdcs_p,
+                                                                      &gpa_list_error_type,
                                                                       &return_val, &err_status))
             {
                 break;
@@ -865,12 +904,11 @@ api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
             sept_set_leaf_and_keep_lock(&sept_entry_copy,
                                         gpa_list_entry.pending ? SEPT_PERMISSIONS_NONE : SEPT_PERMISSIONS_RWX,
                                         td_page_pa,
-                                        gpa_list_entry.pending ? SEPT_STATE_PEND_BLOCKED_MASK : SEPT_STATE_BLOCKED_MASK,
-                                        tdcs_p->executions_ctl_fields.attributes.sept_ve_disable);
+                                        gpa_list_entry.pending ? SEPT_STATE_PEND_BLOCKED_MASK : SEPT_STATE_BLOCKED_MASK);
 
             sept_entry_ptr->raw = sept_entry_copy.raw;
 
-            sept_unblock(&sept_entry_copy, tdcs_p->executions_ctl_fields.attributes.sept_ve_disable);
+            sept_unblock(&sept_entry_copy);
             sept_lock_release_local(&sept_entry_copy);
             sept_entry_ptr->raw = sept_entry_copy.raw;
 
@@ -908,9 +946,6 @@ api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
                 return_val = api_error_with_operand_id(TDX_MIGRATED_IN_CURRENT_EPOCH, OPERAND_ID_GPA_LIST_ENTRY);
                 err_status = GPA_ENTRY_STATUS_MIGRATED_IN_CURRENT_EPOCH; break;
             }
-
-            // Update the PAMT entry
-            td_page_pamt_entry_p->bepoch.mig_epoch = tdcs_p->migration_fields.mig_epoch;
 
             // Map the 4KB TD private page
             td_page_p = map_pa_with_hkid(td_page_pa.raw_void, tdr_p->key_management_fields.hkid, TDX_RANGE_RW);
@@ -955,7 +990,7 @@ api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
             }
 
             if (TDX_SUCCESS != compare_macs_and_update_error_statuses(mac, sizeof(mac), page_mac,
-                                                                      &gpa_list_error_type, tdcs_p,
+                                                                      &gpa_list_error_type,
                                                                       &return_val, &err_status))
             {
                 break;
@@ -964,8 +999,10 @@ api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
             sept_set_leaf_and_keep_lock(&sept_entry_copy,
                                         gpa_list_entry.pending ? SEPT_PERMISSIONS_NONE : SEPT_PERMISSIONS_RWX,
                                         td_page_pa,
-                                        gpa_list_entry.pending ? SEPT_STATE_PEND_MASK : SEPT_STATE_MAPPED_MASK,
-                                        tdcs_p->executions_ctl_fields.attributes.sept_ve_disable);
+                                        gpa_list_entry.pending ? SEPT_STATE_PEND_MASK : SEPT_STATE_MAPPED_MASK);
+
+            // Update the PAMT entry
+            td_page_pamt_entry_p->bepoch.mig_epoch = tdcs_p->migration_fields.mig_epoch;
 
             sept_lock_release_local(&sept_entry_copy);
             sept_entry_ptr->raw = sept_entry_copy.raw;
@@ -990,7 +1027,7 @@ api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
             }
 
             if (TDX_SUCCESS != compare_macs_and_update_error_statuses(mac, sizeof(mac), page_mac,
-                                                                      &gpa_list_error_type, tdcs_p,
+                                                                      &gpa_list_error_type,
                                                                       &return_val, &err_status))
             {
                 break;

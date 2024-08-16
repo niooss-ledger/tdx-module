@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file tdg_mem_page_attr_wr.c
@@ -148,6 +161,7 @@ static api_error_type get_all_l2_sept_entries(tdr_t *tdr_ptr, tdcs_t *tdcs_ptr, 
     if (attribute_status != TDX_SUCCESS)
     {
         // We had an illegal attributes combination in the loop above, return the current attributes
+        tdvps_ptr->guest_state.gpr_state.rcx = 0;
         tdvps_ptr->guest_state.gpr_state.rdx = new_gpa_attr->raw;
         return_val = attribute_status;
     }
@@ -184,10 +198,6 @@ api_error_type tdg_mem_page_attr_wr(
     tdx_sanity_check(tdcs_ptr != NULL, SCEC_TDCALL_SOURCE(TDG_MEM_PAGE_ATTR_WR_LEAF), 0);
     tdx_sanity_check(tdr_ptr != NULL, SCEC_TDCALL_SOURCE(TDG_MEM_PAGE_ATTR_WR_LEAF), 1);
     tdx_sanity_check(tdvps_ptr != NULL, SCEC_TDCALL_SOURCE(TDG_MEM_PAGE_ATTR_WR_LEAF), 2);
-
-    // Default output values
-    local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.rcx = 0;
-    local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.rdx = 0;
 
     // Check the specified attributes
     for (uint16_t vm_id = 0; vm_id < MAX_VMS; vm_id++)
@@ -286,7 +296,14 @@ api_error_type tdg_mem_page_attr_wr(
                     page_level_entry, page_gpa, l2_septe_ptr, attr_mask, &new_gpa_attr);
     if (return_val != TDX_SUCCESS)
     {
-        goto EXIT;
+        if (return_val == TDX_PAGE_ATTR_INVALID)
+        {
+            goto EXIT_NO_DEFAULT_OUTPUT;
+        }
+        else
+        {
+            goto EXIT;
+        }
     }
 
     // Step 3:  Commit - update the L2 SEPT attributes
@@ -304,9 +321,6 @@ api_error_type tdg_mem_page_attr_wr(
                 else
                 {
                     // Remove the L2 alias
-#ifdef L2_VE_SUPPORT
-#error "Need different handling for VE bit when L2 VE supported"
-#endif
                     atomic_mem_write_64b(&l2_septe_ptr[vm_id]->raw, SEPT_STATE_L2_FREE_MASK);
 
                     sept_clear_aliased(page_sept_entry_ptr, vm_id);
@@ -336,9 +350,6 @@ api_error_type tdg_mem_page_attr_wr(
             flush_td_asid(tdr_ptr, tdcs_ptr, vm_id);
 
             // Currently there is no need to invalidate soft-translated GPAs, they are all in the L1 context
-#ifdef L2_VE_SUPPORT
-            tdx_debug_assert(0);
-#endif
         }
     }
 
@@ -350,8 +361,16 @@ api_error_type tdg_mem_page_attr_wr(
     tdvps_ptr->guest_state.gpr_state.rdx = new_gpa_attr.raw;
     tdvps_ptr->guest_state.gpr_state.rax = TDX_SUCCESS;
     return_val = TDX_SUCCESS;
+    goto EXIT_NO_DEFAULT_OUTPUT;
 
 EXIT:
+
+    // Default output values
+    local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.rcx = 0;
+    local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.rdx = 0;
+
+EXIT_NO_DEFAULT_OUTPUT:
+
     for (uint16_t vm_id = 1; vm_id <= tdcs_ptr->management_fields.num_l2_vms; vm_id++)
     {
         if (l2_septe_ptr[vm_id] != NULL)

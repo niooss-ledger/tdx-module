@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file td_async_exit.c
@@ -122,47 +135,21 @@ static void load_vmm_state_before_td_exit(tdx_module_local_t* local_data_ptr)
         init_msr_opt(IA32_XFD_ERROR_MSR_ADDR, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_xfd_err);
     }
 
-    if (((ia32_xcr0_t)local_data_ptr->vp_ctx.xfam).lbr)
-    {
-        init_msr_opt(IA32_LBR_DEPTH_MSR_ADDR, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_lbr_depth);
-    }
-
     // Perfmon State
     if (local_data_ptr->vp_ctx.attributes.perfmon)
     {
-        init_msr_opt(IA32_FIXED_CTR_CTRL_MSR_ADDR, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_fixed_ctr_ctrl);
         for (uint8_t i = 0; i < global_data->num_fixed_ctrs; i++)
         {
             if ((global_data->fc_bitmap & BIT(i)) != 0)
             {
                 init_msr_opt(IA32_FIXED_CTR0_MSR_ADDR + i, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_fixed_ctr[i]);
-#ifdef PERFMON_ACR_SUPPORTED
-                if ((global_data->fc_acr_bitmap & BIT(i)) != 0)
-                {
-                    // TODO - add correct MSR ranges
-                    init_msr_opt(IA32_FIXED_CTR_EXTx + i, LP.CURR_TDVPS_P->IA32_FIXED_CTR_EXT[i]);
-                    init_msr_opt(IA32_FIXED_CTR_RELOAD_CFGx + i, LP.CURR_TDVPS_P->IA32_FIXED_CTR_RELOAD_CFG[i]);
-                }
-#endif
             }
         }
 
         for (uint32_t i = 0; i < NUM_PMC; i++)
         {
-#ifdef PERFMON_MSR_BITMAPS_SUPPORTED
-            if ((global_data->pmc_bitmap & BIT(i)) != 0)
-#endif
             {
                 init_msr_opt(IA32_A_PMC0_MSR_ADDR + i, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_a_pmc[i]);
-                init_msr_opt(IA32_PERFEVTSEL0_MSR_ADDR + i, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_perfevtsel[i]);
-#ifdef PERFMON_ACR_SUPPORTED
-                if ((global_data->pmc_acr_bitmap & BIT(i)) != 0)
-                {
-                    // TODO - add correct MSR ranges
-                    init_msr_opt(IA32_PMC_EXTx + i, LP.CURR_TDVPS_P->IA32_PMC_EXT[i]);
-                    init_msr_opt(IA32_PMC_RELOAD_CFGx + i, LP.CURR_TDVPS_P->IA32_PMC_RELOAD_CFG[i]);
-                }
-#endif
             }
         }
 
@@ -172,13 +159,10 @@ static void load_vmm_state_before_td_exit(tdx_module_local_t* local_data_ptr)
         }
 
         ia32_wrmsr(IA32_PERF_GLOBAL_STATUS_RESET_MSR_ADDR, ia32_rdmsr(IA32_PERF_GLOBAL_STATUS_MSR_ADDR));
-        init_msr_opt(IA32_PEBS_ENABLE_MSR_ADDR, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_pebs_enable);
-        tdx_sanity_check(1 == global_data->plt_common_config.ia32_perf_capabilities.perf_metrics_available,
-                         SCEC_TDEXIT_SOURCE, 0);   // Checked on THD.SYS.INIT
-        init_msr_opt(IA32_PERF_METRICS_MSR_ADDR, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_perf_metrics);
-        init_msr_opt(IA32_PEBS_DATA_CFG_MSR_ADDR, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_pebs_data_cfg);
-        init_msr_opt(IA32_PEBS_LD_LAT_MSR_ADDR, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_pebs_ld_lat);
-        init_msr_opt(IA32_PEBS_FRONTEND_MSR_ADDR, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_pebs_frontend);
+        if (1 == global_data->plt_common_config.ia32_perf_capabilities.perf_metrics_available)
+        {
+            init_msr_opt(IA32_PERF_METRICS_MSR_ADDR, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_perf_metrics);
+        }
     }
 
     init_msr_opt(IA32_UARCH_MISC_CTL_MSR_ADDR, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_uarch_misc_ctl);
@@ -269,33 +253,14 @@ static void save_guest_td_state_before_td_exit(tdcs_t* tdcs_ptr, tdx_module_loca
             if ((global_data->fc_bitmap & BIT(i)) != 0)
             {
                 tdvps_ptr->guest_msr_state.ia32_fixed_ctr[i] = ia32_rdmsr(IA32_FIXED_CTR0_MSR_ADDR + i);
-#ifdef PERFMON_ACR_SUPPORTED
-                if ((global_data->fc_acr_bitmap & BIT(i)) != 0)
-                {
-                    // TODO - add correct MSR ranges
-                    tdvps_p->IA32_FIXED_CTR_EXT[i] = rdmsr(IA32_FIXED_CTR_EXTx + i);
-                    tdvps_p->IA32_FIXED_CTR_RELOAD_CFG[i] = rdmsr(IA32_FIXED_CTR_RELOAD_CFGx + i);
-                }
-#endif
             }
         }
 
         for (uint32_t i = 0; i < NUM_PMC; i++)
         {
-#ifdef PERFMON_MSR_BITMAPS_SUPPORTED
-            if ((global_data->pmc_bitmap & BIT(i)) != 0)
-#endif
             {
                 tdvps_ptr->guest_msr_state.ia32_a_pmc[i] = ia32_rdmsr(IA32_A_PMC0_MSR_ADDR + i);
                 tdvps_ptr->guest_msr_state.ia32_perfevtsel[i] = ia32_rdmsr(IA32_PERFEVTSEL0_MSR_ADDR + i);
-#ifdef PERFMON_ACR_SUPPORTED
-                if ((global_data->pmc_acr_bitmap & BIT(i)) != 0)
-                {
-                    // TODO - add correct MSR ranges
-                    tdvps_p->IA32_PMC_EXT[i] = rdmsr(IA32_PMC_EXTx + i);
-                    tdvps_p->IA32_PMC_RELOAD_CFG[i] = rdmsr(IA32_PMC_RELOAD_CFGx + i);
-                }
-#endif
             }
         }
 
@@ -305,9 +270,10 @@ static void save_guest_td_state_before_td_exit(tdcs_t* tdcs_ptr, tdx_module_loca
         }
 
         tdvps_ptr->guest_msr_state.ia32_perf_global_status = ia32_rdmsr(IA32_PERF_GLOBAL_STATUS_MSR_ADDR);
-        tdx_sanity_check(1 == global_data->plt_common_config.ia32_perf_capabilities.perf_metrics_available,
-                         SCEC_TDEXIT_SOURCE, 0);   // Checked on THD.SYS.INIT
-        tdvps_ptr->guest_msr_state.ia32_perf_metrics = ia32_rdmsr(IA32_PERF_METRICS_MSR_ADDR);
+        if (1 == global_data->plt_common_config.ia32_perf_capabilities.perf_metrics_available)
+        {
+            tdvps_ptr->guest_msr_state.ia32_perf_metrics = ia32_rdmsr(IA32_PERF_METRICS_MSR_ADDR);
+        }
         tdvps_ptr->guest_msr_state.ia32_pebs_enable = ia32_rdmsr(IA32_PEBS_ENABLE_MSR_ADDR);
         tdvps_ptr->guest_msr_state.ia32_pebs_data_cfg = ia32_rdmsr(IA32_PEBS_DATA_CFG_MSR_ADDR);
         tdvps_ptr->guest_msr_state.ia32_pebs_ld_lat = ia32_rdmsr(IA32_PEBS_LD_LAT_MSR_ADDR);
@@ -344,7 +310,7 @@ static void async_tdexit_internal(api_error_code_e tdexit_case,
                                   bool_t check_bus_lock_preempted)
 {
     tdx_module_local_t* tdx_local_data_ptr = get_local_data();
-    tdcs_t* tdcs_ptr = tdx_local_data_ptr->vp_ctx.tdcs;
+
     tdvps_t* tdvps_ptr = tdx_local_data_ptr->vp_ctx.tdvps;
     tdr_t* tdr_ptr = tdx_local_data_ptr->vp_ctx.tdr;
     uint8_t vcpu_state = tdvps_ptr->management.state;
@@ -386,7 +352,6 @@ static void async_tdexit_internal(api_error_code_e tdexit_case,
     case TDX_NON_RECOVERABLE_VCPU:
         // Mark the VCPU so it can't be re-entered
         vcpu_state = VCPU_DISABLED;
-        (void)_lock_xadd_32b(&tdcs_ptr->management_fields.num_vcpus, (uint32_t)-1);
         break;
 
         // Fatal cases
@@ -570,7 +535,8 @@ void td_vmexit_to_vmm(uint8_t vcpu_state, uint8_t last_td_exit, uint64_t scrub_m
 }
 
 static void td_l2_to_l1_exit_internal(api_error_code_e tdexit_case, vm_vmexit_exit_reason_t vm_exit_reason,
-                      vmx_exit_qualification_t vm_exit_qualification, vmx_exit_inter_info_t vm_exit_inter_info,
+                      vmx_exit_qualification_t vm_exit_qualification, uint64_t extended_exit_qualification,
+                      vmx_exit_inter_info_t vm_exit_inter_info,
                       uint32_t inter_error, uint64_t gla, uint64_t gpa, uint32_t idt_vectoring_info,
                       uint32_t idt_vectoring_err, uint32_t instr_info, uint32_t instr_length)
 {
@@ -617,7 +583,7 @@ static void td_l2_to_l1_exit_internal(api_error_code_e tdexit_case, vm_vmexit_ex
     exit_info.cpl = get_guest_td_cpl();
 
     tdvps_ptr->guest_state.gpr_state.r12 = exit_info.raw;
-    tdvps_ptr->guest_state.gpr_state.r13 = 0;
+    tdvps_ptr->guest_state.gpr_state.r13 = extended_exit_qualification;
     tdvps_ptr->guest_state.gpr_state.r14 = 0;
     tdvps_ptr->guest_state.gpr_state.r15 = 0;
 
@@ -642,7 +608,6 @@ static void td_l2_to_l1_exit_internal(api_error_code_e tdexit_case, vm_vmexit_ex
     }
     else
     {
-        tdvps_ptr->management.vm_launched[tdvps_ptr->management.curr_vm] = true;
         tdx_return_to_td(false, false, &tdvps_ptr->guest_state.gpr_state);
     }
 
@@ -651,7 +616,7 @@ static void td_l2_to_l1_exit_internal(api_error_code_e tdexit_case, vm_vmexit_ex
 }
 
 void td_l2_to_l1_exit_with_exit_case(api_error_code_e tdexit_case, vm_vmexit_exit_reason_t vm_exit_reason,
-                                     vmx_exit_qualification_t vm_exit_qualification,
+                                     vmx_exit_qualification_t vm_exit_qualification, uint64_t extended_exit_qualification,
                                      vmx_exit_inter_info_t vm_exit_inter_info)
 {
     uint64_t inter_error, gla, gpa, idt_vectoring_info, idt_vectoring_err, instr_info, instr_length;
@@ -664,13 +629,14 @@ void td_l2_to_l1_exit_with_exit_case(api_error_code_e tdexit_case, vm_vmexit_exi
     ia32_vmread(VMX_VM_EXIT_INSTRUCTION_INFO_ENCODE, &instr_info);
     ia32_vmread(VMX_VM_EXIT_INSTRUCTION_LENGTH_ENCODE, &instr_length);
 
-    td_l2_to_l1_exit_internal(tdexit_case, vm_exit_reason, vm_exit_qualification, vm_exit_inter_info,
-                              (uint32_t)inter_error, gla, gpa, (uint32_t)idt_vectoring_info,
+    td_l2_to_l1_exit_internal(tdexit_case, vm_exit_reason, vm_exit_qualification, extended_exit_qualification,
+                              vm_exit_inter_info, (uint32_t)inter_error, gla, gpa, (uint32_t)idt_vectoring_info,
                               (uint32_t)idt_vectoring_err, (uint32_t)instr_info, (uint32_t)instr_length);
 }
 
 void td_l2_to_l1_exit(vm_vmexit_exit_reason_t vm_exit_reason, vmx_exit_qualification_t vm_exit_qualification,
-                      vmx_exit_inter_info_t vm_exit_inter_info)
+                      uint64_t extended_exit_qualification, vmx_exit_inter_info_t vm_exit_inter_info)
 {
-    td_l2_to_l1_exit_with_exit_case(TDX_SUCCESS, vm_exit_reason, vm_exit_qualification, vm_exit_inter_info);
+    td_l2_to_l1_exit_with_exit_case(TDX_SUCCESS, vm_exit_reason, vm_exit_qualification,
+                                    extended_exit_qualification, vm_exit_inter_info);
 }

@@ -1,3 +1,24 @@
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 /**
  * @file tdh_export_blockw
  * @brief TDHEXPORTBLOCKW API handler
@@ -174,39 +195,23 @@ api_error_type tdh_export_blockw(gpa_list_info_t gpa_list_info, uint64_t target_
             switch (new_sept_entry.raw & SEPT_STATE_ENCODING_MASK)
             {
                 case SEPT_STATE_MAPPED_MASK:
-                    sept_update_state(&new_sept_entry, SEPT_STATE_BLOCKEDW_MASK,
-                                      tdcs_p->executions_ctl_fields.attributes.sept_ve_disable);
+                    sept_update_state(&new_sept_entry, SEPT_STATE_BLOCKEDW_MASK);
                     break;
                 case SEPT_STATE_EXP_DIRTY_MASK:
-                    sept_update_state(&new_sept_entry, SEPT_STATE_EXP_DIRTY_BLOCKEDW_MASK,
-                                      tdcs_p->executions_ctl_fields.attributes.sept_ve_disable);
+                    sept_update_state(&new_sept_entry, SEPT_STATE_EXP_DIRTY_BLOCKEDW_MASK);
                     break;
                 case SEPT_STATE_PEND_MASK:
-                    sept_update_state(&new_sept_entry, SEPT_STATE_PEND_BLOCKEDW_MASK,
-                                      tdcs_p->executions_ctl_fields.attributes.sept_ve_disable);
+                    sept_update_state(&new_sept_entry, SEPT_STATE_PEND_BLOCKEDW_MASK);
                     break;
                 case SEPT_STATE_PEND_EXP_DIRTY_MASK:
-                    sept_update_state(&new_sept_entry, SEPT_STATE_PEND_EXP_DIRTY_BLOCKEDW_MASK,
-                                      tdcs_p->executions_ctl_fields.attributes.sept_ve_disable);
+                    sept_update_state(&new_sept_entry, SEPT_STATE_PEND_EXP_DIRTY_BLOCKEDW_MASK);
                     break;
                 default:
                     FATAL_ERROR();
             }
 
-#ifdef SEPT_AD_BITS_SUPPORTED
-            // Since the page might be in a PENDING state, the guest might have changed the SEPT entry
-            // by a concurrent TDG.MEM.PAGE.ACCEPT.
-            // Try to update the whole 64-bit EPT entry in an atomic operation. Keep the A and D bits.
-            if (!sept_atomic_xchange_keep_ad_bits(sept_entry_ptr, sept_entry_copy, new_sept_entry, true))
-            {
-                TDX_ERROR("sept_atomic_xchange_keep_ad_bits failed. sept_entry=0x%llx - sept_entry_copy=0x%llx - new_sept_entry=0x%llx\n",
-                          sept_entry_ptr->raw, sept_entry_copy.raw, new_sept_entry.raw);
-                err_status = GPA_ENTRY_STATUS_SEPT_ENTRY_BUSY_HOST_PRIORITY; break;
-            }
-#else
             // Update the SEPT entry in memory
             atomic_mem_write_64b(&sept_entry_ptr->raw, new_sept_entry.raw);
-#endif
 
             // Update the TD's BW_EPOCH
             tdcs_p->migration_fields.bw_epoch.raw = tdcs_p->epoch_tracking.epoch_and_refcount.td_epoch;

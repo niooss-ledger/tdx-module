@@ -1,11 +1,24 @@
-// Intel Proprietary 
-// 
-// Copyright 2021 Intel Corporation All Rights Reserved.
-// 
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file ia32_accessors.h
@@ -74,13 +87,9 @@ _STATIC_INLINE_ uint64_t ia32_mktme_key_program(mktme_key_program_t *key_program
     ia32_rflags_t ret_flags;
     uint64_t error_code;
     _ASM_VOLATILE_ (
-        #ifdef PCONFIG_SUPPORTED_IN_COMPILER
-            "pconfig;"
-        #else
-            ".byte 0x0F\n"
-            ".byte 0x01\n"
-            ".byte 0xC5\n"
-        #endif
+        ".byte 0x0F\n"
+        ".byte 0x01\n"
+        ".byte 0xC5\n"
         "pushfq\n"
         "popq %%rcx"
         : "=a"(error_code), "=c"(ret_flags.raw) : "a"(0), "b"(key_program_addr) : "cc");
@@ -588,6 +597,29 @@ _STATIC_INLINE_ void sfence(void)
 _STATIC_INLINE_ void ia32_clflushopt(volatile void *p)
 {
     _ASM_VOLATILE_ ("clflushopt (%0)" :: "r"(p));
+}
+
+_STATIC_INLINE_ void clear_xmms(void)
+{
+    _ASM_VOLATILE_ (
+         // XOR the existing XMM's
+            "pxor %%xmm0, %%xmm0\n"
+            "pxor %%xmm1, %%xmm1\n"
+            "pxor %%xmm2, %%xmm2\n"
+            "pxor %%xmm3, %%xmm3\n"
+            "pxor %%xmm4, %%xmm4\n"
+            "pxor %%xmm5, %%xmm5\n"
+            "pxor %%xmm6, %%xmm6\n"
+            "pxor %%xmm7, %%xmm7\n"
+            "pxor %%xmm8, %%xmm8\n"
+            "pxor %%xmm9, %%xmm9\n"
+            "pxor %%xmm10, %%xmm10\n"
+            "pxor %%xmm11, %%xmm11\n"
+            "pxor %%xmm12, %%xmm12\n"
+            "pxor %%xmm13, %%xmm13\n"
+            "pxor %%xmm14, %%xmm14\n"
+            "pxor %%xmm15, %%xmm15\n"
+        :::);
 }
 
 _STATIC_INLINE_ void store_xmms_in_buffer(uint128_t xmms[16])

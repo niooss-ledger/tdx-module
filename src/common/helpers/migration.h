@@ -1,3 +1,24 @@
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 /*
  * migration.h
  *
@@ -354,13 +375,6 @@ _STATIC_INLINE_ void migsc_unlock(migsc_link_t *mgsc_link)
 
     old = _lock_btr_64b(&mgsc_link->raw, MIGSC_LINK_LOCK_BIT);
     tdx_sanity_check(old, SCEC_LOCK_SOURCE, 9);
-}
-
-_STATIC_INLINE_ bool_t is_migs_correct(uint64_t migs_i, page_info_api_input_t gpa_and_level, uint64_t num_in_order_migs)
-{
-    uint64_t page = gpa_and_level.raw >> (12 + (9 * gpa_and_level.level));
-
-    return (migs_i == (page % num_in_order_migs));
 }
 
 _STATIC_INLINE_ bool_t is_gpa_list_entry_op_cancel_or_nop(gpa_list_entry_t gpa_list_entry)

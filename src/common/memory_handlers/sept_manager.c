@@ -1,11 +1,24 @@
-// Intel Proprietary 
-// 
-// Copyright 2021 Intel Corporation All Rights Reserved.
-// 
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file sept_manager.c
@@ -219,7 +232,7 @@ _STATIC_INLINE_ bool_t is_ept_violation_convertible(ia32e_ept_t* pte, ept_level_
     // The values of certain EPT paging-structure entries determine which EPT violations are convertible. Specifically,
     // bit 63 of certain EPT paging-structure entries may be defined to mean suppress #VE:
     // - If bits 2:0 of an EPT paging-structure entry are all 0, the entry is not present.
-    //      (If the “mode-based execute control for EPT” VM-execution control is 1,
+    //      (If the “mode-based execute control for EPT" VM-execution control is 1,
     //       an EPT paging-structure entry is present if any of bits 2:0 or bit 10 is 1)
     //      If the processor encounters such an entry while translating a guest-physical address,
     //      it causes an EPT violation. The EPT violation is convertible if and only if bit 63 of the entry is 0.
@@ -397,7 +410,7 @@ ia32e_sept_t* secure_ept_walk(ia32e_eptp_t septp, pa_t gpa, uint16_t private_hki
 }
 
 static void sept_set_leaf_no_lock_internal(ia32e_sept_t * ept_entry, uint64_t attributes, pa_t page_pa,
-                                           uint64_t state_encoding, bool_t sept_ve_disable, bool_t set_lock)
+                                           uint64_t state_encoding, bool_t set_lock)
 {
     ia32e_sept_t septe_value = {.raw = attributes};
 
@@ -412,35 +425,34 @@ static void sept_set_leaf_no_lock_internal(ia32e_sept_t * ept_entry, uint64_t at
     tdx_debug_assert(septe_value.leaf == 1);   // PS is part of the state encoding assigned above
     septe_value.base = page_pa.page_4k_num;
 
-    sept_update_supp_ve_bit(&septe_value, sept_ve_disable);
-
+    septe_value.supp_ve = 1;
     septe_value.tdel = set_lock ? 1 : 0;
 
     atomic_mem_write_64b(&ept_entry->raw, septe_value.raw);
 }
 
 void sept_set_leaf_and_release_locks(ia32e_sept_t * ept_entry, uint64_t attributes,
-                                     pa_t page_pa, uint64_t state_encoding, bool_t sept_ve_disable)
+                                     pa_t page_pa, uint64_t state_encoding)
 {
-    sept_set_leaf_no_lock_internal(ept_entry, attributes, page_pa, state_encoding, sept_ve_disable, false);
+    sept_set_leaf_no_lock_internal(ept_entry, attributes, page_pa, state_encoding, false);
 }
 
 void sept_set_leaf_and_keep_lock(ia32e_sept_t * ept_entry, uint64_t attributes,
-                                 pa_t page_pa, uint64_t state_encoding, bool_t sept_ve_disable)
+                                 pa_t page_pa, uint64_t state_encoding)
 {
     // Sanity check, entry should already be locked
     tdx_sanity_check(ept_entry->tdel, SCEC_SEPT_MANAGER_SOURCE, 3);
 
-    sept_set_leaf_no_lock_internal(ept_entry, attributes, page_pa, state_encoding, sept_ve_disable, true);
+    sept_set_leaf_no_lock_internal(ept_entry, attributes, page_pa, state_encoding, true);
 }
 
 void sept_set_leaf_unlocked_entry(ia32e_sept_t * ept_entry, uint64_t attributes,
-                                  pa_t page_pa, uint64_t state_encoding, bool_t sept_ve_disable)
+                                  pa_t page_pa, uint64_t state_encoding)
 {
     // Sanity check: SEPT entry must be unlocked
     tdx_sanity_check(ept_entry->tdel == 0, SCEC_SEPT_MANAGER_SOURCE, 4);
 
-    sept_set_leaf_no_lock_internal(ept_entry, attributes, page_pa, state_encoding, sept_ve_disable, false);
+    sept_set_leaf_no_lock_internal(ept_entry, attributes, page_pa, state_encoding, false);
 }
 
 void sept_set_mapped_non_leaf(ia32e_sept_t * ept_entry, pa_t page_pa, bool_t lock)
@@ -502,9 +514,6 @@ void sept_l2_set_mapped_non_leaf(ia32e_sept_t * ept_entry, pa_t page_pa)
     tdx_debug_assert(curr_entry.leaf == 0);   // PS is part of the state encoding assigned above
 
     curr_entry.base = page_pa.page_4k_num;
-#ifdef L2_VE_SUPPORT
-    curr_entry.supp_ve = 1;
-#endif
 
     // One aligned assignment to make it atomic
     atomic_mem_write_64b(&ept_entry->raw, curr_entry.raw);
@@ -598,36 +607,3 @@ void set_arch_l2_septe_details_in_vmm_regs(ia32e_sept_t l2_sept_entry, uint16_t 
     local_data_ptr->vmm_regs.rcx = detailed_arch_sept_entry.raw;
     local_data_ptr->vmm_regs.rdx = detailed_arch_info.raw;
 }
-
-#ifdef SEPT_AD_BITS_SUPPORTED
-bool_t sept_atomic_xchange_keep_ad_bits(ia32e_sept_t* sept_entry_ptr, ia32e_sept_t expected_entry,
-                                        ia32e_sept_t new_entry, bool_t keep_d_bit)
-{
-    ia32e_sept_t current_entry;
-
-    // Try to update the whole 64-bit EPT entry in an atomic operation.
-    current_entry.raw = _lock_cmpxchg_64b(expected_entry.raw, new_entry.raw, &sept_entry_ptr->raw);
-
-    // The following while loop is limited if the masked bits can only change concurrently in one
-    // direction.  I.e., A or D bits can only be set by the CPU but never cleared, thus for AD bits
-    // the loop will execute at most 3 times.
-    uint64_t ad_bit_mask = BIT(SEPT_ENTRY_A_BIT_POSITION) | BIT_MASK(keep_d_bit, SEPT_ENTRY_D_BIT_POSITION);
-
-    uint32_t loop_counter = 0;
-
-    // If the values differ only by the AD bits, continue into the loop. Otherwise, return a failure
-    while ((current_entry.raw != expected_entry.raw) && ((current_entry.raw & ~ad_bit_mask) == (expected_entry.raw & ~ad_bit_mask)))
-    {
-        tdx_sanity_check(loop_counter < 3, SCEC_SEPT_MANAGER_SOURCE, 2);
-
-        // Values differ only in the masked bits, try again with those bits taken from the old value
-        expected_entry = current_entry;
-        new_entry.raw = (new_entry.raw & ~ad_bit_mask) | (current_entry.raw & ad_bit_mask);
-        current_entry.raw = _lock_cmpxchg_64b(expected_entry.raw, new_entry.raw, &sept_entry_ptr->raw);
-
-        loop_counter++;
-    }
-
-    return (current_entry.raw == expected_entry.raw);
-}
-#endif

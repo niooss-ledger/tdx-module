@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file tdx_control_structure.h
@@ -191,17 +204,18 @@ typedef struct tdcs_management_fields_s
 
     op_state_e         op_state;
     sharex_hp_lock_t   op_state_lock;
-    sharex_lock_t      md_guest_side_lock;   // Protects metadata concurrency on guest-side metadata access
+    uint8_t            reserved_0[2];
 
     // Number of L2 VMs
     uint16_t num_l2_vms;
-    uint8_t reserved[110];
+    uint8_t reserved_1[110];
 
 } tdcs_management_fields_t;
 tdx_static_assert(sizeof(op_state_e) == 4, op_state_e);
 tdx_static_assert(sizeof(tdcs_management_fields_t) == 128, tdcs_management_fields_t);
 
 #define TDX_ATTRIBUTES_SEPT_VE_DIS_SUPPORT BIT(28)
+
 #define TDX_ATTRIBUTES_MIGRATABLE_SUPPORT  BIT(29)
 
 #define TDX_ATTRIBUTES_PKS_SUPPORT   BIT(30)
@@ -213,6 +227,13 @@ tdx_static_assert(sizeof(tdcs_management_fields_t) == 128, tdcs_management_field
 #define TDX_ATTRIBUTES_FIXED0 (0x1 | TDX_ATTRIBUTES_MIGRATABLE_SUPPORT | TDX_ATTRIBUTES_PKS_SUPPORT |\
                                TDX_ATTRIBUTES_PERFMON_SUPPORT | TDX_ATTRIBUTES_SEPT_VE_DIS_SUPPORT)
 #define TDX_ATTRIBUTES_FIXED1 0x0
+
+
+#define CONFIG_FLAGS_FIXED0   (BIT(0) | BIT(1) | BIT(2))
+#define CONFIG_FLAGS_FIXED1   0x0
+
+
+
 #define VIRT_CRYSTAL_CLOCK_FREQUENCY   25000000ULL // Nominal frequency of the core crystal clock in Hz, in CPUID(0x15).ECX = 25MHz
 #define VIRT_TSC_FREQUENCY_UNIT        25000000ULL // Virtual TSC frequency is specified in units of 25MHz
 #define VIRT_TSC_FREQUENCY_MIN         4           // 100MHz
@@ -344,6 +365,17 @@ tdx_static_assert(sizeof(vm_ctls_t) == 8, vm_ctls_t);
 
 #define ALLOWED_VM_CTLS             (BIT(0))
 
+typedef union
+{
+    struct
+    {
+        uint64_t pending_ve_disable : 1; // Bit 0:  Control the way guest TD access to a PENDING page is processed
+        uint64_t reserved           : 63;
+    };
+    uint64_t raw;
+} td_ctls_t;
+tdx_static_assert(sizeof(td_ctls_t) == 8, td_ctls_t);
+
 // Limits of HP_LOCK_TIMEOUT, in usec units
 #define MIN_HP_LOCK_TIMEOUT_USEC      10000UL      // 10 msec
 #define MAX_HP_LOCK_TIMEOUT_USEC      100000000UL  // 100 sec
@@ -389,7 +421,9 @@ typedef struct tdcs_execution_control_fields_s
     ALIGN(8) uint64_t            hp_lock_timeout;
     ALIGN(8) vm_ctls_t           vm_ctls[MAX_VMS]; // vm controls, applicable only for l2 vms
     ALIGN(8) uint64_t            ia32_spec_ctrl_mask;
-    uint8_t                      reserved_1[28];
+    ALIGN(8) config_flags_t      config_flags;
+    ALIGN(8) td_ctls_t           td_ctls;
+    uint8_t                      reserved_1[12];
     uint8_t                      cpuid_valid[80];
     ALIGN(16) uint32_t           xbuff_offsets[XBUFF_OFFSETS_NUM];
     uint8_t                      reserved_2[36];

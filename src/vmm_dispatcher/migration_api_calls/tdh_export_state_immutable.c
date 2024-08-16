@@ -1,3 +1,24 @@
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 /**
  * @file tdh_export_state_immutable
  * @brief TDHEXPORTSTATEIMMUTABLE API handler
@@ -48,7 +69,7 @@ static api_error_type handle_command_by_type(migs_index_and_cmd_t migs_i_and_cmd
         if (!tdcs_p->migration_fields.mig_dec_key_set)
         {
             TDX_ERROR("migration decryption key not set");
-            return TDX_MIGRATION_SESSION_KEY_NOT_SET;
+            return TDX_MIGRATION_DECRYPTION_KEY_NOT_SET;
         }
 
         // Initialize the migration context
@@ -72,10 +93,11 @@ static api_error_type handle_command_by_type(migs_index_and_cmd_t migs_i_and_cmd
         tdcs_p->migration_fields.total_mb_count = 0;
         tdcs_p->migration_fields.dirty_count = 0;
 
+        // Mark all migration streams (both forward and backward) as uninitialized
         uint16_t migs_i = 0;
         for (migs_i = 0; migs_i < tdcs_p->migration_fields.num_migs; migs_i++)
         {
-            tdcs_p->f_migsc_links[migs_i].initialized = 0;
+            tdcs_p->migsc_links[migs_i].initialized = 0;
         }
 
         migsc_init(migsc_p, &tdcs_p->migration_fields.mig_enc_working_key);

@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file virt_msr_helpers.c
@@ -25,8 +38,8 @@ void init_virt_ia32_vmx_msrs(tdcs_t* tdcs_ptr)
     tdcs_ptr->virt_msrs.virt_ia32_vmx_true_procbased_ctls = calc_virt_ia32_vmx_true_procbased_ctls(tdcs_ptr);
     tdcs_ptr->virt_msrs.virt_ia32_vmx_procbased_ctls2     = calc_virt_ia32_vmx_procbased_ctls2(tdcs_ptr);
     tdcs_ptr->virt_msrs.virt_ia32_vmx_procbased_ctls3     = calc_virt_ia32_vmx_procbased_ctls3();
-    tdcs_ptr->virt_msrs.virt_ia32_vmx_true_exit_ctls      = calc_virt_ia32_vmx_true_vmexit_ctls();
-    tdcs_ptr->virt_msrs.virt_ia32_vmx_true_entry_ctls     = calc_virt_ia32_vmx_true_vmentry_ctls();
+    tdcs_ptr->virt_msrs.virt_ia32_vmx_true_exit_ctls      = calc_virt_ia32_vmx_true_vmexit_ctls(tdcs_ptr);
+    tdcs_ptr->virt_msrs.virt_ia32_vmx_true_entry_ctls     = calc_virt_ia32_vmx_true_vmentry_ctls(tdcs_ptr);
 
     tdcs_ptr->virt_msrs.virt_ia32_vmx_ept_vpid_cap        = calc_virt_ia32_vmx_ept_vpid_cap(tdcs_ptr);
     tdcs_ptr->virt_msrs.virt_ia32_vmx_vmfunc              = calc_virt_ia32_vmx_vmfunc();

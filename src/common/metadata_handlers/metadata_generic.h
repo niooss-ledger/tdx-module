@@ -1,3 +1,24 @@
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 /**
  * @file metadata_generic.h
  * @brief Generic metadata handler
@@ -346,6 +367,7 @@ api_error_code_e md_dump_list(md_context_code_e ctx_code, md_field_id_t field_id
  * @param next_field_id - Returns next field that is expected to be imported first on next call with new list.
  *                        Will be -1 if none - context finished.
  * @param ext_err_info - Will contain a field id of a field that failed write in the first array index.
+ * @param is_import specifies whether the functions was called during import flow
  *
  * @return Status code, one of the following:
  *         TDX_SUCCESS:  All available fields were dumped
@@ -358,6 +380,6 @@ api_error_code_e md_write_list(md_context_code_e ctx_code, md_field_id_t expecte
                                bool_t check_missing, bool_t skip_non_writable, bool_t is_last,
                                md_context_ptrs_t md_ctx, md_list_header_t* list_header_ptr,
                                md_access_t access_type, md_access_qualifier_t access_qual,
-                               md_field_id_t* next_field_id, uint64_t ext_err_info[2]);
+                               md_field_id_t* next_field_id, uint64_t ext_err_info[2], bool_t is_import);
 
 #endif /* SRC_COMMON_METADATA_HANDLERS_METADATA_GENERIC_H_ */

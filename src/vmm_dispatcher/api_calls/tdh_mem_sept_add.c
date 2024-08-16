@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file tdh_mem_sept_add
@@ -271,7 +284,7 @@ api_error_type tdh_mem_sept_add(page_info_api_input_t sept_level_and_gpa,
 
     // New SEPT EPT page variables
     pa_t                  flagged_sept_page_pa[MAX_VMS] = { 0 };     // Physical address of the new Secure-EPT page
-    pa_t                  sept_page_pa[MAX_VMS];                     // Physical address of the new Secure-EPT page - can be modified
+    pa_t                  sept_page_pa[MAX_VMS] = { 0 };             // Physical address of the new Secure-EPT page - can be modified
     pamt_block_t          sept_page_pamt_block[MAX_VMS] = { 0 };     // New Secure-EPT page PAMT block
     pamt_entry_t        * sept_page_pamt_entry_ptr[MAX_VMS] = { 0 }; // Pointer to the Secure-EPT PAMT entry
     bool_t                sept_page_locked_flag[MAX_VMS] = { 0 };    // Indicate SEPT EPT page PAMT entry is locked
@@ -290,6 +303,17 @@ api_error_type tdh_mem_sept_add(page_info_api_input_t sept_level_and_gpa,
         sept_page_pa[3].raw = local_data_ptr->vmm_regs.r11;
     }
 
+    // By default, no extended error code is returned
+    local_data_ptr->vmm_regs.rcx = 0;
+    local_data_ptr->vmm_regs.rdx = 0;
+
+    // Only versions 0 and 1 are supported
+    if (version > 1)
+    {
+        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RAX);
+        goto EXIT_NO_GPR_CHANGE;
+    }
+
     // If the input new SEPT page pa is not NULL_PA, then we ignore bit 63
     for (uint16_t vm_id = 0; vm_id < MAX_VMS; vm_id++)
     {
@@ -301,16 +325,7 @@ api_error_type tdh_mem_sept_add(page_info_api_input_t sept_level_and_gpa,
         flagged_sept_page_pa[vm_id].raw = sept_page_pa[vm_id].raw;
     }
 
-    // By default, no extended error code is returned
-    local_data_ptr->vmm_regs.rcx = 0;
-    local_data_ptr->vmm_regs.rdx = 0;
 
-    // Only versions 0 and 1 are supported
-    if (version > 1)
-    {
-        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RAX);
-        goto EXIT;
-    }
 
     // Check the TD handle in RDX
     if (target_tdr_and_flags.reserved_0 || target_tdr_and_flags.reserved_1)
@@ -453,6 +468,8 @@ EXIT:
         local_data_ptr->vmm_regs.r10 = flagged_sept_page_pa[2].raw;
         local_data_ptr->vmm_regs.r11 = flagged_sept_page_pa[3].raw;
     }
+
+EXIT_NO_GPR_CHANGE:
 
     // Release all acquired locks and free keyhole mappings
 

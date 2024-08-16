@@ -1,11 +1,24 @@
-#// Intel Proprietary
-#//
-#// Copyright 2021 Intel Corporation All Rights Reserved.
-#//
-#// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-#//
-#// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-#// of merchantability, non-infringement, title, or fitness for a particular purpose.
+#// Copyright (C) 2023 Intel Corporation                                          
+#//                                                                               
+#// Permission is hereby granted, free of charge, to any person obtaining a copy  
+#// of this software and associated documentation files (the "Software"),         
+#// to deal in the Software without restriction, including without limitation     
+#// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+#// and/or sell copies of the Software, and to permit persons to whom             
+#// the Software is furnished to do so, subject to the following conditions:      
+#//                                                                               
+#// The above copyright notice and this permission notice shall be included       
+#// in all copies or substantial portions of the Software.                        
+#//                                                                               
+#// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+#// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+#// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+#// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+#// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+#// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+#// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+#//                                                                               
+#// SPDX-License-Identifier: MIT
 
 # proj_defs.mk - Project related defintions
 
@@ -13,10 +26,6 @@ PROJ_FLAGS =
 
 FAULT_SAFE_MAGIC_INDICATOR=0xFF0F0F0F0F0F0FFF
 PROJ_FLAGS += -DFAULT_SAFE_MAGIC_INDICATOR=$(FAULT_SAFE_MAGIC_INDICATOR)
-
-ifndef RELEASE
-PROJ_FLAGS += -DDEBUG
-endif
 
 ################################################################
 ## Versioning
@@ -91,14 +100,6 @@ endif
 ################################################################
 ## Miscelaneous features
 
-ifdef SEAM_INST_SUPPORT
-PROJ_FLAGS += -DSEAM_INSTRUCTIONS_SUPPORTED_IN_COMPILER
-endif
-
-ifdef PCONFIG_SUPPORT
-PROJ_FLAGS += -DPCONFIG_SUPPORTED_IN_COMPILER
-endif
-
 PROJ_FLAGS += -D_NO_IPP_DEPRECATED
 
 ################################################################
@@ -119,15 +120,15 @@ endif
 
 
 #Architecture git data
-COMMIT_ID = 1b3f4514
-ARCHITECTURE_BRANCH_NAME = TDX_Module_1.5_v0.83
-CPUID_EXCEL_VERSION_SUPPORTED = 6
+COMMIT_ID = 5c1d21c9
+ARCHITECTURE_BRANCH_NAME = TDX_Module_1.5.01_v0.87
+CPUID_EXCEL_VERSION_SUPPORTED = 7
 MSR_EXCEL_VERSION_SUPPORTED = 6
-TDVPS_EXCEL_VERSION_SUPPORTED = 26
+TDVPS_EXCEL_VERSION_SUPPORTED = 27
 TDR_TDCS_EXCEL_VERSION_SUPPORTED = 25
-TD_VMCS_EXCEL_VERSION_SUPPORTED = 25
+TD_VMCS_EXCEL_VERSION_SUPPORTED = 26
 GLOBAL_SYS_EXCEL_VERSION_SUPPORTED = 2
 ERRORS_VERSION_SUPPORTED = 5
 OP_STATE_VERSION_SUPPORTED = 2
 SEPT_STATE_VERSION_SUPPORTED = 2
-L2_VMCS_VERSION_SUPPORTED = 24
+L2_VMCS_VERSION_SUPPORTED = 25

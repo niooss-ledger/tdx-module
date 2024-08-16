@@ -1,11 +1,24 @@
-// Intel Proprietary 
-// 
-// Copyright 2021 Intel Corporation All Rights Reserved.
-// 
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-// 
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file tdg_vp_vmcall.c
@@ -50,7 +63,12 @@ static void copy_gprs_data_from_td_to_vmm(tdx_module_local_t* tdx_local_data_ptr
         }
         else
         {
-            tdx_local_data_ptr->vmm_regs.gprs[i] = 0ULL;
+            // Avoid modifying RBP
+            if (!tdx_local_data_ptr->vp_ctx.tdcs->executions_ctl_fields.config_flags.no_rbp_mod ||
+                    (i != 5))
+            {
+                tdx_local_data_ptr->vmm_regs.gprs[i] = 0ULL;
+            }
         }
     }
 }
@@ -62,8 +80,15 @@ api_error_type tdg_vp_vmcall(uint64_t controller_value)
 
     tdvmcall_control_t control = { .raw = controller_value };
 
+    uint16_t gpr_check_mask = (uint16_t)(BIT(0) | BIT(1) | BIT(4));
+
+    if (tdx_local_data_ptr->vp_ctx.tdcs->executions_ctl_fields.config_flags.no_rbp_mod)
+    {
+        gpr_check_mask |= (uint16_t)BIT(5);
+    }
+
     // Bits 0, 1 and 4 and 63:32 of RCX must be 0
-    if (((control.gpr_select & (uint16_t)(BIT(0) | BIT(1) | BIT(4))) != 0) ||
+    if (((control.gpr_select & gpr_check_mask) != 0) ||
          (control.reserved != 0))
     {
         retval = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RCX);

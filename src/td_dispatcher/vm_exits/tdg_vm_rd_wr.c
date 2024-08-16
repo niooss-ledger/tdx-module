@@ -1,11 +1,24 @@
-// Intel Proprietary
-//
-// Copyright 2021 Intel Corporation All Rights Reserved.
-//
-// Your use of this software is governed by the TDX Source Code LIMITED USE LICENSE.
-//
-// The Materials are provided “as is,” without any express or implied warranty of any kind including warranties
-// of merchantability, non-infringement, title, or fitness for a particular purpose.
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 
 /**
  * @file tdg_vm_rd_wr.c
@@ -28,7 +41,6 @@ static api_error_type tdg_vm_rd_wr(md_field_id_t field_id, uint64_t vm_id, tdx_m
 {
     // Temporary Variables
     uint64_t              rd_value;           // Data read from field
-    bool_t                md_locked_flag = false;
 
     md_context_ptrs_t     md_ctx;
     md_access_qualifier_t access_qual = { .raw = 0 };
@@ -84,15 +96,6 @@ static api_error_type tdg_vm_rd_wr(md_field_id_t field_id, uint64_t vm_id, tdx_m
         goto EXIT;
     }
 
-    if (!acquire_sharex_lock(&local_data_ptr->vp_ctx.tdcs->management_fields.md_guest_side_lock,
-            write ? TDX_LOCK_EXCLUSIVE : TDX_LOCK_SHARED))
-    {
-        return_val = api_error_with_operand_id(TDX_OPERAND_BUSY, OPERAND_ID_RDX);
-        goto EXIT;
-    }
-
-    md_locked_flag = true;
-
     if (write)
     {
         return_val = md_write_element(MD_CTX_TD, field_id, MD_GUEST_WR, access_qual,
@@ -103,9 +106,8 @@ static api_error_type tdg_vm_rd_wr(md_field_id_t field_id, uint64_t vm_id, tdx_m
         return_val = md_read_element(MD_CTX_TD, field_id, MD_GUEST_RD, access_qual,
                                      md_ctx, &rd_value);
 
-        if ((version > 0) && ((return_val == TDX_SUCCESS) || is_null_field_id(field_id)))
+        if ((version > 0) && (return_val == TDX_SUCCESS))
         {
-            // Get the next field id if no error or if the current field id in null
             local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.rdx =
                     md_get_next_element_in_context(MD_CTX_TD, field_id, md_ctx, MD_GUEST_RD, access_qual).raw;
         }
@@ -122,12 +124,6 @@ static api_error_type tdg_vm_rd_wr(md_field_id_t field_id, uint64_t vm_id, tdx_m
     return_val = TDX_SUCCESS;
 
 EXIT:
-    // Release all acquired locks and free keyhole mappings
-    if (md_locked_flag)
-    {
-        release_sharex_lock(&local_data_ptr->vp_ctx.tdcs->management_fields.md_guest_side_lock,
-                    write ? TDX_LOCK_EXCLUSIVE : TDX_LOCK_SHARED);
-    }
 
     return return_val;
 }

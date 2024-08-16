@@ -21,6 +21,8 @@ aes_gcm_api_error aes_gcm_init(const key256_t *key, aes_gcm_ctx_t *ctx, const mi
 {
     tdx_debug_assert(ctx);
 
+    get_local_data()->reset_avx_state = true;
+
     IppsAES_GCMState *pState = (IppsAES_GCMState*) &ctx->state;
 
     IppStatus status = ippsAES_GCMGetSize(&ctx->size);
@@ -67,6 +69,8 @@ aes_gcm_api_error aes_gcm_refresh_context(aes_gcm_ctx_t *ctx)
 {
     tdx_debug_assert(ctx);
 
+    get_local_data()->reset_avx_state = true;
+
     IppsAES_GCMState *pState = (IppsAES_GCMState*) &ctx->state;
 
     IppStatus status = ippsAES_GCMReinit(pState);
@@ -90,6 +94,8 @@ EXIT:
 aes_gcm_api_error aes_gcm_reset(aes_gcm_ctx_t *ctx, const migs_iv_t *iv)
 {
     tdx_debug_assert(ctx);
+
+    get_local_data()->reset_avx_state = true;
 
     IppsAES_GCMState *pState = (IppsAES_GCMState*) &ctx->state;
 
@@ -118,6 +124,8 @@ aes_gcm_api_error aes_gcm_process_aad(aes_gcm_ctx_t *ctx, const uint8_t *p_aad, 
 {
     tdx_debug_assert(ctx);
 
+    get_local_data()->reset_avx_state = true;
+
     IppsAES_GCMState *pState = (IppsAES_GCMState*) &ctx->state;
 
     IppStatus status = ippsAES_GCMProcessAAD((const Ipp8u*)p_aad, size_aad, pState);
@@ -133,6 +141,8 @@ aes_gcm_api_error aes_gcm_encrypt(aes_gcm_ctx_t *ctx, const uint8_t *src, uint8_
 {
     tdx_debug_assert(ctx);
 
+    get_local_data()->reset_avx_state = true;
+
     IppsAES_GCMState *pState = (IppsAES_GCMState*) &ctx->state;
 
     IppStatus status = ippsAES_GCMEncrypt((const Ipp8u*)src, (Ipp8u*)dst, size, pState);
@@ -147,6 +157,8 @@ aes_gcm_api_error aes_gcm_encrypt(aes_gcm_ctx_t *ctx, const uint8_t *src, uint8_
 aes_gcm_api_error aes_gcm_decrypt(aes_gcm_ctx_t *ctx, const uint8_t *src, uint8_t *dst, int32_t size)
 {
     tdx_debug_assert(ctx);
+
+    get_local_data()->reset_avx_state = true;
 
     IppsAES_GCMState *pState = (IppsAES_GCMState*) &ctx->state;
 
@@ -177,6 +189,8 @@ aes_gcm_api_error aes_gcm_decrypt_direct(aes_gcm_ctx_t *ctx, const uint8_t *src,
 aes_gcm_api_error aes_gcm_finalize(aes_gcm_ctx_t *ctx, uint8_t *mac)
 {
     tdx_debug_assert(ctx);
+
+    get_local_data()->reset_avx_state = true;
 
     IppsAES_GCMState *pState = (IppsAES_GCMState*) &ctx->state;
 

@@ -1,3 +1,24 @@
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 /**
  * @file tdh_import_state_td.c
  * @brief TDH_IMPORT_STATE_TD API handler
@@ -315,6 +336,8 @@ api_error_type tdh_import_state_td(uint64_t target_tdr_pa, uint64_t hpa_and_size
 
         md_access_qualifier_t access_qual = {.raw = 0};
 
+        uint64_t tmp_ext_error_info[2];
+
         // Import the metadata list
         return_val = md_write_list(MD_CTX_TD, field_id,
                                    _4KB,
@@ -325,7 +348,8 @@ api_error_type tdh_import_state_td(uint64_t target_tdr_pa, uint64_t hpa_and_size
                                    //md_list_hdr_p,
                                    &md_list.hdr,
                                    MD_IMPORT_MUTABLE,
-                                   access_qual, &next_field_id, migsc_p->interrupted_state.extended_err_info);
+                                   access_qual, &next_field_id, tmp_ext_error_info,
+                                   true);
 
         if (return_val != TDX_SUCCESS)
         {
@@ -334,6 +358,8 @@ api_error_type tdh_import_state_td(uint64_t target_tdr_pa, uint64_t hpa_and_size
             if (migsc_p->interrupted_state.status == TDX_SUCCESS)
             {
                 migsc_p->interrupted_state.status = return_val;
+                migsc_p->interrupted_state.extended_err_info[0] = tmp_ext_error_info[0];
+                migsc_p->interrupted_state.extended_err_info[1] = tmp_ext_error_info[1];
             }
         }
 

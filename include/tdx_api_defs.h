@@ -1,3 +1,24 @@
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
+// SPDX-License-Identifier: MIT
 /**
  * @file tdx_api_defs.h
  * @brief TDX API Definitions
@@ -62,10 +83,11 @@ typedef enum seamcall_leaf_opcode_e
     TDH_VP_WR_LEAF                   = 43,
     TDH_SYS_LP_SHUTDOWN_LEAF         = 44,
     TDH_SYS_CONFIG_LEAF              = 45,
-    TDH_SERVTD_BIND_LEAF             = 48,
-    TDH_SERVTD_PREBIND_LEAF          = 49,
+
     TDH_SYS_SHUTDOWN_LEAF            = 52,
     TDH_SYS_UPDATE_LEAF              = 53,
+    TDH_SERVTD_BIND_LEAF             = 48,
+    TDH_SERVTD_PREBIND_LEAF          = 49,
     TDH_EXPORT_ABORT_LEAF            = 64,
     TDH_EXPORT_BLOCKW_LEAF           = 65,
     TDH_EXPORT_RESTORE_LEAF          = 66,
@@ -88,10 +110,6 @@ typedef enum seamcall_leaf_opcode_e
 
 #ifdef DEBUGFEATURE_TDX_DBG_TRACE
     ,TDDEBUGCONFIG_LEAF = 0xFE
-#endif
-
-#ifdef DEBUGFEATURE_NON_ARCH_WORKAROUND
-    ,TDXMODE_LEAF = 0xFF
 #endif
 } seamcall_leaf_opcode_t;
 
@@ -374,22 +392,24 @@ tdx_static_assert(sizeof(eptp_controls_t) == 8, eptp_controls_t);
 
 
 /**
- * @struct exec_controls_t
+ * @struct config_flags_t
  *
  * @brief Non-measured TD-scope execution controls.
  *
  * Most fields are copied to each TD VMCS TSC-offset execution control on TDHVPINIT.
  */
-typedef union exec_controls_s {
+typedef union config_flags_s {
     struct
     {
         uint64_t
         gpaw                : 1,  /**< TD-scope Guest Physical Address Width execution control. */
-        reserved            : 63; /**< Must be 0. */
+        flexible_pending_ve : 1,  /**< Controls the guest TD’s ability to change the PENDING page access behavior */
+        no_rbp_mod          : 1,  /**< Controls whether RBP value can be modified by TDG.VP.VMCALL and TDH.VP.ENTER. */
+        reserved            : 61; /**< Must be 0. */
     };
     uint64_t raw;
-} exec_controls_t;
-tdx_static_assert(sizeof(exec_controls_t) == 8, exec_controls_t);
+} config_flags_t;
+tdx_static_assert(sizeof(config_flags_t) == 8, config_flags_t);
 
 
 #define SIZE_OF_TD_PARAMS_IN_BYTES     1024
@@ -433,7 +453,7 @@ typedef struct PACKED td_params_s
 
     uint8_t                      reserved_0[TD_PARAMS_RESERVED0_SIZE]; /**< Must be 0 */
     eptp_controls_t              eptp_controls;
-    exec_controls_t              exec_controls;
+    config_flags_t              config_flags;
 
 
     uint16_t                     tsc_frequency;
@@ -871,6 +891,8 @@ _STATIC_INLINE_ api_error_type api_error_fatal(api_error_type error)
 
 #define MAX_RESERVED_AREAS 16U
 
+#define TDMR_INFO_ENTRY_ALIGNMENT              8
+
 /**
  * @struct tdmr_info_entry_t
  *
@@ -890,7 +912,7 @@ _STATIC_INLINE_ api_error_type api_error_fatal(api_error_type error)
  *   overlap with non-reserved areas of any TDMR. PAMT areas may reside within reserved areas of TDMRs.
  *
  */
-typedef struct PACKED tdmr_info_entry_s
+typedef struct ALIGN(TDMR_INFO_ENTRY_ALIGNMENT) PACKED tdmr_info_entry_s
 {
     uint64_t tdmr_base;    /**< Base address of the TDMR (HKID bits must be 0). 1GB aligned. */
     uint64_t tdmr_size;    /**< Size of the CMR, in bytes. 1GB aligned. */
@@ -903,6 +925,7 @@ typedef struct PACKED tdmr_info_entry_s
 
     struct
     {
+        // NOTE: this struct is un-reachable for checking natural alignment, take it under consideration if/when adding more fields to the struct.
         uint64_t offset; /**< Offset of reserved range 0 within the TDMR. 4K aligned. */
         uint64_t size;   /**< Size of reserved range 0 within the TDMR. A size of 0 indicates a null entry. 4K aligned. */
     } rsvd_areas[MAX_RESERVED_AREAS];
@@ -924,12 +947,7 @@ typedef union sys_attributes_u
 {
     struct
     {
-#ifdef DEBUGFEATURE_NON_ARCH_WORKAROUND
-        uint64_t reserved : 63;
-        uint64_t no_td_encrypt : 1;
-#else
         uint64_t reserved : 64;
-#endif
     };
     uint64_t raw;
 } sys_attributes_t;
@@ -1069,7 +1087,12 @@ typedef union tdx_features_enum0_u
         uint64_t td_entry_enhancements       : 1;    // Bit 9
         uint64_t host_priority_locks         : 1;    // Bit 10
         uint64_t config_ia32_arch_cap        : 1;    // Bit 11
-        uint64_t reserved_1                  : 52;   // Bits 63:10
+        uint64_t reserved_1                  : 4;    // Bits 15:12
+        uint64_t pending_ept_violation_v2    : 1;    // Bit 16
+        uint64_t fms_config                  : 1;    // Bit 17
+        uint64_t no_rbp_mod                  : 1;    // Bit 18
+        uint64_t l2_tlb_invd_opt             : 1;    // Bit 19
+        uint64_t reserved_2                  : 42;   // Bits 63:20
     };
     uint64_t raw;
 } tdx_features_enum0_t;
@@ -1250,20 +1273,20 @@ typedef union gpa_attr_u
 } gpa_attr_t;
 tdx_static_assert(sizeof(gpa_attr_t) == 8, gpa_attr_t);
 
-typedef union page_gla_list_entry_u
+typedef union gla_list_entry_u
 {
     struct
     {
-        uint64_t last_page : 12;  // Bits 11:0:  Index of the last 4KB page to be processed
-        uint64_t base_gla  : 52;  // Bits 63:12: Bits 63:12 of the guest linear address of the first 4KB page to be processed
+        uint64_t last_gla_index : 12;  // Bits 11:0:  Index of the last 4KB page to be processed
+        uint64_t base_gla       : 52;  // Bits 63:12: Bits 63:12 of the guest linear address of the first 4KB page to be processed
     };
     uint64_t raw;
-} page_gla_list_entry_t;
-tdx_static_assert(sizeof(page_gla_list_entry_t) == 8, page_gla_list_entry_t);
+} gla_list_entry_t;
+tdx_static_assert(sizeof(gla_list_entry_t) == 8, gla_list_entry_t);
 
 #define PAGE_GLA_LIST_MAX_ENTRIES       512
 
-typedef union page_gla_list_info_u
+typedef union gla_list_info_u
 {
     struct
     {
@@ -1274,8 +1297,8 @@ typedef union page_gla_list_info_u
         uint64_t reserved_1     : 2;  // Bits 63:62:
     };
     uint64_t raw;
-} page_gla_list_info_t;
-tdx_static_assert(sizeof(page_gla_list_info_t) == 8, page_gla_list_info_t);
+} gla_list_info_t;
+tdx_static_assert(sizeof(gla_list_info_t) == 8, gla_list_info_t);
 
 #pragma pack(pop)
 

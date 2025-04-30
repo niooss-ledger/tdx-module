@@ -50,15 +50,9 @@ SRC_DIRS := $(foreach dir,$(SRC_DIRS),$(PROJ_DIR)/$(dir))
 
 VPATH := $(SRC_DIRS)
 
-# Source and headers files
-C_SRC_FILES = $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c))
-ASM_SRC_FILES = $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.S))
-SRC_FILES = $(C_SRC_FILES) $(ASM_SRC_FILES)
-HEADER_FILES = $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.h))
-
 # Objects
-__C_OBJECTS = $(patsubst %.c, %.o, $(notdir $(C_SRC_FILES)))
-__ASM_OBJECTS = $(patsubst %.S, %.o, $(notdir $(ASM_SRC_FILES)))
+__C_OBJECTS := $(shell cat $(PROJ_DIR)/c_objects.txt)
+__ASM_OBJECTS := $(shell cat $(PROJ_DIR)/asm_objects.txt)
 
 # Libraries
 CRYPTO_LIB_BUILD_FLAVOR := RELEASE

@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "x86_defs/x86_defs.h"
 #include "data_structures/td_control_structures.h"
 #include "memory_handlers/keyhole_manager.h"
@@ -114,7 +114,7 @@ api_error_type tdh_vp_addcx(uint64_t target_tdcx_pa, uint64_t target_tdvpr_pa)
     tdvps_ptr = (tdvps_t*)map_pa((void*)(set_hkid_to_pa(tdvpr_pa, td_hkid).full_pa), TDX_RANGE_RW);
 
     // Check the VCPU state
-    if (tdvps_ptr->management.state != VCPU_UNINITIALIZED)
+    if (tdvps_ptr->management.vcpu_state != VCPU_UNINITIALIZED)
     {
         TDX_ERROR("TD VCPU is already initialized\n");
         return_val = TDX_VCPU_STATE_INCORRECT;
@@ -163,7 +163,7 @@ api_error_type tdh_vp_addcx(uint64_t target_tdcx_pa, uint64_t target_tdvpr_pa)
     // Register the new TDCX in its parent TDVPS structure
     // Note that tdcx_pa[0] is the PA of TDVPR, so TDCX
     // pages start from index 1
-    tdvps_ptr->management.tdvps_pa[num_tdvps_pages] = set_hkid_to_pa(tdcx_pa, td_hkid).raw;
+    tdvps_ptr->management.tdvps_page_pa[num_tdvps_pages] = set_hkid_to_pa(tdcx_pa, td_hkid).raw;
     num_tdvps_pages++;
     tdvps_ptr->management.num_tdvps_pages = (uint8_t)num_tdvps_pages;
 

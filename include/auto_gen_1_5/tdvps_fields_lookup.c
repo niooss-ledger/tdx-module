@@ -24,7 +24,7 @@
  *  Spreadsheet Format Version - '28'
  **/
 
-#include "auto_gen/tdvps_fields_lookup.h"
+#include "./tdvps_fields_lookup.h"
 
 
 const md_lookup_t tdvps_lookup[MAX_NUM_TDVPS_LOOKUP] = {
@@ -810,15 +810,15 @@ const md_lookup_t tdvps_lookup[MAX_NUM_TDVPS_LOOKUP] = {
    .mig_export = MIG_ME, .mig_import = MIG_ME 
  },
  {
-   // XFAM // 71
+   // XFAM_DEPRECATED // 71
    .field_id =  { .raw  = 0x202000030000000C }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x01F0, .attributes = { .raw = 0x0 },
-   .prod_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
-   .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .dbg_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .guest_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .guest_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
-   .export_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .import_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
-   .special_rd_handling = false, .special_wr_handling = true,
-   .mig_export = MIG_ME, .mig_import = MIG_IES 
+   .export_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .import_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .special_rd_handling = false, .special_wr_handling = false,
+   .mig_export = MIG_NONE, .mig_import = MIG_IES 
  },
  {
    // LAST_EPF_GPA_LIST_IDX // 72

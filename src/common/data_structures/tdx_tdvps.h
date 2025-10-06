@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -34,6 +34,7 @@
 
 #include "x86_defs/x86_defs.h"
 #include "x86_defs/msr_defs.h"
+#include "debug/tdx_debug.h"
 
 #include "helpers/error_reporting.h"
 #include "debug/tdx_debug.h"
@@ -75,6 +76,14 @@ typedef enum
 
 #define MAX_VMS           4
 #define MAX_L2_VMS        (MAX_VMS - 1)
+typedef enum
+{
+    L1_TD = 0,
+    L2_VM_1 = 1,
+    L2_VM_2 = 2,
+    L2_VM_3 = 3,
+    L2_VM_MAX
+} l1_l2_vm_e;
 
 typedef union l2_vcpu_ctrl_u
 {
@@ -176,7 +185,7 @@ typedef struct tdvps_ve_info_s
         struct
         {
             uint32_t instruction_length;
-            uint32_t instruction_info;
+            uint32_t instruction_information;
         };
         uint64_t inst_len_and_info;
     };
@@ -212,9 +221,8 @@ typedef union vcpu_state_s
  */
 typedef struct tdvps_management_s
 {
-    uint8_t   state; /**< The activity state of the VCPU */
+    uint8_t   vcpu_state; /**< The activity state of the VCPU */
     uint8_t   last_td_exit; /** Type of the last TD exit **/
-
     /**
      * Sequential index of the VCPU in the parent TD. VCPU_INDEX indicates the order
      * of VCPU initialization (by TDHVPINIT), starting from 0, and is made available to
@@ -225,7 +233,6 @@ typedef struct tdvps_management_s
     uint8_t   reserved_0;
 
     uint8_t   num_tdvps_pages; /**< A counter of the number of child TDCX pages associated with this TDVPR */
-
     /**
      * An array of (TDVPS_PAGES) physical address pointers to the TDCX pages
      *
@@ -233,8 +240,9 @@ typedef struct tdvps_management_s
      * Page 0 is the PA of the TDVPR page
      * Pages 1,2,... are PAs of the TDCX pages
     */
-    uint64_t  tdvps_pa[MAX_TDVPS_PAGES];
+    uint64_t  tdvps_page_pa[MAX_TDVPS_PAGES];
     uint8_t   reserved_1[72];
+
     /**
      * The (unique hardware-derived identifier) of the logical processor on which this VCPU
      * is currently associated (either by TDHVPENTER or by other VCPU-specific SEAMCALL flow).
@@ -262,7 +270,8 @@ typedef struct tdvps_management_s
     bool_t    nmi_unblocking_due_to_iret;
     uint8_t   reserved_4[6]; /**< Reserved for aligning the next field */
 
-    uint64_t  xfam;
+    uint64_t  xfam_deprecated; // previously XFAM copy per VCPU
+
     uint8_t   last_epf_gpa_list_idx;
     uint8_t   possibly_epf_stepping;
 
@@ -270,20 +279,18 @@ typedef struct tdvps_management_s
 
     uint64_t  hp_lock_busy_start;
     bool_t    hp_lock_busy;
-
     uint8_t   reserved_6[5]; /**< Reserved for aligning the next field */
 
     uint64_t  last_seamdb_index;
     uint16_t  curr_vm;
-    uint8_t    l2_exit_host_routed;
+    uint8_t   l2_exit_host_routing;
     uint8_t   reserved_7[1];
 
     bool_t    vm_launched[MAX_VMS];
     bool_t    lp_dependent_hpa_updated[MAX_VMS];
-    bool_t    module_dependent_hpa_updated[MAX_VMS];
+    bool_t    module_dependent_fields_updated[MAX_VMS];
 
     uint8_t   reserved_8[2];
-
     l2_vcpu_ctrl_t  l2_ctls[MAX_VMS];
     l2_vm_debug_ctls_t  l2_debug_ctls[MAX_VMS];
 
@@ -301,7 +308,7 @@ typedef struct tdvps_management_s
     uint64_t  shadow_cr0_read_shadow[MAX_VMS];     // Index 0 is not used - L2 only
     uint64_t  shadow_cr4_guest_host_mask[MAX_VMS]; // Index 0 is not used - L2 only
     uint64_t  shadow_cr4_read_shadow[MAX_VMS];     // Index 0 is not used - L2 only
-    uint32_t  shadow_notify_window[MAX_VMS];
+    uint32_t  shadow_instruction_timeout_control[MAX_VMS];
     uint64_t  shadow_pid_hpa;
 
     uint8_t   reserved_9[24];
@@ -327,7 +334,6 @@ typedef struct tdvps_management_s
 
     uint64_t  l2_vapic_gpa[MAX_VMS];
     uint64_t  l2_vapic_hpa[MAX_VMS];
-
     uint8_t   reserved_12[608]; /**< Reserved for aligning the next field */
 } tdvps_management_t;
 tdx_static_assert(sizeof(tdvps_management_t) == SIZE_OF_TDVPS_MANAGEMENT_STRUCT_IN_BYTES, tdvps_management_t);
@@ -393,19 +399,19 @@ typedef struct tdvps_guest_msr_state_s
     uint64_t ia32_spec_ctrl;
     uint64_t ia32_umwait_control;
     uint64_t ia32_tsx_ctrl;
-    uint64_t ia32_perfevtsel[NUM_PMC];
-    uint64_t ia32_offcore_rsp[2];
+    uint64_t ia32_perfevtselx[NUM_PMC];
+    uint64_t msr_offcore_rspx[2];
     uint64_t ia32_xfd;
     uint64_t ia32_xfd_err;
-    uint64_t ia32_fixed_ctr[MAX_FIXED_CTR];
+    uint64_t ia32_fixed_ctrx[MAX_FIXED_CTR];
     uint64_t ia32_perf_metrics;
     uint64_t ia32_fixed_ctr_ctrl;
     uint64_t ia32_perf_global_status;
     uint64_t ia32_pebs_enable;
-    uint64_t ia32_pebs_data_cfg;
-    uint64_t ia32_pebs_ld_lat;
-    uint64_t ia32_pebs_frontend;
-    uint64_t ia32_a_pmc[NUM_PMC];
+    uint64_t msr_pebs_data_cfg;
+    uint64_t msr_pebs_ld_lat;
+    uint64_t msr_pebs_frontend;
+    uint64_t ia32_a_pmcx[NUM_PMC];
     uint64_t ia32_ds_area;
     uint64_t ia32_fixed_ctr_reload_cfg[4];
     uint64_t ia32_fixed_ctr_ext[4];
@@ -429,7 +435,8 @@ typedef struct tdvps_guest_msr_state_s
 } tdvps_guest_msr_state_t;
 tdx_static_assert(sizeof(tdvps_guest_msr_state_t) == SIZE_OF_TDVPS_GUEST_MSR_STATE_IN_BYTES, tdvps_guest_msr_state_t);
 
-#define SIZE_OF_TD_VMCS_IN_BYTES   (TDX_PAGE_SIZE_IN_BYTES/2)
+
+#define SIZE_OF_TD_VMCS_IN_BYTES   (_4KB)
 #define OFFSET_OF_TDVPS_TD_VMCS_IN_BYTES 0x1000
 
 /**
@@ -442,7 +449,6 @@ typedef struct tdvps_td_vmcs_s
     uint8_t td_vmcs[SIZE_OF_TD_VMCS_IN_BYTES]; /**< Not mapped in TDX-SEAM LA, access by VMREAD/VMWRITE.*/
 } tdvps_td_vmcs_t;
 tdx_static_assert(sizeof(tdvps_td_vmcs_t) == SIZE_OF_TD_VMCS_IN_BYTES, tdvps_td_vmcs_t);
-
 
 #define SIZE_OF_TDVPS_VAPIC_STRUCT_IN_BYTES TDX_PAGE_SIZE_IN_BYTES
 #define OFFSET_OF_TDVPS_VAPIC_STRUCT              0x2000
@@ -459,7 +465,7 @@ typedef union  tdvps_vapic_s
 {
     struct
     {
-        uint8_t apic[APIC_T_SIZE]; /**< Virtual APIC Page */
+        uint8_t vapic[APIC_T_SIZE]; /**< Virtual APIC Page */
         uint8_t reserved[TDX_PAGE_SIZE_IN_BYTES - APIC_T_SIZE];
     };
     uint8_t raw[TDX_PAGE_SIZE_IN_BYTES];
@@ -479,7 +485,7 @@ typedef struct tdvps_guest_extension_state_s
 {
     union
     {
-        xsave_area_t xbuf; /**< XSAVES buffer */
+        xsave_area_t xbuff; /**< XSAVES buffer */
         uint8_t max_size[SIZE_OF_TDVPS_GUEST_EXT_STATE_IN_BYTES];
     };
 } tdvps_guest_extension_state_t;
@@ -498,7 +504,6 @@ tdx_static_assert(sizeof(tdvps_guest_extension_state_t) == SIZE_OF_TDVPS_GUEST_E
 typedef struct l2_vm_ctrl_s
 {
     uint8_t  l2_vmcs[SIZE_OF_TD_VMCS_IN_BYTES];
-    uint8_t  reserved[SIZE_OF_TD_VMCS_IN_BYTES];
     uint64_t l2_msr_bitmaps[512];
     uint64_t l2_shadow_msr_bitmaps[512];
 } l2_vm_ctrl_t;
@@ -524,7 +529,6 @@ typedef struct ALIGN(TDX_PAGE_SIZE_IN_BYTES) tdvps_s
     uint8_t                        reserved_2[792]; /**< Reserved for aligning the next field */
 
     tdvps_td_vmcs_t                td_vmcs;
-    uint8_t                        reserved_3[TDX_PAGE_SIZE_IN_BYTES - SIZE_OF_TD_VMCS_IN_BYTES]; /**< Reserved for aligning the next field */
 
     tdvps_vapic_t                  vapic;
     tdvps_guest_extension_state_t  guest_extension_state;
@@ -532,14 +536,6 @@ typedef struct ALIGN(TDX_PAGE_SIZE_IN_BYTES) tdvps_s
     l2_vm_ctrl_t                   l2_vm_ctrl[MAX_L2_VMS];
 } tdvps_t;
 tdx_static_assert(sizeof(tdvps_t) == (MAX_TDVPS_PAGES*TDX_PAGE_SIZE_IN_BYTES), tdvps_t);
-tdx_static_assert(offsetof(tdvps_t, ve_info) == OFFSET_OF_VE_INFO_STRUCT_IN_BYTES, tdvps_t);
-tdx_static_assert(offsetof(tdvps_t, management) == OFFSET_OF_TDVPS_MANAGEMENT_IN_BYTES, tdvps_t);
-tdx_static_assert(offsetof(tdvps_t, cpuid_control) == OFFSET_OF_CPUID_CTRL_IN_BYTES, tdvps_t);
-tdx_static_assert(offsetof(tdvps_t, guest_state) == OFFSET_OF_TDVPS_GUEST_STATE_IN_BYTES, tdvps_t);
-tdx_static_assert(offsetof(tdvps_t, guest_msr_state) == OFFSET_OF_TDVPS_GUEST_MSR_STATE_IN_BYTES, tdvps_t);
-tdx_static_assert(offsetof(tdvps_t, td_vmcs) == OFFSET_OF_TDVPS_TD_VMCS_IN_BYTES, tdvps_t);
-tdx_static_assert(offsetof(tdvps_t, vapic) == OFFSET_OF_TDVPS_VAPIC_STRUCT, tdvps_t);
-tdx_static_assert(offsetof(tdvps_t, guest_extension_state) == OFFSET_OF_TDVPS_GUEST_EXT_STATE, tdvps_t);
 
 
 typedef union attr_flags_u

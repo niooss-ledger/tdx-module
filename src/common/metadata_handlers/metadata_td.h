@@ -28,7 +28,7 @@
 #define SRC_COMMON_METADATA_HANDLERS_METADATA_TD_H_
 
 #include "metadata_generic.h"
-#include "auto_gen/tdr_tdcs_fields_lookup.h"
+#include TDR_TDCS_FIELDS_LOOKUP_HEADER
 #include "helpers/error_reporting.h"
 
 api_error_code_e md_td_read_element(md_field_id_t field_id, const md_lookup_t* entry, md_access_t access_type,

@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -29,21 +29,21 @@
 #define SRC_COMMON_MEMORY_HANDLERS_SEPT_MANAGER_H_
 
 #include "x86_defs/x86_defs.h"
-#include "auto_gen/sept_state_lookup.h"
-#include "data_structures/tdx_local_data.h"
 #include "helpers/helpers.h"
+#include SEPT_STATE_LOOKUP_HEADER
+#include "data_structures/tdx_local_data.h"
 
 
 ///////////////////////////////////////////////////////////////////////////////////
 /// SEPT state masks
 ///////////////////////////////////////////////////////////////////////////////////
-#define SEPT_STATE_ENCODING_MASK         (BIT(SEPT_ENTRY_D_BIT_POSITION)    | \
-                                          BIT(SEPT_ENTRY_IPAT_BIT_POSITION) | \
-                                          BIT(SEPT_ENTRY_PS_BIT_POSITION)   | \
-                                          BIT(SEPT_ENTRY_TDP_BIT_POSITION)  | \
-                                          BIT(SEPT_ENTRY_TDB_BIT_POSITION)  | \
-                                          BIT(SEPT_ENTRY_TDBW_BIT_POSITION) | \
-                                          BIT(SEPT_ENTRY_TDEX_BIT_POSITION))
+#define SEPT_STATE_ENCODING_MASK         (BIT(SEPT_ENTRY_D_BIT_POSITION)          | \
+                                          BIT(SEPT_ENTRY_PS_BIT_POSITION)         | \
+                                          BIT(SEPT_ENTRY_TDP_BIT_POSITION)        | \
+                                          BIT(SEPT_ENTRY_TDB_BIT_POSITION)        | \
+                                          BIT(SEPT_ENTRY_TDBW_BIT_POSITION)       | \
+                                          BIT(SEPT_ENTRY_TDEX_BIT_POSITION)       | \
+                                          BIT(SEPT_ENTRY_IPAT_TDMEM_BIT_POSITION))
 
 #define SEPT_STATE_ENCODING_WO_D_MASK    (SEPT_STATE_ENCODING_MASK & ~(BIT(SEPT_ENTRY_D_BIT_POSITION)))
 
@@ -53,7 +53,8 @@
 
 #define SEPT_PERMISSIONS_MASK            (BIT(SEPT_ENTRY_R_BIT_POSITION)  | \
                                           BIT(SEPT_ENTRY_W_BIT_POSITION)  | \
-                                          BIT(SEPT_ENTRY_X_BIT_POSITION))
+                                          BIT(SEPT_ENTRY_XS_BIT_POSITION) | \
+                                          BIT(SEPT_ENTRY_XU_BIT_POSITION))
 
 #define L2_SEPT_PERMISSIONS_MASK         (BIT(SEPT_ENTRY_R_BIT_POSITION)  | \
                                           BIT(SEPT_ENTRY_W_BIT_POSITION)  | \
@@ -64,7 +65,8 @@
 
 #define SEPT_PERMISSIONS_RWX             (BIT(SEPT_ENTRY_R_BIT_POSITION)  | \
                                           BIT(SEPT_ENTRY_W_BIT_POSITION)  | \
-                                          BIT(SEPT_ENTRY_X_BIT_POSITION))
+                                          BIT(SEPT_ENTRY_XS_BIT_POSITION)  | \
+                                          BIT(SEPT_ENTRY_XU_BIT_POSITION))
 
 #define SEPT_PERMISSIONS_RW_XS_XU        (BIT(SEPT_ENTRY_R_BIT_POSITION)  | \
                                           BIT(SEPT_ENTRY_W_BIT_POSITION)  | \
@@ -96,7 +98,7 @@
 #define SEPT_ARCH_ENTRY_LEAF_MASK        (SEPT_PERMISSIONS_MASK             | \
                                           MT_MASK                           | \
                                           SEPT_HPA_MASK                     | \
-                                          BIT(SEPT_ENTRY_IPAT_BIT_POSITION) | \
+                                          BIT(SEPT_ENTRY_IPAT_TDMEM_BIT_POSITION) | \
                                           BIT(SEPT_ENTRY_PS_BIT_POSITION)   | \
                                           BIT(SEPT_ENTRY_SVE_BIT_POSITION))
 
@@ -107,7 +109,7 @@
 // For non-debug TDs, VGP, PWA and SSS are cleared to 0
 #define L2_SEPT_ARCH_ENTRY_LEAF_MASK      (MT_MASK                           | \
                                            SEPT_HPA_MASK                     | \
-                                           BIT(SEPT_ENTRY_IPAT_BIT_POSITION) | \
+                                           BIT(SEPT_ENTRY_IPAT_TDMEM_BIT_POSITION) | \
                                            BIT(SEPT_ENTRY_PS_BIT_POSITION)   | \
                                            BIT(SEPT_ENTRY_SVE_BIT_POSITION))
 
@@ -115,7 +117,7 @@
 #define L2_SEPT_ARCH_ENTRY_LEAF_DEBUG_MASK   (L2_SEPT_MIGRATABLE_ATTRIBUTES_MASK | \
                                               MT_MASK                            | \
                                               SEPT_HPA_MASK                      | \
-                                              BIT(SEPT_ENTRY_IPAT_BIT_POSITION)  | \
+                                              BIT(SEPT_ENTRY_IPAT_TDMEM_BIT_POSITION)  | \
                                               BIT(SEPT_ENTRY_PS_BIT_POSITION)    | \
                                               BIT(SEPT_ENTRY_SVE_BIT_POSITION))
 
@@ -124,8 +126,11 @@
 
 
 #define L2_SEPT_STATE_ENCODING_MASK       (BIT(SEPT_ENTRY_R_BIT_POSITION)    | \
-                                          BIT(SEPT_ENTRY_IPAT_BIT_POSITION) | \
+                                          BIT(SEPT_ENTRY_IPAT_TDMEM_BIT_POSITION) | \
                                           BIT(SEPT_ENTRY_PS_BIT_POSITION)   | \
+                                          BIT(SEPT_ENTRY_TDB_BIT_POSITION))
+
+#define L2_SEPT_MMIO_STATE_ENCODING_MASK (BIT(SEPT_ENTRY_PS_BIT_POSITION) | \
                                           BIT(SEPT_ENTRY_TDB_BIT_POSITION))
 
 #define L2_SEPT_STATE_ENCODING_WO_R_MASK  (L2_SEPT_STATE_ENCODING_MASK & ~(BIT(SEPT_ENTRY_R_BIT_POSITION)))
@@ -136,10 +141,10 @@
 
 #define SEPT_STATE_ENC_TO_MASK(e)            ( ((BIT(0) & (e)) << SEPT_ENTRY_D_BIT_POSITION) | \
                                                (((BITS(4,1) & (e)) >> 1) << SEPT_ENTRY_TDEX_BIT_POSITION) |\
-                                               (((BITS(6,5) & (e)) >> 5) << SEPT_ENTRY_IPAT_BIT_POSITION))
+                                               (((BITS(6,5) & (e)) >> 5) << SEPT_ENTRY_IPAT_TDMEM_BIT_POSITION))
 
 #define L2_SEPT_STATE_ENC_TO_MASK(e)         ( ((BIT(0) & (e)) << SEPT_ENTRY_TDB_BIT_POSITION) | \
-                                               (((BITS(2, 1) & (e)) >> 1) << SEPT_ENTRY_IPAT_BIT_POSITION))
+                                               (((BITS(2, 1) & (e)) >> 1) << SEPT_ENTRY_IPAT_TDMEM_BIT_POSITION))
 
 #define L2_SEPT_CONVERT_TO_ENCODING(l2_ept_entry)  ( ((uint64_t)(l2_ept_entry).l2_encoding.tdb) |   \
                                                     (((uint64_t)(l2_ept_entry).l2_encoding.ipat_tdmem) << 1ULL) |  \
@@ -214,6 +219,11 @@ _STATIC_INLINE_ bool_t is_sept_pending_exp_dirty(const ia32e_sept_t* ept_entry)
     return ((ept_entry->raw & SEPT_STATE_ENCODING_MASK) == SEPT_STATE_PEND_EXP_DIRTY_MASK);
 }
 
+_STATIC_INLINE_ bool_t is_sept_removed(const ia32e_sept_t* ept_entry)
+{
+    return ((ept_entry->raw & SEPT_STATE_ENCODING_MASK) == SEPT_STATE_REMOVED_MASK);
+}
+
 _STATIC_INLINE_ bool_t is_sept_blockedw(const ia32e_sept_t* ept_entry)
 {
     return ((ept_entry->raw & SEPT_STATE_ENCODING_WO_TDP_MASK) == SEPT_STATE_BLOCKEDW_MASK);
@@ -222,11 +232,6 @@ _STATIC_INLINE_ bool_t is_sept_blockedw(const ia32e_sept_t* ept_entry)
 _STATIC_INLINE_ bool_t is_sept_exported_blocked(const ia32e_sept_t* ept_entry)
 {
     return ((ept_entry->raw & SEPT_STATE_ENCODING_WO_TDP_MASK) == SEPT_STATE_EXP_BLOCKEDW_MASK);
-}
-
-_STATIC_INLINE_ bool_t is_sept_removed(const ia32e_sept_t* ept_entry)
-{
-    return ((ept_entry->raw & SEPT_STATE_ENCODING_MASK) == SEPT_STATE_REMOVED_MASK);
 }
 
 _STATIC_INLINE_ bool_t is_sept_nl_mapped(const ia32e_sept_t* ept_entry)
@@ -358,6 +363,7 @@ _STATIC_INLINE_ bool_t sept_state_is_any_pending(ia32e_sept_t ept_entry)
     return sept_special_flags_lookup[idx].any_pending;
 }
 
+
 _STATIC_INLINE_ bool_t sept_state_is_any_pending_and_guest_acceptable(const ia32e_sept_t ept_entry)
 {
     uint64_t idx = SEPT_CONVERT_TO_ENCODING(ept_entry);
@@ -434,11 +440,35 @@ _STATIC_INLINE_ uint32_t l2_sept_get_arch_state(ia32e_sept_t l2_ept_entry)
     return l2_sept_special_flags_lookup[L2_SEPT_CONVERT_TO_ENCODING(l2_ept_entry)].public_state;
 }
 
+/* Set the MT bits based on the IPAT_TDMEM state bit - see the SEPT spreadsheet
+    MT0 (bit 3) = 0
+    MT1 (bit 4) = IPAT_TDMEM (bit 6)
+    MT2 (bit 5) = IPAT_TDMEM (bit 6)
+*/
+_STATIC_INLINE_ void sept_set_mt_from_ipat_tdmem(ia32e_sept_t *const ept_entry_ptr)
+{
+    ept_entry_ptr->mt0 = 0;
+    ept_entry_ptr->mt1 = ept_entry_ptr->ipat_tdmem;
+    ept_entry_ptr->mt2 = ept_entry_ptr->ipat_tdmem;
+}
+
+/**
+ * @brief Return true if the page is MMIO (IPAT_TDMEM (bit 6) is 0)
+ *
+ * @param ept_entry_ptr
+ * @return bool_t
+ */
+_STATIC_INLINE_ bool_t is_ept_pt_mmio(ia32e_sept_t *const ept_entry_ptr)
+{
+    return ept_entry_ptr->ipat_tdmem == 0;
+}
+
 _STATIC_INLINE_ void sept_update_state(ia32e_sept_t* ept_entry, sept_state_mask_t state)
 {
     ia32e_sept_t new_septe;
 
     new_septe.raw = (ept_entry->raw & ~SEPT_STATE_ENCODING_MASK) | (state & SEPT_STATE_ENCODING_MASK);
+    sept_set_mt_from_ipat_tdmem(&new_septe);
     new_septe.supp_ve = 1;
 
     // Write the new value in a single 64-bit write
@@ -470,6 +500,23 @@ _STATIC_INLINE_ gpa_attr_single_vm_t sept_get_gpa_attr(const ia32e_sept_t ept_en
     return gpa_attr_single_vm;
 }
 
+/**
+ * @brief - Update the architectural GPA attributes, Memory Type and IPTA of the leaf L2 SEPT entry.
+ *          The page is assumed to be not blocked and not blocked for writing, but may be pending.
+ *              - Ignore gpa_attr.VALID; this bit is assumed to be checked by the caller.
+ *              - If the entry is a blocked leaf (L2_BLOCKED):
+ *              - Set R, W, Xs, Xu and PWA bits to 0 and save the requested values in TDRD, TDWR, TDXS, TDXU and TDPWA
+ *          Update the IPAT_TDMEM and MT - see the SEPT spreadsheet
+ *              - MT0        (bit 3) = 0
+ *              - MT1        (bit 4) = !is_mmio
+ *              - MT2        (bit 5) = !is_mmio
+ *              - IPAT_TDMEM (bit 6) = !is_mmio
+ *
+ * @param l2_sept_entry_ptr
+ * @param gpa_attr_single_vm
+ * @param is_mmio
+ * @return void
+ */
 _STATIC_INLINE_ void l2_sept_update_gpa_attr(
     ia32e_sept_t *const l2_sept_entry_ptr,
     const gpa_attr_single_vm_t gpa_attr_single_vm)
@@ -482,6 +529,7 @@ _STATIC_INLINE_ void l2_sept_update_gpa_attr(
     l2_sept_entry_ptr->l2_encoding.pwa = gpa_attr_single_vm.pwa;
     l2_sept_entry_ptr->l2_encoding.sss = gpa_attr_single_vm.sss;
     l2_sept_entry_ptr->l2_encoding.sve = gpa_attr_single_vm.sve;
+    l2_sept_entry_ptr->l2_encoding.mt0_tdrd = 0;
 
     if (is_l2_sept_blocked(l2_sept_entry_ptr))
     {
@@ -575,7 +623,18 @@ _STATIC_INLINE_ void sept_clear_aliased(ia32e_sept_t *const sept_entry_ptr, cons
 {
     ia32e_sept_t tmp_sept = *sept_entry_ptr;
 
-    tmp_sept.tdal &= ~BIT(vm_idx -1);
+    if (1 == vm_idx)
+    {
+        tmp_sept.tdal1 = 0;
+    }
+    else if(2 == vm_idx)
+    {
+        tmp_sept.tdal2 = 0;
+    }
+    else // (3 == vm_idx)
+    {
+        tmp_sept.tdal3 = 0;
+    }
 
     atomic_mem_write_64b(&sept_entry_ptr->raw, tmp_sept.raw);
 }
@@ -593,22 +652,45 @@ _STATIC_INLINE_ void sept_set_aliased(ia32e_sept_t *const sept_entry_ptr, const 
 {
     ia32e_sept_t tmp_ept = *sept_entry_ptr;
 
-    tmp_ept.tdal |= ((uint64_t)1 << (vm_idx -1));
+    if (1 == vm_idx)
+    {
+        tmp_ept.tdal1 = 1;
+    }
+    else if (2 == vm_idx)
+    {
+        tmp_ept.tdal2 = 1;
+    }
+    else // (3 == vm_idx)
+    {
+        tmp_ept.tdal3 = 1;
+    }
 
     atomic_mem_write_64b(&sept_entry_ptr->raw, tmp_ept.raw);
 }
 
-_STATIC_INLINE_ bool_t sept_state_is_aliased(
-    const ia32e_sept_t ept_entry,
-    const uint16_t vm_idx)
+_STATIC_INLINE_ bool_t sept_state_is_aliased(const ia32e_sept_t ept_entry, const uint16_t vm_idx)
 {
-    return ((ept_entry.tdal & BIT(vm_idx-1)) >> (vm_idx-1));
+    bool_t is_aliased;
+
+    if (1 == vm_idx)
+    {
+        is_aliased = ept_entry.tdal1;
+    }
+    else if (2 == vm_idx)
+    {
+        is_aliased = ept_entry.tdal2;
+    }
+    else // (3 == vm_idx)
+    {
+        is_aliased = ept_entry.tdal3;
+    }
+
+    return is_aliased;
 }
 
-_STATIC_INLINE_ bool_t sept_state_is_any_aliased(
-    const ia32e_sept_t ept_entry)
+_STATIC_INLINE_ bool_t sept_state_is_any_aliased(const ia32e_sept_t ept_entry)
 {
-    return (ept_entry.tdal != 0);
+    return (bool_t)(ept_entry.tdal1 || ept_entry.tdal2 || ept_entry.tdal3);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
@@ -681,8 +763,8 @@ _STATIC_INLINE_ bool_t is_secure_ept_leaf_entry(const ia32e_sept_t * ept_entry)
  * @param page_pa Physical address to map in entry
  * @param state_encoding the new sept entry state
  */
-void sept_set_leaf_and_release_locks(ia32e_sept_t * ept_entry, uint64_t attributes,
-                                     pa_t page_pa, uint64_t state_encoding);
+void sept_set_leaf_and_release_locks_given_hpa_and_hkid(ia32e_sept_t * ept_entry, uint64_t attributes, pa_t page_pa,
+                                                        uint16_t hkid, uint64_t state_encoding);
 
 /**
  * @brief Map a SEPT leaf entry - with a taken entry lock.
@@ -690,26 +772,40 @@ void sept_set_leaf_and_release_locks(ia32e_sept_t * ept_entry, uint64_t attribut
  *
  * @param ept_entry Pointer to EPT entry to map
  * @param attributes migration attributes to use to update the ept entry
- * @param page_pa Physical address to map in entry
+ * @param page_pa Physical address to map in entry without hkid
+ * @param hkid hkid to be set to the pyhsical address
  * @param state_encoding the new sept entry state
  */
-void sept_set_leaf_and_keep_lock(ia32e_sept_t * ept_entry, uint64_t attributes,
-                                 pa_t page_pa, uint64_t state_encoding);
-								 
+void sept_set_leaf_and_keep_lock_given_hpa_and_hkid(ia32e_sept_t * ept_entry, uint64_t attributes, pa_t page_pa,
+                                                    uint16_t hkid, uint64_t state_encoding);
+
+/**
+ * @brief Map a SEPT leaf entry - with a taken entry lock.
+ *        Should be used only locked entries only!!!
+ *
+ * @param ept_entry Pointer to EPT entry to map
+ * @param attributes migration attributes to use to update the ept entry
+ * @param page_pa Physical address to map in entry with hkid
+ * @param state_encoding the new sept entry state
+ * @param sept_ve_disable Value to set for SVE bit in EPT entry
+ */
+void sept_set_leaf_and_keep_lock_given_hpa_with_hkid(ia32e_sept_t * ept_entry, uint64_t attributes,
+                                                    pa_t page_pa, uint64_t state_encoding);
+
 /**
  * @brief Identical to sept_set_leaf_and_release_locks, but assumes that the current entry is unlocked
  */
-void sept_set_leaf_unlocked_entry(ia32e_sept_t * ept_entry, uint64_t attributes,
-                                  pa_t page_pa, uint64_t state_encoding);
+void sept_set_leaf_unlocked_entry_given_hpa_and_hkid(ia32e_sept_t * ept_entry, uint64_t attributes, pa_t page_pa,
+                                                     uint16_t hkid, uint64_t state_encoding);
 
 /**
  * @brief Map a SEPT non-leaf entry
  *
  * @param ept_entry Pointer to EPT entry to map
- * @param page_pa Physical address to map in entry
+ * @param page_pa_with_hkid Physical address to map in entry
  * @param lock Whether acquire entry lock or not
  */
-void sept_set_mapped_non_leaf(ia32e_sept_t * ept_entry, pa_t page_pa, bool_t lock);
+void sept_set_mapped_non_leaf_given_hpa_with_hkid(ia32e_sept_t * ept_entry, pa_t page_pa_with_hkid, bool_t lock);
 
 /**
  * @brief Set an L2 secure EPT leaf entry.
@@ -727,16 +823,17 @@ void sept_set_mapped_non_leaf(ia32e_sept_t * ept_entry, pa_t page_pa, bool_t loc
  * @param pa
  * @param is_l2_blocked
  */
-void sept_l2_set_leaf(ia32e_sept_t* l2_sept_entry_ptr, gpa_attr_single_vm_t gpa_attr_single_vm,
-                      pa_t pa, bool_t is_l2_blocked);
+void sept_l2_set_leaf_given_hpa_with_hkid(ia32e_sept_t* l2_sept_entry_ptr, gpa_attr_single_vm_t gpa_attr_single_vm,
+                                          pa_t pa, bool_t is_l2_blocked);
 
 /**
  * @brief Map a L2 SEPT non-leaf entry - releases all lock on current entry
  *
  * @param ept_entry Pointer to EPT entry to map
  * @param page_pa Physical address to map in entry
+ * @param page_pa hkid that will be assembled to the entry
  */
-void sept_l2_set_mapped_non_leaf(ia32e_sept_t * ept_entry, pa_t page_pa);
+void sept_l2_set_mapped_non_leaf_given_hpa_and_hkid(ia32e_sept_t * ept_entry, pa_t page_pa, uint16_t hkid);
 
 /** @brief Cleanup the SEPT entry if the page is PENDING
  *         For 2MB leaf entries, zero out the INIT_COUNTER (bits 20:12)
@@ -768,14 +865,10 @@ _STATIC_INLINE_ void sept_unblock(ia32e_sept_t* ept_entry)
         case SEPT_STATE_NL_BLOCKED_MASK:
             sept_update_state(ept_entry, SEPT_STATE_NL_MAPPED_MASK);
             ept_entry->raw |= SEPT_PERMISSIONS_RWX;
-            ept_entry->mt = 0;   // MT bits are reserved for non-leaf entries
             break;
         case SEPT_STATE_BLOCKED_MASK:
             sept_update_state(ept_entry, SEPT_STATE_MAPPED_MASK);
-            ept_entry->r = 1;
-            ept_entry->w = 1;
-            ept_entry->x = 1;
-            ept_entry->mt = MT_WB;
+            ept_entry->raw |= SEPT_PERMISSIONS_RWX;
             break;
         case SEPT_STATE_PEND_BLOCKED_MASK:
             sept_update_state(ept_entry, SEPT_STATE_PEND_MASK);

@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 /**
  * @file metadata_generic.h
@@ -30,7 +30,7 @@
 #include "tdx_basic_types.h"
 #include "tdx_basic_defs.h"
 #include "tdx_api_defs.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "data_structures/td_control_structures.h"
 #include "data_structures/tdx_tdvps.h"
 
@@ -249,19 +249,26 @@ _STATIC_INLINE_ uint64_t md_get_element_size_mask(uint64_t size_code)
     return mask;
 }
 
-_STATIC_INLINE_ bool_t md_check_forbidden_bits_unchanged(uint64_t original_value, uint64_t wr_value,
-                                                         uint64_t wr_request_mask, uint64_t entry_wr_mask)
+_STATIC_INLINE_ bool_t md_check_forbidden_bits_unchanged(uint64_t read_value, uint64_t wr_value,
+                                                         uint64_t wr_request_mask, uint64_t entry_wr_mask,
+                                                         uint64_t element_rd_mask)
 {
-    // The caller must not attempt to modify any non-writable bit.
-    // Calculate the forbidden bit mask as follows:
-    // forbidden_mask[N] is 1 if and only if both conditions are met:
-    //    - Non-writable:  element_wr_mask[N] == 0
-    //    - Write attempt: wr_mask[N] == 1
-    // Then check if any of the forbidden bits is being modified.
+    /* The caller must not attempt to modify any non-writable bit that is readable.
+       Calculate the forbidden bit mask as follows:
+       forbidden_mask[N] is 1 if and only if all conditions are met:
+       - Bit is non-writable:  element_wr_mask[N] == 0
+       - Bit is to be written: wr_mask[N] == 1
+       Then check if any of the forbidden bits is being modified vs. the value that would be read by the caller,
+       i.e., taking into account element_rd_mask. */
 
     uint64_t forbidden_mask = wr_request_mask & ~entry_wr_mask;
 
-    return ((original_value & forbidden_mask) == (wr_value & forbidden_mask));
+    if ((read_value & element_rd_mask & forbidden_mask) != (wr_value & forbidden_mask))
+    {
+        return false;
+    }
+
+    return true;
 }
 
 ////////////////////////////// Common metadata handling interface /////////////////////////////////////

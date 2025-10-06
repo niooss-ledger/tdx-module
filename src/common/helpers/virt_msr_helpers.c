@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -26,28 +26,28 @@
  */
 
 #include "virt_msr_helpers.h"
-#include "auto_gen/tdr_tdcs_fields_lookup.h"
+#include TDR_TDCS_FIELDS_LOOKUP_HEADER
 #include "x86_defs/vmcs_defs.h"
 
 void init_virt_ia32_vmx_msrs(tdcs_t* tdcs_ptr)
 {
-    tdcs_ptr->virt_msrs.virt_ia32_vmx_basic               = calc_virt_ia32_vmx_basic();
-    tdcs_ptr->virt_msrs.virt_ia32_vmx_misc                = calc_virt_ia32_vmx_misc();
+    tdcs_ptr->virt_msrs.virtual_ia32_vmx_basic               = calc_virt_ia32_vmx_basic();
+    tdcs_ptr->virt_msrs.virtual_ia32_vmx_misc                = calc_virt_ia32_vmx_misc();
 
-    tdcs_ptr->virt_msrs.virt_ia32_vmx_true_pinbased_ctls  = calc_virt_ia32_vmx_true_pinbased_ctls();
-    tdcs_ptr->virt_msrs.virt_ia32_vmx_true_procbased_ctls = calc_virt_ia32_vmx_true_procbased_ctls(tdcs_ptr);
-    tdcs_ptr->virt_msrs.virt_ia32_vmx_procbased_ctls2     = calc_virt_ia32_vmx_procbased_ctls2(tdcs_ptr);
-    tdcs_ptr->virt_msrs.virt_ia32_vmx_procbased_ctls3     = calc_virt_ia32_vmx_procbased_ctls3();
-    tdcs_ptr->virt_msrs.virt_ia32_vmx_true_exit_ctls      = calc_virt_ia32_vmx_true_vmexit_ctls(tdcs_ptr);
-    tdcs_ptr->virt_msrs.virt_ia32_vmx_true_entry_ctls     = calc_virt_ia32_vmx_true_vmentry_ctls(tdcs_ptr);
+    tdcs_ptr->virt_msrs.virtual_ia32_vmx_true_pinbased_ctls  = calc_virt_ia32_vmx_true_pinbased_ctls();
+    tdcs_ptr->virt_msrs.virtual_ia32_vmx_true_procbased_ctls = calc_virt_ia32_vmx_true_procbased_ctls(tdcs_ptr);
+    tdcs_ptr->virt_msrs.virtual_ia32_vmx_procbased_ctls2     = calc_virt_ia32_vmx_procbased_ctls2(tdcs_ptr);
+    tdcs_ptr->virt_msrs.virtual_ia32_vmx_procbased_ctls3     = calc_virt_ia32_vmx_procbased_ctls3();
+    tdcs_ptr->virt_msrs.virtual_ia32_vmx_true_exit_ctls      = calc_virt_ia32_vmx_true_vmexit_ctls(tdcs_ptr);
+    tdcs_ptr->virt_msrs.virtual_ia32_vmx_true_entry_ctls     = calc_virt_ia32_vmx_true_vmentry_ctls(tdcs_ptr);
 
-    tdcs_ptr->virt_msrs.virt_ia32_vmx_ept_vpid_cap        = calc_virt_ia32_vmx_ept_vpid_cap(tdcs_ptr);
-    tdcs_ptr->virt_msrs.virt_ia32_vmx_vmfunc              = calc_virt_ia32_vmx_vmfunc();
+    tdcs_ptr->virt_msrs.virtual_ia32_vmx_ept_vpid_cap        = calc_virt_ia32_vmx_ept_vpid_cap(tdcs_ptr);
+    tdcs_ptr->virt_msrs.virtual_ia32_vmx_vmfunc              = calc_virt_ia32_vmx_vmfunc();
 
-    calc_virt_ia32_vmx_cr0_fixed(&tdcs_ptr->virt_msrs.virt_ia32_vmx_cr0_fixed0.raw,
-                                 &tdcs_ptr->virt_msrs.virt_ia32_vmx_cr0_fixed1.raw);
-    calc_virt_ia32_vmx_cr4_fixed(tdcs_ptr, &tdcs_ptr->virt_msrs.virt_ia32_vmx_cr4_fixed0.raw,
-                                           &tdcs_ptr->virt_msrs.virt_ia32_vmx_cr4_fixed1.raw);
+    calc_virt_ia32_vmx_cr0_fixed(&tdcs_ptr->virt_msrs.virtual_ia32_vmx_cr0_fixed0.raw,
+                                 &tdcs_ptr->virt_msrs.virtual_ia32_vmx_cr0_fixed1.raw);
+    calc_virt_ia32_vmx_cr4_fixed(tdcs_ptr, &tdcs_ptr->virt_msrs.virtual_ia32_vmx_cr4_fixed0.raw,
+                                           &tdcs_ptr->virt_msrs.virtual_ia32_vmx_cr4_fixed1.raw);
 }
 
 // Initialize the values of the virtual IA32_ARCH_CAPABILITIES MSR
@@ -105,10 +105,8 @@ bool_t init_virt_ia32_arch_capabilities(tdcs_t* tdcs_p, bool_t config_flag, uint
         config_value.bhi_no = 0;   // Clear for sanity check at the end
     }
 
-    // Fixed-1 bits
-    arch_cap_value.xapic_disable_status = 1;  // Bit 21:  IA32_XAPIC_DISABLE_STATUS (MSR 0xBD) is available
-
     // Fixed-0 bits
+    arch_cap_value.xapic_disable_status = 1;  // Bit 21:  IA32_XAPIC_DISABLE_STATUS (MSR 0xBD) is available
     arch_cap_value.reserved_2 = 0;            // Bit 22
     arch_cap_value.overclocking_status = 0;   // Bit 23
 
@@ -131,7 +129,7 @@ bool_t init_virt_ia32_arch_capabilities(tdcs_t* tdcs_p, bool_t config_flag, uint
         return false;
     }
 
-    tdcs_p->virt_msrs.virt_ia32_arch_capabilities = arch_cap_value.raw;
+    tdcs_p->virt_msrs.virtual_ia32_arch_capabilities = arch_cap_value.raw;
 
     return true;
 }
@@ -208,4 +206,3 @@ bool_t check_virt_ia32_arch_capabilities(tdcs_t* tdcs_p, ia32_arch_capabilities_
 
     return true;
 }
-

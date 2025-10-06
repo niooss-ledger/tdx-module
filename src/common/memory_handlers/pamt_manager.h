@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -33,7 +33,7 @@
 #include "x86_defs/x86_defs.h"
 #include "data_structures/tdx_global_data.h"
 
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 
 /**
  * @brief Enum for page type in PAMT
@@ -141,7 +141,7 @@ typedef struct pamt_block_s
  *
  * If the PAMT block is not initialized, return NULL;
  *
- * @param pa Physical address corresponding to the PAMT block
+ * @param pa Physical address corresponding to the PAMT block, the HKID is removed from the PA within the function itself
  * @param pamt_block PAMT block structure to be filled with relevant physical pointers
  *
  * @return Returns TRUE if found PAMT block. FALSE if not found, or if @a pa not initilizaed.
@@ -254,11 +254,12 @@ pamt_entry_t* pamt_implicit_get(pa_t pa, page_size_t leaf_size);
  *                            be shared or exclusive.
  * @param pamt_entry returns the linear address of the PAMT entry if the lock acquisition succeeded.
  *                   Should be freed after use. Returns NULL if lock failed (doesn't need to be freed in that case).
+ * @param is_guest Specifies if the lock is for guest or host
  *
  * @return Error code status
  */
 api_error_code_e pamt_implicit_get_and_lock(pa_t pa, page_size_t leaf_size, lock_type_t leaf_lock_type,
-                                            pamt_entry_t** pamt_entry);
+                                            pamt_entry_t** pamt_entry, bool_t is_guest);
 
 /**
  * @brief Frees the lock of an implicit pamt entry, and also frees the pamt_entry linear address

@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -114,6 +114,9 @@
 #define IA32_RTIT_CTL_MSR_ADDR                           0x570
 #define IA32_LBR_CTL_MSR_ADDR                            0x14CE
 
+//TDX-IO Support
+#define ENABLE_SEAM_SAI_MSR                              0x550
+
 
 #define IA32_SEAMRR_BASE_AND_MASK_MASK           BITS((MAX_PA-1), 25)
 #define MISC_EN_LIMIT_CPUID_MAXVAL_BIT           BIT(22)
@@ -203,7 +206,7 @@ typedef union
         uint64_t mk_tme_max_keyid_bits : 4;      // Bits 35:32
         uint64_t mk_tme_max_keys : 15;           // Bits 50:36
         uint64_t nm_encryption_disable : 1;      // Bit 51
-        uint64_t rsvd2 : 11;                     // Bits 62:52
+        uint64_t reserved_1 : 11;                // Bits 62-52
         uint64_t implicit_bit_mask : 1;          // Bit 63
     };
     uint64_t raw;
@@ -276,7 +279,7 @@ typedef union
         uint64_t rsvd0                    : 1;  // bit 31
         uint64_t vmcs_region_size         : 13; // bits 44:32
         uint64_t rsvd1                    : 3;  // bits 47:45
-        uint64_t vmxon_pa_width           : 1;  // bit 48 
+        uint64_t vmxon_pa_width           : 1;  // bit 48
         uint64_t dual_monitor             : 1;  // bit 49
         uint64_t vmcs_mt                  : 4;  // bits 53:50
         uint64_t vmexit_info_on_ios       : 1;  // bit 54
@@ -409,11 +412,6 @@ typedef union ia32_spec_ctrl_u
     uint64_t raw;
 } ia32_spec_ctrl_t;
 tdx_static_assert(sizeof(ia32_spec_ctrl_t) == 8, ia32_spec_ctrl_t);
-
-#define IA32_SPEC_CTRL_SSBD_BIT         BIT(2)
-#define IA32_SPEC_CTRL_IPRED_DIS_S_BIT  BIT(4)
-
-#define TDX_MODULE_IA32_SPEC_CTRL       (IA32_SPEC_CTRL_SSBD_BIT | IA32_SPEC_CTRL_IPRED_DIS_S_BIT)
 
 #define IA32_ARCH_CAPABILITIES_CONFIG_MASK  (BIT(4) | BIT(19) | BIT(20) | BIT(24))
 

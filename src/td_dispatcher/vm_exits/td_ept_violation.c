@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -34,7 +34,7 @@
 #include "x86_defs/vmcs_defs.h"
 #include "data_structures/tdx_local_data.h"
 #include "tdx_td_api_handlers.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "vmm_dispatcher/tdx_vmm_dispatcher.h"
 #include "helpers/helpers.h"
 #include "memory_handlers/sept_manager.h"
@@ -45,6 +45,7 @@ void td_ept_violation_exit(vmx_exit_qualification_t exit_qualification, vm_vmexi
     tdx_module_local_t* tdx_local_data_ptr = get_local_data();
 
     tdcs_t* tdcs_p = tdx_local_data_ptr->vp_ctx.tdcs;
+    tdr_t* tdr_p = tdx_local_data_ptr->vp_ctx.tdr;
 
     bool_t gpaw = tdcs_p->executions_ctl_fields.gpaw;
     pa_t gpa;
@@ -108,13 +109,12 @@ void td_ept_violation_exit(vmx_exit_qualification_t exit_qualification, vm_vmexi
         //  - TD exit with Extended Exit Qualification set to denote a PENDING page.
 
         // Walk the L1 SEPT to locate the leaf entry.
-        tdr_t* tdr_p = tdx_local_data_ptr->vp_ctx.tdr;
 
         ept_level_t level = LVL_PT; // Walk till leaf entry
         ia32e_sept_t  sept_entry;
         ia32e_sept_t* sept_entry_ptr = secure_ept_walk(tdcs_p->executions_ctl_fields.eptp, gpa,
-                                                       tdr_p->key_management_fields.hkid, &level,
-                                                       &sept_entry, false);
+                                                       tdr_p->key_management_fields.hkid,
+                                                       &level, &sept_entry, false);
 
         free_la(sept_entry_ptr);
 

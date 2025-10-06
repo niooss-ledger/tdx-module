@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "x86_defs/x86_defs.h"
 #include "data_structures/td_control_structures.h"
 #include "memory_handlers/keyhole_manager.h"
@@ -175,9 +175,10 @@ api_error_type tdh_mem_sept_remove(page_info_api_input_t gpa_page_info, uint64_t
 
     // Get removed page L1 SEPT HPA PAMT entry
     removed_page_pa[0].raw = (uint64_t)sept_entry_copy.base << IA32E_4K_PAGE_OFFSET;
+    removed_page_pa[0] = set_hkid_to_pa(removed_page_pa[0], tdr_ptr->key_management_fields.hkid);
 
     if ((return_val = pamt_implicit_get_and_lock(removed_page_pa[0], PT_4KB,
-                      TDX_LOCK_EXCLUSIVE, &removed_page_pamt_entry_ptr[0])) != TDX_SUCCESS)
+                      TDX_LOCK_EXCLUSIVE, &removed_page_pamt_entry_ptr[0], false)) != TDX_SUCCESS)
     {
         TDX_ERROR("Can't acquire lock on removed page pamt entry\n");
         return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
@@ -200,19 +201,22 @@ api_error_type tdh_mem_sept_remove(page_info_api_input_t gpa_page_info, uint64_t
             goto EXIT;
         }
 
-        // Verify the TLB tacking of the blocked Secure-EPT page has been completed
+        // Check TLB tracking
         if (!is_tlb_tracked(tdcs_ptr, removed_page_pamt_entry_ptr[0]->bepoch))
         {
-            TDX_ERROR("Removed SEPT page TLB tracking is not complete\n");
-            return_val = api_error_with_operand_id(TDX_TLB_TRACKING_NOT_DONE, OPERAND_ID_RCX);
+            TDX_ERROR("TLB tracking not done\n");
+            return_val = TDX_TLB_TRACKING_NOT_DONE;
+        }
+        if (return_val != TDX_SUCCESS)
+        {
+            return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
             goto EXIT;
         }
     }
 
     // Scan the Secure-EPT page to be removed, and verify all its entries are at
     // SEPT_FREE state.  Map the merged Secure-EPT page
-    removed_page_sept_page_ptr = map_pa_with_hkid(removed_page_pa[0].raw_void,
-                                    tdr_ptr->key_management_fields.hkid, TDX_RANGE_RO);
+    removed_page_sept_page_ptr = map_pa(removed_page_pa[0].raw_void, TDX_RANGE_RO);
 
     for (uint32_t i = 0; i < 512; i++)
     {
@@ -236,20 +240,25 @@ api_error_type tdh_mem_sept_remove(page_info_api_input_t gpa_page_info, uint64_t
         return_val = l2_sept_walk(tdr_ptr, tdcs_ptr, vm_id, page_gpa, &sept_level_entry, &sept_entry_ptr[vm_id]);
         if (return_val != TDX_SUCCESS)
         {
-            FATAL_ERROR(); // Should not happen - no need to free the L2 SEPT PTR's
+            // Should not happen - no need to free the L2 SEPT PTR's
+            extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_td_handle(target_tdr_pa, vm_id, sept_level_entry, page_gpa.raw, *sept_entry_ptr[vm_id]);
+            fatal_error(FATAL_ERROR_ID_15, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
         }
 
         if (is_l2_sept_free(sept_entry_ptr[vm_id]))
         {
-            FATAL_ERROR(); // Should not happen - no need to free the L2 SEPT PTR's
+            // Should not happen - no need to free the L2 SEPT PTR's
+            extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_td_handle(target_tdr_pa, vm_id, sept_level_entry, page_gpa.raw, *sept_entry_ptr[vm_id]);
+            fatal_error(FATAL_ERROR_ID_16, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
         }
 
         // Get removed page HPA PAMT entry
         removed_page_pa[vm_id].raw = (uint64_t)sept_entry_ptr[vm_id]->base << IA32E_4K_PAGE_OFFSET;
+        removed_page_pa[vm_id] = set_hkid_to_pa(removed_page_pa[vm_id], tdr_ptr->key_management_fields.hkid);
 
         // Get the PAMT node entry of the L2 SEPT page that will be removed, and lock it
         if ((return_val = pamt_implicit_get_and_lock(removed_page_pa[vm_id], PT_4KB,
-                          TDX_LOCK_EXCLUSIVE, &removed_page_pamt_entry_ptr[vm_id])) != TDX_SUCCESS)
+                          TDX_LOCK_EXCLUSIVE, &removed_page_pamt_entry_ptr[vm_id], false)) != TDX_SUCCESS)
         {
             TDX_ERROR("Can't acquire lock on L2 removed page pamt entry (VM %d)\n", vm_id);
             return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
@@ -283,7 +292,7 @@ api_error_type tdh_mem_sept_remove(page_info_api_input_t gpa_page_info, uint64_t
             if ((version > 0) && (vm_id > 0))
             {
                 local_data_ptr->vmm_regs.gprs[GPR_LIST_R9_INDEX + (vm_id - 1)] =
-                        removed_page_pa[vm_id].raw;
+                        remove_hkid_from_pa(removed_page_pa[vm_id]).raw;
             }
         }
     }
@@ -291,7 +300,7 @@ api_error_type tdh_mem_sept_remove(page_info_api_input_t gpa_page_info, uint64_t
     septe_locked_flag = false;
 
     // Update RCX with the removed page HPA
-    local_data_ptr->vmm_regs.rcx = removed_page_pa[0].raw;
+    local_data_ptr->vmm_regs.rcx = remove_hkid_from_pa(removed_page_pa[0]).raw;
 
 EXIT:
 

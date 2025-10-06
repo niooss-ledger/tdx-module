@@ -156,14 +156,14 @@ void init_guest_td_address_fields(tdr_t* tdr_ptr, tdvps_t* tdvps_ptr, uint16_t c
     if (vm_id > 0)
     {
         ia32_vmwrite(VMX_VIRTUAL_APIC_PAGE_ADDRESS_FULL_ENCODE, NULL_PA);
-        ia32_vmwrite(VMX_MSR_BITMAP_PHYPTR_FULL_ENCODE, tdvps_ptr->management.tdvps_pa[get_tdvps_msr_bitmap_index(vm_id)]);
+        ia32_vmwrite(VMX_MSR_BITMAP_PHYPTR_FULL_ENCODE, tdvps_ptr->management.tdvps_page_pa[get_tdvps_msr_bitmap_index(vm_id)]);
         ia32_vmwrite(VMX_VIRTUAL_EXCEPTION_INFO_ADDRESS_FULL_ENCODE, NULL_PA);
     }
     else // L1 VMCS init
     {
-        ia32_vmwrite(VMX_VIRTUAL_APIC_PAGE_ADDRESS_FULL_ENCODE, tdvps_ptr->management.tdvps_pa[TDVPS_VAPIC_PAGE_INDEX]);
+        ia32_vmwrite(VMX_VIRTUAL_APIC_PAGE_ADDRESS_FULL_ENCODE, tdvps_ptr->management.tdvps_page_pa[TDVPS_VAPIC_PAGE_INDEX]);
         ia32_vmwrite(VMX_MSR_BITMAP_PHYPTR_FULL_ENCODE, tdr_ptr->management_fields.tdcx_pa[MSR_BITMAPS_PAGE_INDEX]);
-        ia32_vmwrite(VMX_VIRTUAL_EXCEPTION_INFO_ADDRESS_FULL_ENCODE, tdvps_ptr->management.tdvps_pa[TDVPS_VE_INFO_PAGE_INDEX]);
+        ia32_vmwrite(VMX_VIRTUAL_EXCEPTION_INFO_ADDRESS_FULL_ENCODE, tdvps_ptr->management.tdvps_page_pa[TDVPS_VE_INFO_PAGE_INDEX]);
     }
 
     // Set all to TDCS Zero Page
@@ -262,18 +262,18 @@ static void init_tdcs_dependent_fields_in_vmcs(tdr_t* tdr_ptr, tdcs_t* tdcs_ptr,
     // EPTP
     if (vm_id == 0)
     {
-        pa_t eptp_raw = set_hkid_to_pa((pa_t)tdcs_ptr->executions_ctl_fields.eptp.raw, 0);
+        pa_t eptp_raw = remove_hkid_from_pa((pa_t)tdcs_ptr->executions_ctl_fields.eptp.raw);
         ia32_vmwrite(VMX_GUEST_EPT_POINTER_FULL_ENCODE, eptp_raw.raw);
     }
     else
     {
-        ia32e_eptp_t l2_eptp = get_l2_septp(tdr_ptr, tdcs_ptr, vm_id);
+        ia32e_eptp_t l2_eptp = get_l2_septp_without_hkid(tdr_ptr, tdcs_ptr, vm_id);
         ia32_vmwrite(VMX_GUEST_EPT_POINTER_FULL_ENCODE, l2_eptp.raw);
     }
 
     /** L1 CR0 Guest/Host Mask
      * The following bits are set to 1 : PE (0), NE (5), NW (29), CD (30)
-     * Any bit set to 1 in IA32_VMX_CR0_FIXED0 (i.e., bit whose value must be 1)), 
+     * Any bit set to 1 in IA32_VMX_CR0_FIXED0 (i.e., bit whose value must be 1)),
      * except for PG(31) which is set to 0, since the guest TD run as an unrestricted guest.
      * Any bit set to 0 in IA32_VMX_CR0_FIXED1 (i.e., bit whose value must be 0).
      * Bits known to TDX-SEAM as reserved (TDX1:  bits 63-32, 28-19, 17 and 15-6)
@@ -281,7 +281,7 @@ static void init_tdcs_dependent_fields_in_vmcs(tdr_t* tdr_ptr, tdcs_t* tdcs_ptr,
      */
     uint64_t ia32_vmx_cr0_fixed0 = get_global_data()->plt_common_config.ia32_vmx_cr0_fixed0.raw;
     uint64_t ia32_vmx_cr0_fixed1 = get_global_data()->plt_common_config.ia32_vmx_cr0_fixed1.raw;
-    
+
     if (vm_id == 0)
     {
         bitmap = (ia32_vmx_cr0_fixed0 | (~ia32_vmx_cr0_fixed1)) & (~BIT(31));
@@ -377,7 +377,7 @@ static void init_tdcs_dependent_fields_in_vmcs(tdr_t* tdr_ptr, tdcs_t* tdcs_ptr,
     {
         bitmap = BIT(6) | BIT(13);
     }
-    
+
     ia32_vmwrite(VMX_CR4_READ_SHADOW_ENCODE, bitmap);
 
     if (get_global_data()->plt_common_config.ia32_vmx_procbased_ctls3.virt_ia32_spec_ctrl)

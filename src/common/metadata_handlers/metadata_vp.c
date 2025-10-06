@@ -26,8 +26,8 @@
 
 #include "metadata_generic.h"
 #include "metadata_vp.h"
-#include "auto_gen/tdvps_fields_lookup.h"
-#include "auto_gen/td_vmcs_fields_lookup.h"
+#include TDVPS_FIELDS_LOOKUP_HEADER
+#include TD_VMCS_FIELDS_LOOKUP_HEADER
 #include "helpers/error_reporting.h"
 #include "accessors/vt_accessors.h"
 #include "accessors/data_accessors.h"
@@ -196,14 +196,14 @@ static bool_t check_l2_procbased_exec_ctls(const tdcs_t* tdcs_p, uint32_t wr_mas
         // For production TDs, this field's writable bits properties must comply with the virtual value of
         // IA32_VMX_TRUE_PROCBASED_CTLS, as known to L1.  This takes into account the TD configuration.
         // Bits that are not 1 in the write mask are not modified from the current value and therefore are not checked.
-        if (wr_mask & ((~ctls.raw & tdcs_p->virt_msrs.virt_ia32_vmx_true_procbased_ctls.not_allowed0) |
-                       (ctls.raw & ~tdcs_p->virt_msrs.virt_ia32_vmx_true_procbased_ctls.allowed1)))
+        if (wr_mask & ((~ctls.raw & tdcs_p->virt_msrs.virtual_ia32_vmx_true_procbased_ctls.not_allowed0) |
+                       (ctls.raw & ~tdcs_p->virt_msrs.virtual_ia32_vmx_true_procbased_ctls.allowed1)))
         {
             TDX_ERROR("check_l2_procbased_exec_ctls error - production write\n");
             TDX_ERROR("wr_mask = 0x%llx , ctls = 0x%llx\n", wr_mask, ctls.raw);
             TDX_ERROR("not_allowed0 = 0x%llx , allowed1 = 0x%llx\n",
-                    tdcs_p->virt_msrs.virt_ia32_vmx_true_procbased_ctls.not_allowed0,
-                    tdcs_p->virt_msrs.virt_ia32_vmx_true_procbased_ctls.allowed1);
+                    tdcs_p->virt_msrs.virtual_ia32_vmx_true_procbased_ctls.not_allowed0,
+                    tdcs_p->virt_msrs.virtual_ia32_vmx_true_procbased_ctls.allowed1);
             return false;
         }
     }
@@ -239,14 +239,14 @@ static bool_t check_l2_procbased_exec_ctls2(const tdcs_t* tdcs_p, uint32_t wr_ma
         // For production TDs, this field's writable bits properties must comply with the virtual value of
         // IA32_VMX_PROCBASED_CTLS2, as known to L1.  This takes into account the TD configuration.
         // Bits that are not 1 in the write mask are not modified from the current value and therefore are not checked. */
-        if (wr_mask & ((~ctls2.raw & tdcs_p->virt_msrs.virt_ia32_vmx_procbased_ctls2.not_allowed0) |
-                       (ctls2.raw & ~tdcs_p->virt_msrs.virt_ia32_vmx_procbased_ctls2.allowed1)))
+        if (wr_mask & ((~ctls2.raw & tdcs_p->virt_msrs.virtual_ia32_vmx_procbased_ctls2.not_allowed0) |
+                       (ctls2.raw & ~tdcs_p->virt_msrs.virtual_ia32_vmx_procbased_ctls2.allowed1)))
         {
             TDX_ERROR("check_l2_procbased_exec_ctls error - production write\n");
             TDX_ERROR("wr_mask = 0x%llx , ctls = 0x%llx\n", wr_mask, ctls2.raw);
             TDX_ERROR("not_allowed0 = 0x%llx , allowed1 = 0x%llx\n",
-                    tdcs_p->virt_msrs.virt_ia32_vmx_procbased_ctls2.not_allowed0,
-                    tdcs_p->virt_msrs.virt_ia32_vmx_procbased_ctls2.allowed1);
+                    tdcs_p->virt_msrs.virtual_ia32_vmx_procbased_ctls2.not_allowed0,
+                    tdcs_p->virt_msrs.virtual_ia32_vmx_procbased_ctls2.allowed1);
             return false;
         }
     }
@@ -275,7 +275,7 @@ static bool_t check_l2_procbased_exec_ctls3(const tdcs_t* tdcs_p, uint64_t wr_ma
         // For production TDs, this field's writable bits properties must comply with the virtual value of
         // IA32_VMX_PROCBASED_CTLS3, as known to L1.  This takes into account the TD configuration.
         // Bits that are not 1 in the write mask are not modified from the current value and therefore are not checked. */
-        if (ctls3.raw & wr_mask & ~tdcs_p->virt_msrs.virt_ia32_vmx_procbased_ctls3)
+        if (ctls3.raw & wr_mask & ~tdcs_p->virt_msrs.virtual_ia32_vmx_procbased_ctls3)
         {
             return false;
         }
@@ -496,7 +496,7 @@ static uint64_t md_vp_get_element_special_rd_handle(md_field_id_t field_id, md_a
                 ia32_vmread(VMX_GUEST_INTERRUPT_STATUS_ENCODE, &interrupt_status_raw);
                 interrupt_status.raw = (uint16_t)interrupt_status_raw;
                 vcpu_state_details.raw = 0ULL;
-                if ((interrupt_status.rvi & 0xF0UL) > (md_ctx.tdvps_ptr->vapic.apic[PPR_INDEX] & 0xF0UL))
+                if ((interrupt_status.rvi & 0xF0UL) > (md_ctx.tdvps_ptr->vapic.vapic[PPR_INDEX] & 0xF0UL))
                 {
                     vcpu_state_details.vmxip = 1ULL;
                 }
@@ -640,7 +640,7 @@ static api_error_code_e md_vp_get_element(md_field_id_t field_id, const md_looku
             break;
         }
         default:
-            FATAL_ERROR();
+            fatal_error(FATAL_ERROR_ID_72, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
             break;
     }
 
@@ -725,7 +725,7 @@ _STATIC_INLINE_ void write_element_to_mem(void* element_ptr, uint64_t value, uin
         break;
 
     default:
-        FATAL_ERROR();
+        fatal_error(FATAL_ERROR_ID_73, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
         break;
     }
 }
@@ -1283,17 +1283,6 @@ static api_error_code_e md_vp_element_tdvps_wr_handle(md_field_id_t field_id, md
                     }
                     break;
                 }
-                case MD_TDVPS_XFAM_FIELD_CODE:
-                {
-                    // TODO @@@ This is a temporary solution for TDX 1.5.01 to avoid spreadsheet changes
-                    return TDX_METADATA_FIELD_NOT_WRITABLE;
-
-                    //if (!check_xfam((ia32_xcr0_t)*wr_value))
-                    //{
-                    //    return TDX_METADATA_FIELD_VALUE_NOT_VALID;
-                    //}
-                    break;
-                }
                 case MD_TDVPS_L2_CTLS_FIELD_CODE:
                 {
                     // No L2 CTLS is supported for VM #0, ignore
@@ -1388,7 +1377,10 @@ static api_error_code_e md_vp_element_tdvps_wr_handle(md_field_id_t field_id, md
                     }
                     break;
                 }
-                default: tdx_debug_assert(0);
+                default:
+                {
+                    tdx_debug_assert(0);
+                }
             }
             break;
         }
@@ -1410,7 +1402,7 @@ static api_error_code_e md_vp_element_tdvps_wr_handle(md_field_id_t field_id, md
             // Write the real MSR bitmaps page used by the CPU
             // The MSR bitmaps value is a bitwise - or of the TD's MSR bitmaps value and the shadow value.
             // Map the TD's MSR bitmaps page (it is typically unmapped).
-            uint64_t* td_msr_bitmaps_page_p = (uint64_t*)md_ctx.tdcs_ptr->MSR_BITMAPS;
+            uint64_t* td_msr_bitmaps_page_p = (uint64_t*)md_ctx.tdcs_ptr->msr_bitmaps;
             md_ctx.tdvps_ptr->l2_vm_ctrl[vm_id-1].l2_msr_bitmaps[field_id.field_code] =
                     td_msr_bitmaps_page_p[field_id.field_code] | *wr_value;
 
@@ -1544,7 +1536,7 @@ api_error_code_e md_vp_write_element(md_field_id_t field_id, const md_lookup_t* 
 
     read_value = md_vp_adjust_value_per_field_attr_on_wr(entry, read_value, wr_mask);
 
-    if (!md_check_forbidden_bits_unchanged(read_value, wr_value, wr_request_mask, wr_mask))
+    if (!md_check_forbidden_bits_unchanged(read_value, wr_value, wr_request_mask, wr_mask, rd_mask))
     {
         TDX_ERROR("Attempt to change forbidden bits, field_id = 0x%llx\n", field_id.raw);
         TDX_ERROR("read_value = 0x%llx , wr_value = 0x%llx , wr_request_mask = 0x%llx , wr_mask = 0x%llx\n",

@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "x86_defs/x86_defs.h"
 #include "data_structures/td_control_structures.h"
 #include "memory_handlers/keyhole_manager.h"
@@ -186,7 +186,11 @@ api_error_type tdh_mem_page_add(page_info_api_input_t gpa_page_info,
     cache_aligned_copy_direct((uint64_t)source_page_ptr, (uint64_t)td_page_ptr, TDX_PAGE_SIZE_IN_BYTES);
 
     // Update the parent EPT entry with the new TD page HPA and SEPT_PRESENT state
-    sept_set_leaf_unlocked_entry(page_sept_entry_ptr, SEPT_PERMISSIONS_RWX, td_page_pa, SEPT_STATE_MAPPED_MASK);
+    sept_set_leaf_unlocked_entry_given_hpa_and_hkid(page_sept_entry_ptr,
+                                                    SEPT_PERMISSIONS_RWX,
+                                                    td_page_pa,
+                                                    tdr_ptr->key_management_fields.hkid,
+                                                    SEPT_STATE_MAPPED_MASK);
 
     /**
      *  Update the TD measurements with the API string and page GPA
@@ -205,6 +209,10 @@ api_error_type tdh_mem_page_add(page_info_api_input_t gpa_page_info,
     sha_update_block.api_name.bytes[11] = 'D';
     sha_update_block.gpa = page_gpa.raw;
 
+    // preserve VMM's XCR0 state
+    local_data_ptr->vmm_xcr0_state = ia32_xgetbv(0);
+    ia32_xsetbv(0, TDX_MODULE_XCR0_WITH_AVX);
+
     store_ymms_in_buffer(ymms);
 
     if ((sha_error_code = sha384_update_128B(&(tdcs_ptr->measurement_fields.td_sha_ctx),
@@ -213,11 +221,14 @@ api_error_type tdh_mem_page_add(page_info_api_input_t gpa_page_info,
     {
         // Unexpected error - Fatal Error
         TDX_ERROR("Unexpected error in SHA384 - error = %d\n", sha_error_code);
-        FATAL_ERROR();
+        fatal_error(FATAL_ERROR_ID_110, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
     }
 
     load_ymms_from_buffer(ymms);
     basic_memset_to_zero(ymms, sizeof(ymms));
+
+    // restore VMM's XCR0 state
+    ia32_xsetbv(0, local_data_ptr->vmm_xcr0_state);
 
     // Increment TDR child count
     tdr_ptr->management_fields.chldcnt++;

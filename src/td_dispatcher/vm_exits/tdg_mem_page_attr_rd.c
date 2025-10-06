@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -60,8 +60,8 @@ api_error_type tdg_mem_page_attr_rd(pa_t page_gpa)
     tdcs_t *tdcs_ptr = local_data_ptr->vp_ctx.tdcs;
     tdr_t *tdr_ptr = local_data_ptr->vp_ctx.tdr;
 
-    tdx_sanity_check(tdcs_ptr != NULL, SCEC_TDCALL_SOURCE(TDG_MEM_PAGE_ATTR_RD_LEAF), 0);
-    tdx_sanity_check(tdr_ptr != NULL, SCEC_TDCALL_SOURCE(TDG_MEM_PAGE_ATTR_RD_LEAF), 1);
+    tdx_sanity_check(tdcs_ptr != NULL, FATAL_ERROR_ID_260, 0);
+    tdx_sanity_check(tdr_ptr != NULL, FATAL_ERROR_ID_261, 1);
 
     if (!check_gpa_validity(page_gpa, tdcs_ptr->executions_ctl_fields.gpaw, PRIVATE_ONLY, tdcs_ptr->executions_ctl_fields.virt_maxpa))
     {
@@ -121,7 +121,8 @@ api_error_type tdg_mem_page_attr_rd(pa_t page_gpa)
                                              &page_level_entry, &l2_sept_entry_copy, &l2_septe_ptr);
         if (return_val != TDX_SUCCESS)
         {
-            FATAL_ERROR();
+            extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_td_handle(local_data_ptr->vp_ctx.tdr_pa.raw, vm_id, page_level_entry, page_gpa.raw, *l2_septe_ptr);
+            fatal_error(FATAL_ERROR_ID_2, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
         }
 
         /**

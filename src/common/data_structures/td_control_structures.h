@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -37,7 +37,7 @@
 #include "crypto/aes_gcm.h"
 #include "data_structures/tdx_global_data.h"
 #include "data_structures/tdx_tdvps.h"
-#include "auto_gen/op_state_lookup.h"
+#include OP_STATE_LOOKUP_HEADER
 #include "memory_handlers/pamt_manager.h"
 
 #define NUM_RTMRS          4
@@ -72,7 +72,6 @@ typedef enum
     SEPT_ROOT_PAGE_INDEX   = 3,
     ZERO_PAGE_INDEX        = 4,
     MIGSC_LINKS_PAGE_INDEX = 5,
-
     L2_SEPT_ROOT_PAGE_BASE_INDEX = 6,  // First L2 SEPT Root page
     L2_SEPT_ROOT_PAGE_BASE_INC   = 1,  // How much the base index is incremented for each VM
 
@@ -87,7 +86,6 @@ typedef enum
     MIN_NUM_TDCS_PAGES           = 6,  // Minimum total number of TDCS pages
 
     MAX_MAPPED_TDCS_PAGES  = MAX_NUM_TDCS_PAGES
-
 } tdcs_page_index_t;
 
 _STATIC_INLINE_ uint32_t get_tdcs_sept_root_page_index(uint16_t vm_id)
@@ -158,9 +156,14 @@ typedef struct tdr_td_preserving_fields_s
 } tdr_td_preserving_fields_t;
 tdx_static_assert(sizeof(tdr_td_preserving_fields_t) == 64, tdr_td_preserving_fields_t);
 
+
+#define SIZE_OF_IO_FIELDS        16
+
 #define TDX_SIZE_OF_TDR_STRUCTS (sizeof(tdr_td_management_fields_t) + \
                                  sizeof(tdr_key_managment_fields_t) + \
-                                 sizeof(tdr_td_preserving_fields_t))
+                                 sizeof(tdr_td_preserving_fields_t) + \
+                                 SIZE_OF_IO_FIELDS)
+
 
 /**
  * @struct tdr_t
@@ -172,15 +175,17 @@ tdx_static_assert(sizeof(tdr_td_preserving_fields_t) == 64, tdr_td_preserving_fi
  */
 typedef struct ALIGN(TDX_PAGE_SIZE_IN_BYTES) tdr_s
 {
+
     tdr_td_management_fields_t        management_fields;
     tdr_key_managment_fields_t        key_management_fields;
     tdr_td_preserving_fields_t        td_preserving_fields;
-
+    uint8_t                           reserved_io[SIZE_OF_IO_FIELDS];
     uint8_t reserved[TDX_PAGE_SIZE_IN_BYTES - TDX_SIZE_OF_TDR_STRUCTS];
 
 } tdr_t;
 tdx_static_assert(sizeof(tdr_t) == TDX_PAGE_SIZE_IN_BYTES, tdr_t);
 
+#define RND_HPA_OFFSET_MASK 0x0000FFFFFFFFFFFF
 
 #define MAX_VCPUS_PER_TD        576
 
@@ -213,6 +218,7 @@ typedef struct tdcs_management_fields_s
     uint8_t reserved_1[110];
 
 } tdcs_management_fields_t;
+tdx_static_assert(sizeof(tdcs_management_fields_t) == 128, tdcs_management_fields_t);
 tdx_static_assert(sizeof(op_state_e) == 4, op_state_e);
 tdx_static_assert(sizeof(tdcs_management_fields_t) == 128, tdcs_management_fields_t);
 
@@ -222,17 +228,19 @@ tdx_static_assert(sizeof(tdcs_management_fields_t) == 128, tdcs_management_field
 
 #define TDX_ATTRIBUTES_MIGRATABLE_SUPPORT  BIT(29)
 
-#define TDX_ATTRIBUTES_PKS_SUPPORT       BIT(30)
+#define TDX_ATTRIBUTES_PKS_SUPPORT          BIT(30)
+#define TDX_ATTRIBUTES_DEBUG_SUPPORT        BIT(0)
+#define TDX_ATTRIBUTES_ICSSD_SUPPORT        BIT(16)
+#define TDX_ATTRIBUTES_PERFMON_SUPPORT      BIT(63)
 
-#define TDX_ATTRIBUTES_PERFMON_SUPPORT   BIT(63)
-
-#define TDX_ATTRIBUTES_ICSSD_SUPPORT     BIT(16)
+#define TDX_ATTRIBUTES_TPA_SUPPORT   0
 
 //  Supported ATTRIBUTES bits depend on the supported features - bits 0 (DEBUG), 29 (migratable), 30 (PKS),
-//  63 (PERFMON) and 28 (SEPT VE DISABLE)
-#define TDX_ATTRIBUTES_FIXED0 (0x1 | TDX_ATTRIBUTES_MIGRATABLE_SUPPORT | TDX_ATTRIBUTES_PKS_SUPPORT |\
-                               TDX_ATTRIBUTES_PERFMON_SUPPORT | TDX_ATTRIBUTES_SEPT_VE_DIS_SUPPORT |\
-                               TDX_ATTRIBUTES_LASS_SUPPORT | TDX_ATTRIBUTES_ICSSD_SUPPORT)
+//  62 (TPA), 63 (PERFMON), 28 (SEPT VE DISABLE), and 27 (TDX_ATTRIBUTES_LASS_SUPPORT)
+#define TDX_ATTRIBUTES_FIXED0  (TDX_ATTRIBUTES_DEBUG_SUPPORT | TDX_ATTRIBUTES_MIGRATABLE_SUPPORT | \
+                                TDX_ATTRIBUTES_PKS_SUPPORT | TDX_ATTRIBUTES_PERFMON_SUPPORT | \
+                                TDX_ATTRIBUTES_SEPT_VE_DIS_SUPPORT | TDX_ATTRIBUTES_TPA_SUPPORT | \
+                                TDX_ATTRIBUTES_LASS_SUPPORT | TDX_ATTRIBUTES_ICSSD_SUPPORT)
 #define TDX_ATTRIBUTES_FIXED1 0x0
 
 // gpaw, flexible_pending_ve, no_rbp_mode, maxpa_virt, maxgpa_virt
@@ -318,7 +326,6 @@ typedef struct tdcs_epoch_tracking_fields_s
     sharex_lock_t epoch_lock; /**< Protects the update of epoch tracking fields above as a critical region */
 
     uint8_t  reserved[46];
-
 } tdcs_epoch_tracking_fields_t;
 tdx_static_assert(sizeof(tdcs_epoch_tracking_fields_t) == 64, tdcs_epoch_tracking_fields_t);
 
@@ -473,6 +480,8 @@ tdx_static_assert(sizeof(feature_paravirt_ctls_t) == 8, feature_paravirt_ctls_t)
 #define MAX_HP_LOCK_TIMEOUT_USEC      100000000UL  // 100 sec
 #define DEFAULT_HP_LOCK_TIMEOUT_USEC  1000000UL    // 1 sec
 
+#define MAX_POSSIBLE_CPUID_LOOKUP           80
+
 /**
  * @struct tdcs_execution_control_fields_t
  *
@@ -519,14 +528,16 @@ typedef struct tdcs_execution_control_fields_s
     uint8_t                      reserved_2[3];
     bool_t                       topology_enum_configured;
     bool_t                       ve_reduction_valid;
-    uint8_t                      reserved_3[6];
-    uint8_t                      cpuid_valid[80];
+    uint8_t                      reserved_3[2];
+    uint32_t                     perfmon_ext_subleaves_bitmap;
+    uint8_t                      cpuid_valid[MAX_POSSIBLE_CPUID_LOOKUP];
     ALIGN(16) uint32_t           xbuff_offsets[XBUFF_OFFSETS_NUM];
     uint8_t                      reserved_4[36];
 } tdcs_execution_control_fields_t;
 tdx_static_assert(sizeof(tdcs_execution_control_fields_t) == 384, tdcs_execution_control_fields_t);
 // Validate that the size of gpaw (bool_t) is 1 byte
 tdx_static_assert(sizeof(bool_t) == 1, gpaw);
+
 
 #define TDCS_MEASUREMEMNT_MRTD_CTX_SIZE         352
 
@@ -537,16 +548,16 @@ tdx_static_assert(sizeof(bool_t) == 1, gpaw);
  */
 typedef struct tdcs_measurement_fields_s
 {
-    measurement_t  mr_td; /**< Measurement of the initial contents of the TD */
-    measurement_t  mr_config_id; /**< Software defined ID for additional configuration for the SW in the TD */
-    measurement_t  mr_owner; /**< Software defined ID for TD's owner */
+    measurement_t  mrtd; /**< Measurement of the initial contents of the TD */
+    measurement_t  mrconfigid; /**< Software defined ID for additional configuration for the SW in the TD */
+    measurement_t  mrowner; /**< Software defined ID for TD's owner */
     /**
      * Software defined ID for owner-defined configuration of the guest TD,
      * e.g., specific to the workload rather than the runtime or OS.
      */
 
-    measurement_t  mr_owner_config; /**< Software defined ID for TD's owner */
-    measurement_t  rtmr [NUM_RTMRS]; /**< Array of NUM_RTMRS runtime extendable measurement registers */
+    measurement_t  mrownerconfig; /**< Software defined ID for TD's owner */
+    measurement_t  rtmr[NUM_RTMRS]; /**< Array of NUM_RTMRS runtime extendable measurement registers */
 
     measurement_t  last_teeinfo_hash;
 
@@ -587,12 +598,14 @@ typedef struct tdcs_migration_fields_s
     key256_t          mig_enc_working_key;
     uint16_t          mig_version;
     uint16_t          mig_working_version;
+    uint32_t          reserved2;
     uint64_t          dirty_count;
     uint64_t          mig_count;
     uint16_t          num_migs;
-    uint8_t           reserved_0[2];
+    uint8_t           S4_migrated;
+    uint8_t           reserved_0;
     uint32_t          num_migrated_vcpus;
-    uint256_t         preimport_uuid;
+    uint256_t         pre_import_uuid;
     sharex_lock_t     mig_lock;
 
     uint8_t           reserved_1[158];
@@ -607,22 +620,22 @@ tdx_static_assert(sizeof(tdcs_migration_fields_t) == 384, tdcs_migration_fields_
  */
 typedef struct tdcs_virt_msrs_s
 {
-    ia32_vmx_basic_t                virt_ia32_vmx_basic;
-    ia32_vmx_misc_t                 virt_ia32_vmx_misc;
-    ia32_cr0_t                      virt_ia32_vmx_cr0_fixed0;
-    ia32_cr0_t                      virt_ia32_vmx_cr0_fixed1;
-    ia32_cr4_t                      virt_ia32_vmx_cr4_fixed0;
-    ia32_cr4_t                      virt_ia32_vmx_cr4_fixed1;
-    ia32_vmx_allowed_bits_t         virt_ia32_vmx_procbased_ctls2;
-    ia32_vmx_ept_vpid_cap_t         virt_ia32_vmx_ept_vpid_cap;
-    ia32_vmx_allowed_bits_t         virt_ia32_vmx_true_pinbased_ctls;
-    ia32_vmx_allowed_bits_t         virt_ia32_vmx_true_procbased_ctls;
-    ia32_vmx_allowed_bits_t         virt_ia32_vmx_true_exit_ctls;
-    ia32_vmx_allowed_bits_t         virt_ia32_vmx_true_entry_ctls;
-    uint64_t                        virt_ia32_vmx_vmfunc;
-    uint64_t                        virt_ia32_vmx_procbased_ctls3;
-    uint64_t                        virt_ia32_vmx_exit_ctls2;
-    uint64_t                        virt_ia32_arch_capabilities;
+    ia32_vmx_basic_t                virtual_ia32_vmx_basic;
+    ia32_vmx_misc_t                 virtual_ia32_vmx_misc;
+    ia32_cr0_t                      virtual_ia32_vmx_cr0_fixed0;
+    ia32_cr0_t                      virtual_ia32_vmx_cr0_fixed1;
+    ia32_cr4_t                      virtual_ia32_vmx_cr4_fixed0;
+    ia32_cr4_t                      virtual_ia32_vmx_cr4_fixed1;
+    ia32_vmx_allowed_bits_t         virtual_ia32_vmx_procbased_ctls2;
+    ia32_vmx_ept_vpid_cap_t         virtual_ia32_vmx_ept_vpid_cap;
+    ia32_vmx_allowed_bits_t         virtual_ia32_vmx_true_pinbased_ctls;
+    ia32_vmx_allowed_bits_t         virtual_ia32_vmx_true_procbased_ctls;
+    ia32_vmx_allowed_bits_t         virtual_ia32_vmx_true_exit_ctls;
+    ia32_vmx_allowed_bits_t         virtual_ia32_vmx_true_entry_ctls;
+    uint64_t                        virtual_ia32_vmx_vmfunc;
+    uint64_t                        virtual_ia32_vmx_procbased_ctls3;
+    uint64_t                        virtual_ia32_vmx_exit_ctls2;
+    uint64_t                        virtual_ia32_arch_capabilities;
 
     uint8_t                         reserved[128];
 } tdcs_virt_msrs_t;
@@ -691,7 +704,6 @@ typedef struct tdcs_execution_control2_field_s
 } tdcs_execution_control2_field_t;
 tdx_static_assert(sizeof(tdcs_execution_control2_field_t) == 512, tdcs_execution_control2_field_t);
 
-#define MAX_POSSIBLE_CPUID_LOOKUP           80
 
 #if (MAX_POSSIBLE_CPUID_LOOKUP < MAX_NUM_CPUID_LOOKUP)
 #error "Invalid number of MAX_POSSIBLE_CPUID_LOOKUP"
@@ -728,7 +740,7 @@ typedef struct ALIGN(TDX_PAGE_SIZE_IN_BYTES) tdcs_s
     /**
      * Values returned by the matching configurable CPUID leaf and sub-leaf.
      */
-    cpuid_config_return_values_t           cpuid_config_vals[MAX_POSSIBLE_CPUID_LOOKUP];
+    cpuid_config_return_values_t           cpuid_values[MAX_POSSIBLE_CPUID_LOOKUP];
 
     /**
      * Service TD Fields
@@ -743,23 +755,24 @@ typedef struct ALIGN(TDX_PAGE_SIZE_IN_BYTES) tdcs_s
 
     uint8_t                                reserved_io[256];
 
-    /**
-     * TDCX 3rd page - MSR Bitmaps
-     */
-    ALIGN(4096) uint8_t MSR_BITMAPS[TDX_PAGE_SIZE_IN_BYTES]; /**< TD-scope RDMSR/WRMSR exit control bitmaps */
 
     /**
-     * TDCX 4th page - Secure EPT Root Page
+     * TDCX 5th page - MSR Bitmaps
      */
-    uint8_t sept_root_page[TDX_PAGE_SIZE_IN_BYTES];
+    ALIGN(4096) uint8_t msr_bitmaps[TDX_PAGE_SIZE_IN_BYTES]; /**< TD-scope RDMSR/WRMSR exit control bitmaps */
 
     /**
-     * TDCX 5th page - Zero Page
+     * TDCX 6th page - Secure EPT Root Page
+     */
+    uint8_t sept_root[TDX_PAGE_SIZE_IN_BYTES];
+
+    /**
+     * TDCX 7th page - Zero Page
      */
     uint8_t zero_page[TDX_PAGE_SIZE_IN_BYTES];
 
     /**
-     * TDCX 6th page - MIGSC links page
+     * TDCX 8th page - MIGSC links page
      */
     union
     {
@@ -772,21 +785,13 @@ typedef struct ALIGN(TDX_PAGE_SIZE_IN_BYTES) tdcs_s
     };
 
     /**
-     * TDCX 7th-9th page - L2 Secure EPT Root
+     * TDCX 9th-11th page - L2 Secure EPT Root
      */
-    uint8_t L2_SEPT_ROOT_1[TDX_PAGE_SIZE_IN_BYTES];
-    uint8_t L2_SEPT_ROOT_2[TDX_PAGE_SIZE_IN_BYTES];
-    uint8_t L2_SEPT_ROOT_3[TDX_PAGE_SIZE_IN_BYTES];
-
+    uint8_t l2_sept_root_1[TDX_PAGE_SIZE_IN_BYTES];
+    uint8_t l2_sept_root_2[TDX_PAGE_SIZE_IN_BYTES];
+    uint8_t l2_sept_root_3[TDX_PAGE_SIZE_IN_BYTES];
 } tdcs_t;
 tdx_static_assert(sizeof(tdcs_t) == TDX_PAGE_SIZE_IN_BYTES*MAX_NUM_TDCS_PAGES, tdcs_t);
-tdx_static_assert(sizeof_field(tdcs_t, cpuid_config_vals) == 1280, cpuid_config_vals);
-tdx_static_assert(offsetof(tdcs_t, cpuid_config_vals) == 0x800, cpuid_config_vals_offset);
-tdx_static_assert(offsetof(tdcs_t, executions_ctl2_fields) == 0xF00, executions_ctl2_fields);
-tdx_static_assert(offsetof(tdcs_t, MSR_BITMAPS)      == TDX_PAGE_SIZE_IN_BYTES*MSR_BITMAPS_PAGE_INDEX, tdcs_t);
-tdx_static_assert(offsetof(tdcs_t, sept_root_page)   == TDX_PAGE_SIZE_IN_BYTES*SEPT_ROOT_PAGE_INDEX, tdcs_t);
-tdx_static_assert(offsetof(tdcs_t, zero_page)        == TDX_PAGE_SIZE_IN_BYTES*ZERO_PAGE_INDEX, tdcs_t);
-tdx_static_assert(offsetof(tdcs_t, migsc_links_page) == TDX_PAGE_SIZE_IN_BYTES*MIGSC_LINKS_PAGE_INDEX, tdcs_t);
 
 _STATIC_INLINE_ bool_t is_required_tdcs_allocated(tdr_t *tdr_p, uint16_t num_l2_vms)
 {

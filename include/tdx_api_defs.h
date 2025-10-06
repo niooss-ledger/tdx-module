@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 /**
  * @file tdx_api_defs.h
@@ -29,7 +29,8 @@
 #include "tdx_basic_types.h"
 #include "tdx_basic_defs.h"
 #include "crypto/sha384.h"
-#include "auto_gen/cpuid_configurations_defines.h"
+#include "metadata_sorter.h"
+#include CPUID_CONFIGURATIONS_DEFINES_HEADER
 
 #pragma pack(push)
 #pragma pack(1)
@@ -85,9 +86,9 @@ typedef enum seamcall_leaf_opcode_e
     TDH_SYS_CONFIG_LEAF              = 45,
 
     TDH_SYS_SHUTDOWN_LEAF            = 52,
-    TDH_SYS_UPDATE_LEAF              = 53
+    TDH_SYS_UPDATE_LEAF              = 53,
 
-    ,TDH_SERVTD_BIND_LEAF            = 48,
+    TDH_SERVTD_BIND_LEAF             = 48,
     TDH_SERVTD_PREBIND_LEAF          = 49,
     TDH_EXPORT_ABORT_LEAF            = 64,
     TDH_EXPORT_BLOCKW_LEAF           = 65,
@@ -120,27 +121,30 @@ typedef enum seamcall_leaf_opcode_e
 /**< Enum for TDCALL leaves opcodes */
 typedef enum tdcall_leaf_opcode_e
 {
-    TDG_VP_VMCALL_LEAF         = 0,
-    TDG_VP_INFO_LEAF           = 1,
-    TDG_MR_RTMR_EXTEND_LEAF    = 2,
-    TDG_VP_VEINFO_GET_LEAF     = 3,
-    TDG_MR_REPORT_LEAF         = 4,
-    TDG_VP_CPUIDVE_SET_LEAF    = 5,
-    TDG_MEM_PAGE_ACCEPT_LEAF   = 6,
-    TDG_VM_RD_LEAF             = 7,
-    TDG_VM_WR_LEAF             = 8,
-    TDG_VP_RD_LEAF             = 9,
-    TDG_VP_WR_LEAF             = 10,
-    TDG_SYS_RD_LEAF            = 11,
-    TDG_SYS_RDALL_LEAF         = 12,
-    TDG_SERVTD_RD_LEAF         = 18,
-    TDG_SERVTD_WR_LEAF         = 20,
-    TDG_MR_VERIFYREPORT_LEAF   = 22,
-    TDG_MEM_PAGE_ATTR_RD_LEAF  = 23,
-    TDG_MEM_PAGE_ATTR_WR_LEAF  = 24,
-    TDG_VP_ENTER_LEAF          = 25,
-    TDG_VP_INVEPT_LEAF         = 26,
-    TDG_VP_INVVPID_LEAF        = 27
+    TDG_VP_VMCALL_LEAF           = 0,
+    TDG_VP_INFO_LEAF             = 1,
+    TDG_MR_RTMR_EXTEND_LEAF      = 2,
+    TDG_VP_VEINFO_GET_LEAF       = 3,
+    TDG_MR_REPORT_LEAF           = 4,
+    TDG_VP_CPUIDVE_SET_LEAF      = 5,
+    TDG_MEM_PAGE_ACCEPT_LEAF     = 6,
+    TDG_VM_RD_LEAF               = 7,
+    TDG_VM_WR_LEAF               = 8,
+    TDG_VP_RD_LEAF               = 9,
+    TDG_VP_WR_LEAF               = 10,
+    TDG_SYS_RD_LEAF              = 11,
+    TDG_SYS_RDALL_LEAF           = 12,
+
+    TDG_SERVTD_RD_LEAF           = 18,
+    TDG_SERVTD_WR_LEAF           = 20,
+
+    TDG_MR_VERIFYREPORT_LEAF     = 22,
+    TDG_MEM_PAGE_ATTR_RD_LEAF    = 23,
+    TDG_MEM_PAGE_ATTR_WR_LEAF    = 24,
+    TDG_VP_ENTER_LEAF            = 25,
+    TDG_VP_INVEPT_LEAF           = 26,
+    TDG_VP_INVVPID_LEAF          = 27
+
 } tdcall_leaf_opcode_t;
 
 typedef union tdx_leaf_and_version_u
@@ -339,6 +343,7 @@ typedef union
     };
     uint32_t values[4];
 } cpuid_config_return_values_t;
+tdx_static_assert(sizeof(cpuid_config_return_values_t) == 16, cpuid_config_return_values_t);
 
 typedef struct
 {
@@ -370,7 +375,8 @@ typedef union td_param_attributes_s {
         uint64_t migratable      : 1;   // Bit 29
         uint64_t pks             : 1;   // Bit 30
         uint64_t kl              : 1;   // Bit 31
-        uint64_t reserved_other  : 31;  // Bits 62:32
+        uint64_t reserved_other  : 30;  // Bits 62:32
+        uint64_t tpa             : 1;   // Bit 62
         uint64_t perfmon         : 1;   // Bit 63
     };
     uint64_t raw;
@@ -783,8 +789,8 @@ typedef struct PACKED td_info_s
      */
     measurement_t  mr_owner_config;
     measurement_t  rtmr[NUM_OF_RTMRS]; /**<  Array of NUM_RTMRS runtime extendable measurement registers */
-    measurement_t  servtd_hash;
 
+    measurement_t  servtd_hash;
     uint8_t        reserved[64];
 } td_info_t;
 tdx_static_assert(sizeof(td_info_t) == SIZE_OF_TD_INFO_STRUCT_IN_BYTES, td_info_t);
@@ -856,6 +862,16 @@ typedef union api_error_code_u
                  non_recoverable          : 1, // 62
                  error                    : 1; // 63
     };
+
+    struct
+    {
+        uint64_t info_0 : 8;
+        uint64_t info_1 : 8;
+        uint64_t info_2 : 8;
+        uint64_t info_3 : 8;
+        uint64_t rsrvd  : 32;
+    };
+
     uint64_t raw;
 } api_error_code_t;
 tdx_static_assert(sizeof(api_error_code_t) == 8, api_error_code_t);
@@ -864,13 +880,15 @@ typedef uint64_t api_error_type;
 
 _STATIC_INLINE_ api_error_type api_error_with_operand_id(api_error_type error, uint64_t operand_id)
 {
-    return error + operand_id;
+    api_error_code_t error_code = {.raw = error};
+    error_code.operand = (uint32_t)operand_id;
+    return error_code.raw;
 }
 
 _STATIC_INLINE_ api_error_type api_error_with_operand_id_fatal(api_error_type error, uint64_t operand_id)
 {
-    api_error_code_t error_code;
-    error_code.raw = error + operand_id;
+    api_error_code_t error_code = {.raw = error};
+    error_code.operand = (uint32_t)operand_id;
     error_code.fatal = 1;
     return error_code.raw;
 }
@@ -878,8 +896,7 @@ _STATIC_INLINE_ api_error_type api_error_with_operand_id_fatal(api_error_type er
 _STATIC_INLINE_ api_error_type api_error_with_l2_details(api_error_type error, uint16_t details_l2_high,
                                                          uint16_t details_l2_low)
 {
-    api_error_code_t error_code;
-    error_code.raw = error;
+    api_error_code_t error_code = {.raw = error};
     error_code.details_l2_high = details_l2_high;
     error_code.details_l2_low  = details_l2_low;
     return error_code.raw;
@@ -888,7 +905,13 @@ _STATIC_INLINE_ api_error_type api_error_with_l2_details(api_error_type error, u
 _STATIC_INLINE_ api_error_type api_error_with_multiple_info(api_error_type error, uint8_t info_0,
                                                             uint8_t info_1, uint8_t info_2, uint8_t info_3)
 {
-    return error + (uint64_t)info_0 + ((uint64_t)info_1 << 8) + ((uint64_t)info_2 << 16) + ((uint64_t)info_3 << 24);
+    api_error_code_t error_code = {.raw = error};
+    error_code.info_0 = (uint8_t)info_0;
+    error_code.info_1 = (uint8_t)info_1;
+    error_code.info_2 = (uint8_t)info_2;
+    error_code.info_3 = (uint8_t)info_3;
+
+    return error_code.raw;
 }
 
 _STATIC_INLINE_ api_error_type api_error_fatal(api_error_type error)
@@ -1078,37 +1101,39 @@ typedef union tdx_features_enum0_u
 {
     struct
     {
-        uint64_t td_migration                :  1;   // Bit 0
-        uint64_t td_preserving               :  1;   // Bit 1
-        uint64_t service_td                  :  1;   // Bit 2
-        uint64_t tdg_vp_rdwr                 :  1;   // Bit 3
-        uint64_t relaxed_mem_mng_concurrency :  1;   // Bit 4
-        uint64_t cpuid_virt_guest_ctrl       :  1;   // Bit 5
-        uint64_t reserved_0                  :  1;   // Bit 6
-        uint64_t td_partitioning             :  1;   // Bit 7
-        uint64_t local_attestation           :  1;   // Bit 8
-        uint64_t td_entry_enhancements       :  1;   // Bit 9
-        uint64_t host_priority_locks         :  1;   // Bit 10
-        uint64_t config_ia32_arch_cap        :  1;   // Bit 11
-        uint64_t reserved_1                  :  4;   // Bits 15:12
-        uint64_t pending_ept_violation_v2    :  1;   // Bit 16
-        uint64_t fms_config                  :  1;   // Bit 17
-        uint64_t no_rbp_mod                  :  1;   // Bit 18
-        uint64_t l2_tlb_invd_opt             :  1;   // Bit 19
-        uint64_t topology_enum               :  1;   // Bit 20
-        uint64_t partitioned_td_migration    :  1;   // Bit 21
-        uint64_t reserved_2                  :  2;   // Bits 23:22
-        uint64_t event_filtering             :  1;   // Bit 24
-        uint64_t icssd                       :  1;   // Bit 25
-        uint64_t fixed_ctr12_prof            :  1;   // Bit 26
-        uint64_t maxpa_virt                  :  1;   // Bit 27
-        uint64_t apx                         :  1;   // Bit 28
-        uint64_t cpuid2_virt                 :  1;   // Bit 29
-        uint64_t ve_reduction                :  1;   // Bit 30
-        uint64_t enhanced_event_filtering    :  1;   // Bit 31
-        uint64_t tdx_connect_partitioning    :  1;   // Bit 32
-        uint64_t maxgpa_virt                 :  1;   // Bit 33
-        uint64_t reserved_5                  : 30;   // Bits 63:34
+        uint64_t td_migration                :  1;    // Bit 0
+        uint64_t td_preserving               :  1;    // Bit 1
+        uint64_t service_td                  :  1;    // Bit 2
+        uint64_t tdg_vp_rdwr                 :  1;    // Bit 3
+        uint64_t relaxed_mem_mng_concurrency :  1;    // Bit 4
+        uint64_t cpuid_virt_guest_ctrl       :  1;    // Bit 5
+        uint64_t tdx_io                      :  1;    // Bit 6
+        uint64_t td_partitioning             :  1;    // Bit 7
+        uint64_t local_attestation           :  1;    // Bit 8
+        uint64_t td_entry_enhancements       :  1;    // Bit 9
+        uint64_t host_priority_locks         :  1;    // Bit 10
+        uint64_t config_ia32_arch_cap        :  1;    // Bit 11
+        uint64_t reserved_1                  :  4;    // Bits 15:12
+        uint64_t pending_ept_violation_v2    :  1;    // Bit 16
+        uint64_t fms_config                  :  1;    // Bit 17
+        uint64_t no_rbp_mod                  :  1;    // Bit 18
+        uint64_t l2_tlb_invd_opt             :  1;    // Bit 19
+        uint64_t topology_enum               :  1;    // Bit 20
+        uint64_t partitioned_td_migration    :  1;    // Bit 21
+        uint64_t reserved_2                  :  2;    // Bits 23:22
+        uint64_t event_filtering             :  1;    // Bit 24
+        uint64_t icssd                       :  1;    // Bit 25
+        uint64_t fixed_ctr12_prof            :  1;    // Bit 26
+        uint64_t maxpa_virt                  :  1;    // Bit 27
+        uint64_t apx                         :  1;    // Bit 28
+        uint64_t cpuid2_virt                 :  1;    // Bit 29
+        uint64_t ve_reduction                :  1;    // Bit 30
+        uint64_t enhanced_event_filtering    :  1;    // Bit 31
+        uint64_t tdx_connect_partitioning    :  1;    // Bit 32
+        uint64_t maxgpa_virt                 :  1;    // Bit 33
+        uint64_t reserved_5                  :  3;    // Bits 36:34
+        uint64_t fatal_diagnostics           :  1;    // Bit 37
+        uint64_t reserved_6                  : 26;    // Bits 63:38
     };
     uint64_t raw;
 } tdx_features_enum0_t;
@@ -1229,7 +1254,7 @@ typedef union td_handle_and_flags_u
     struct
     {
         uint64_t allow_existing    : 1;  // Used for TDH.MEM.SEPT.ADD only
-                                   
+
         uint64_t reserved_0        : 11; // Used for all relevant API's...
         uint64_t tdr_hpa_51_12     : 40;
         uint64_t reserved_1        : 12;

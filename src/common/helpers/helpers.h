@@ -30,9 +30,9 @@
 
 #include "tdx_basic_defs.h"
 #include "tdx_basic_types.h"
-#include "auto_gen/tdx_error_codes_defs.h"
-#include "auto_gen/td_l2_vmcs_fields_lookup.h"
 #include "tdx_api_defs.h"
+#include TD_L2_VMCS_FIELDS_LOOKUP_HEADER
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "x86_defs/x86_defs.h"
 #include "accessors/data_accessors.h"
 #include "accessors/vt_accessors.h"
@@ -49,6 +49,9 @@
 #define CPUID_SUBLEAF_NA           ((uint32_t)-1)
 
 #define QUADWORDS_IN_256b 4
+
+// (Y + (x-1))/x == padded Y to be x aligned
+#define CALCULATE_NUMBER_OF_UNITS_WITH_PADDING(entries, alignment_unit) ((entries + alignment_unit -1) / alignment_unit)
 
 _STATIC_INLINE_ bool_t is_equal_256bit(uint256_t a, uint256_t b)
 {
@@ -172,6 +175,18 @@ _STATIC_INLINE_ pa_t set_hkid_to_pa(pa_t pa, uint16_t hkid)
     return pa;
 }
 
+/**
+ * @brief Remove HKID from PA, except if a NULL_PA is passed
+ *
+ * @param pa
+ *
+ * @return pa_t
+ */
+_STATIC_INLINE_ pa_t remove_hkid_from_pa(const pa_t pa)
+{
+    return pa.raw == NULL_PA ? pa : set_hkid_to_pa(pa, 0);
+};
+
 _STATIC_INLINE_ bool_t is_addr_aligned_pwr_of_2(uint64_t addr, uint64_t size)
 {
     tdx_debug_assert((size > 1) && ((size & (size - 1)) == 0));
@@ -222,7 +237,7 @@ _STATIC_INLINE_ bool_t is_overlap(uint64_t base, uint64_t size, uint64_t base2, 
     // The check here is for DiD only, not functionality
     IF_RARE (!is_valid_integer_range(base, size) || !is_valid_integer_range(base2, size2))
     {
-        FATAL_ERROR();
+        fatal_error(FATAL_ERROR_ID_37, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
     }
 
     if ((base >= (base2 + size2)) || (base2 >= (base + size)))
@@ -236,7 +251,7 @@ _STATIC_INLINE_ uint64_t mask_to_size(uint64_t mask)
 {
     if (mask == 0)
     {
-        FATAL_ERROR();
+        fatal_error(FATAL_ERROR_ID_38, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
     }
 
     uint64_t lsb_position;
@@ -257,10 +272,23 @@ _STATIC_INLINE_ void* map_pa_with_hkid(void* pa, uint16_t hkid, mapping_type_t m
     return map_pa((void*) pa_with_hkid.raw, mapping_type);
 }
 
+_STATIC_INLINE_ void* map_pa_with_hkid_with_memtype(void* pa, uint16_t hkid, mapping_type_t mapping_type, bool_t is_wb_memtype)
+{
+    pa_t temp_pa = { .raw_void = pa };
+    pa_t pa_with_hkid = set_hkid_to_pa(temp_pa, hkid);
+    return map_pa_with_memtype((void*)pa_with_hkid.raw_void, mapping_type, is_wb_memtype);
+}
+
 _STATIC_INLINE_ void* map_pa_with_global_hkid(void* pa, mapping_type_t mapping_type)
 {
     uint16_t tdx_global_hkid = get_global_data()->hkid;
     return map_pa_with_hkid(pa, tdx_global_hkid, mapping_type);
+}
+
+_STATIC_INLINE_ void* map_pa_with_global_hkid_uncached(void* pa, mapping_type_t mapping_type)
+{
+    uint16_t tdx_global_hkid = get_global_data()->hkid;
+    return map_pa_with_hkid_with_memtype(pa, tdx_global_hkid, mapping_type, false);
 }
 
 /**
@@ -291,7 +319,7 @@ _STATIC_INLINE_ uint64_t leaf_ept_entry_to_hpa(ia32e_sept_t entry, uint64_t gpa,
         default:
         {
             // Not supported
-            tdx_sanity_check(0, SCEC_HELPERS_SOURCE, 0);
+            tdx_sanity_check(0, FATAL_ERROR_ID_182, 0);
             return 0;
         }
     }
@@ -413,12 +441,25 @@ _STATIC_INLINE_ void tdx_memcpy(void * dst, uint64_t dst_bytes, void * src, uint
 {
     volatile uint64_t junk_a, junk_b;
 
-    tdx_sanity_check (dst_bytes >= nbytes, SCEC_HELPERS_SOURCE, 1);
+    tdx_sanity_check (dst_bytes >= nbytes, FATAL_ERROR_ID_183, 1);
 
     _ASM_VOLATILE_ ("rep; movsb;"
                     :"=S"(junk_a), "=D"(junk_b)
                     :"c"(nbytes), "S"(src), "D"(dst)
                     :"memory");
+}
+
+_STATIC_INLINE_ void tdx_memcpy_dw(void *dst, uint64_t dst_bytes, void *src, uint64_t nbytes)
+{
+    volatile uint64_t junk_a, junk_b;
+
+    tdx_sanity_check(dst_bytes >= nbytes, FATAL_ERROR_ID_184, 2);
+    tdx_sanity_check((nbytes % 4) == 0, FATAL_ERROR_ID_185, 4);
+
+    _ASM_VOLATILE_("rep; movsd;"
+                   : "=S"(junk_a), "=D"(junk_b)
+                   : "c"(nbytes / 4), "S"(src), "D"(dst)
+                   : "memory");
 }
 
 _STATIC_INLINE_ bool_t tdx_memcmp_safe(const void * a, const void * b, uint64_t nbytes)
@@ -450,6 +491,21 @@ _STATIC_INLINE_ bool_t tdx_memcmp(void * a, void * b, uint64_t nbytes)
         return false;
     }
     return true;
+}
+
+_STATIC_INLINE_ bool_t tdx_safe_memcmp(const void * a, const void * b, uint64_t nbytes)
+{
+    volatile uint8_t result = 0;
+
+    volatile uint8_t* a_8 = (uint8_t*)a;
+    volatile uint8_t* b_8 = (uint8_t*)b;
+
+    for (uint64_t i = 0; i < nbytes; i++)
+    {
+        result |= (a_8[i] ^ b_8[i]);
+    }
+
+    return (result == 0);
 }
 
 _STATIC_INLINE_ bool_t tdx_memcmp_to_zero(void *a, uint64_t nBytes)
@@ -803,8 +859,13 @@ api_error_type lock_sept_check_and_walk_private_gpa(
         bool_t* is_sept_locked
         );
 
+
 /**
- * @brief Same as check_and_walk_private_gpa_to_leaf_level, but checks the final leaf entry to be present
+ * @brief Same as lock_sept_check_and_walk_private_gpa, but walks until reaches any leaf,
+ *        instead of specific requested level.
+ *
+ * @param level - Doesn't receives a request walk level. Returns the reached leaf entry level,
+ *                or any higher level if the walk failed from any reason.
  *
  */
 api_error_type check_and_walk_private_gpa_to_leaf(
@@ -815,6 +876,39 @@ api_error_type check_and_walk_private_gpa_to_leaf(
         ia32e_sept_t** sept_entry_ptr,
         ept_level_t* level,
         ia32e_sept_t* cached_sept_entry
+        );
+
+/**
+ * @brief Checks a GPA to be valid, and GPA.SHARED bit == 0, translates it and returns requested
+ *        EPT entry, and the reached walking level.
+ *
+ * @note Function takes an exclusive lock over SEPT (TDCS.SEPT_LOCK). Lock should be freed after
+ *       the returned EPT entry is no longer used.
+ *
+ * @param tdcs_p - Linear pointer to the TDCS - used to get GPAW, SEPTP and acquire SEPT lock.
+ * @param operand_id - Operand ID number
+ * @param gpa - GPA - Guest Physical Address that needs to be checked and translated.
+ * @param lock_type - Type of lock to take on the SEPT root lock
+ * @param sept_entry - Returns a linear pointer to the SEPT entry at the requested level.
+ *                     Returns NULL if walk failed and didn't reach the requested level.
+ *                     Should be freed after finishing using it (only on success).
+ * @param level - Returns the EPT level
+ * @param cached_ept_entry - Pointer to a EPT entry parameter. On return contains cached value
+ *               of the last sampled EPT entry (even on failure).
+ * @param is_sept_locked - A boolean flag indicating if the TDCS.SEPT_LOCK was exclusively taken.
+ *
+ * @return Error code that states the reason of failure
+ */
+api_error_type lock_sept_check_and_walk_private_gpa_to_leaf(
+        tdcs_t* tdcs_p,
+        uint64_t operand_id,
+        pa_t gpa,
+        uint16_t hkid,
+        lock_type_t lock_type,
+        ia32e_sept_t** sept_entry_ptr,
+        ept_level_t* level,
+        ia32e_sept_t* cached_sept_entry,
+        bool_t* is_sept_locked
         );
 
 /**
@@ -829,6 +923,14 @@ api_error_type check_and_walk_private_gpa_to_leaf(
  * @return true or false
  */
 bool_t verify_page_info_input(page_info_api_input_t gpa_page_info, ept_level_t min_level, ept_level_t max_level);
+
+/**
+ * @brief Returns the page size per given ept_level
+ * @param ept_level
+ *
+ * @return uint64_t
+*/
+uint64_t get_page_size_per_level(ept_level_t ept_level);
 
 /**
  * @brief Translates the GPA and returns requested EPT entry, and the reached walking level.
@@ -876,6 +978,24 @@ api_error_code_e check_walk_and_map_guest_side_gpa(
         uint16_t hkid,
         mapping_type_t mapping_type,
         bool_t check_gpa_is_private,
+        void ** la
+        );
+
+/**
+ * @brief If shared bit is 1, walks the shared EPT (taken from the TD VMCS)
+ *        Else walk the SEPT and finally maps the translated GPA
+ *
+ * @param tdcs_p Linear pointer to the TDCS - used to get GPAW and SEPTP
+ * @param gpa GPA - sGuest Physical Address that needs to be checked and translated.
+ * @param hkid HKID to be used during the SEPT page walk (accesses to SEPT entries)
+ * @param mapping_type RW access to mapped linear address
+ * @param la Pointer to linear address mapped from translated GPA
+ */
+void walk_and_map_guest_side_gpa(
+        const tdcs_t *const tdcs_p,
+        const pa_t gpa,
+        const uint16_t hkid,
+        const mapping_type_t mapping_type,
         void ** la
         );
 
@@ -1090,6 +1210,8 @@ _STATIC_INLINE_ void set_seam_vmcs_as_active(void)
     get_local_data()->vp_ctx.active_vmcs = ACTIVE_VMCS_NONE;
 }
 
+uint64_t get_guest_cr0_pe(void);
+
 /**
  * @brief Reinjects IDT vectoring event as VOE instead to the TD.
  *
@@ -1141,7 +1263,7 @@ _STATIC_INLINE_ void inject_gp(uint32_t error_code)
     rflags.rf = 1;
     ia32_vmwrite(VMX_GUEST_RFLAGS_ENCODE, rflags.raw);
 
-    ia32_vmwrite(VMX_VM_ENTRY_INTR_INFO_ENCODE, GP_INTERRUPTION_INFO);
+    ia32_vmwrite(VMX_VM_ENTRY_INTR_INFO_ENCODE, GP_INTERRUPTION_INFO | (get_guest_cr0_pe() << DELIVER_ERROR_CODE_OFFSET));
     ia32_vmwrite(VMX_VM_ENTRY_EXCEPTION_ERRORCODE_ENCODE, (uint64_t)error_code);
 }
 
@@ -1158,7 +1280,7 @@ _STATIC_INLINE_ void inject_ve(void)
  */
 _STATIC_INLINE_ void inject_df(void)
 {
-    ia32_vmwrite(VMX_VM_ENTRY_INTR_INFO_ENCODE, DF_INTERRUPTION_INFO);
+    ia32_vmwrite(VMX_VM_ENTRY_INTR_INFO_ENCODE, DF_INTERRUPTION_INFO | (get_guest_cr0_pe() << DELIVER_ERROR_CODE_OFFSET));
     ia32_vmwrite(VMX_VM_ENTRY_EXCEPTION_ERRORCODE_ENCODE, 0);
 }
 
@@ -1180,7 +1302,7 @@ _STATIC_INLINE_ void current_vmcs_guest_rip_advance(uint64_t instruction_len)
     if (instruction_len == 0)
     {
         ia32_vmread(VMX_VM_EXIT_INSTRUCTION_LENGTH_ENCODE, &instruction_len);
-        tdx_sanity_check(instruction_len != 0, SCEC_HELPERS_SOURCE, 1);
+        tdx_sanity_check(instruction_len != 0, FATAL_ERROR_ID_186, 1);
     }
 
     ia32_vmwrite(VMX_GUEST_RIP_ENCODE, current_vmm_rip + instruction_len);
@@ -1192,13 +1314,24 @@ _STATIC_INLINE_ void save_guest_td_extended_state(tdvps_t* tdvps_ptr, uint64_t x
     ia32_xsetbv(0, xfam & XCR0_USER_BIT_MASK);
     ia32_wrmsr(IA32_XSS_MSR_ADDR, xfam & XCR0_SUPERVISOR_BIT_MASK);
 
-    ia32_xsaves(&tdvps_ptr->guest_extension_state.xbuf, xfam);
+    ia32_xsaves(&tdvps_ptr->guest_extension_state.xbuff, xfam);
 }
 
-_STATIC_INLINE_ ia32e_eptp_t get_l2_septp(tdr_t* tdr_ptr, tdcs_t* tdcs_ptr, uint16_t vm_id)
+_STATIC_INLINE_ ia32e_eptp_t get_l2_septp_with_hkid(tdr_t* tdr_ptr, tdcs_t* tdcs_ptr, uint16_t vm_id)
 {
     pa_t sept_root_hpa = { .raw = tdr_ptr->management_fields.tdcx_pa[get_tdcs_sept_root_page_index(vm_id)] };
-    sept_root_hpa = set_hkid_to_pa(sept_root_hpa, 0); // Remove HKID
+    sept_root_hpa = set_hkid_to_pa(sept_root_hpa, tdr_ptr->key_management_fields.hkid);
+
+    ia32e_eptp_t eptp = tdcs_ptr->executions_ctl_fields.eptp;
+    eptp.fields.base_pa = sept_root_hpa.page_4k_num;
+
+    return eptp;
+}
+
+_STATIC_INLINE_ ia32e_eptp_t get_l2_septp_without_hkid(tdr_t* tdr_ptr, tdcs_t* tdcs_ptr, uint16_t vm_id)
+{
+    pa_t sept_root_hpa = { .raw = tdr_ptr->management_fields.tdcx_pa[get_tdcs_sept_root_page_index(vm_id)] };
+    sept_root_hpa = remove_hkid_from_pa(sept_root_hpa);
 
     ia32e_eptp_t eptp = tdcs_ptr->executions_ctl_fields.eptp;
     eptp.fields.base_pa = sept_root_hpa.page_4k_num;
@@ -1208,7 +1341,7 @@ _STATIC_INLINE_ ia32e_eptp_t get_l2_septp(tdr_t* tdr_ptr, tdcs_t* tdcs_ptr, uint
 
 _STATIC_INLINE_ void flush_td_asid(tdr_t* tdr_ptr, tdcs_t* tdcs_ptr, uint16_t vm_id)
 {
-    ia32e_eptp_t eptp = get_l2_septp(tdr_ptr, tdcs_ptr, vm_id);
+    ia32e_eptp_t eptp = get_l2_septp_without_hkid(tdr_ptr, tdcs_ptr, vm_id);
 
     ept_descriptor_t ept_desc = {.ept = eptp.raw, .reserved = 0};
     ia32_invept(&ept_desc, INVEPT_SINGLE_CONTEXT);
@@ -1302,20 +1435,9 @@ _STATIC_INLINE_ bool_t is_cet_supported_in_tdcs(tdcs_t * tdcs_ptr)
             (tdcs_ptr->executions_ctl_fields.xfam & (BIT(12)))) ? true : false;
 }
 
-_STATIC_INLINE_ bool_t is_cet_supported_in_tdvps(tdvps_t * tdvps_ptr)
-{
-    return ((tdvps_ptr->management.xfam & (BIT(11))) |
-            (tdvps_ptr->management.xfam & (BIT(12)))) ? true : false;
-}
-
 _STATIC_INLINE_ bool_t is_pt_supported_in_tdcs(tdcs_t * tdcs_ptr)
 {
     return (tdcs_ptr->executions_ctl_fields.xfam & (BIT(8))) ? true : false;
-}
-
-_STATIC_INLINE_ bool_t is_pt_supported_in_tdvps(tdvps_t * tdvps_ptr)
-{
-    return (tdvps_ptr->management.xfam & (BIT(8))) ? true : false;
 }
 
 _STATIC_INLINE_ bool_t is_uli_supported_in_tdcs(tdcs_t * tdcs_ptr)
@@ -1323,19 +1445,9 @@ _STATIC_INLINE_ bool_t is_uli_supported_in_tdcs(tdcs_t * tdcs_ptr)
     return (tdcs_ptr->executions_ctl_fields.xfam & (BIT(14))) ? true : false;
 }
 
-_STATIC_INLINE_ bool_t is_uli_supported_in_tdvps(tdvps_t * tdvps_ptr)
-{
-    return (tdvps_ptr->management.xfam & (BIT(14))) ? true : false;
-}
-
 _STATIC_INLINE_ bool_t is_lbr_supported_in_tdcs(tdcs_t * tdcs_ptr)
 {
     return (tdcs_ptr->executions_ctl_fields.xfam & (BIT(15))) ? true : false;
-}
-
-_STATIC_INLINE_ bool_t is_lbr_supported_in_tdvps(tdvps_t * tdvps_ptr)
-{
-    return (tdvps_ptr->management.xfam & (BIT(15))) ? true : false;
 }
 
 _STATIC_INLINE_ bool_t is_dca_supported_in_tdcs(tdcs_t * tdcs_ptr)
@@ -1379,6 +1491,32 @@ _STATIC_INLINE_ bool_t is_idt_vectoring_info_valid(void)
     ia32_vmread(VMX_VM_EXIT_IDT_VECTOR_FIELD_ENCODE, &idt_vectoring_info.raw);
 
     return idt_vectoring_info.valid;
+}
+
+/**
+ * @note - Assuming that value is power of two
+*/
+_STATIC_INLINE_ uint64_t get_ln2_value(uint64_t value)
+{
+    if (value == 0)
+    {
+        fatal_error(FATAL_ERROR_ID_39, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
+    }
+
+    uint64_t lsb_position;
+    (void)bit_scan_forward64(value, &lsb_position);
+
+    return lsb_position;
+}
+
+_STATIC_INLINE_ bool_t is_pwr_of_2(const uint64_t value)
+{
+	return (value && ((value & (value - 1)) == 0));
+}
+
+_STATIC_INLINE_ uint64_t get_gpa_alignment(const page_info_api_input_t gpa_mapping)
+{
+    return (1ULL) << (12 + (gpa_mapping.level * 9));
 }
 
 /**
@@ -1433,7 +1571,7 @@ bool_t is_guest_cr4_allowed_by_td_config(ia32_cr4_t cr4, tdcs_t* tdcs_p, ia32_xc
  *
  * @return Success status or a #GP/#VE indicator
  */
-uint16_t write_guest_cr4(uint64_t value, tdcs_t* tdcs_p, tdvps_t* tdvsp_p);
+cr_write_status_e write_guest_cr4(uint64_t value, tdcs_t* tdcs_p, tdvps_t* tdvps_p);
 
 /**
  * @brief Checks the validity the TD attributes that will be set in the TDCS
@@ -1613,7 +1751,8 @@ _STATIC_INLINE_ bool_t op_state_is_tdcall_allowed(tdcall_leaf_opcode_t current_l
     }
     else
     {
-        FATAL_ERROR(); // Not supported yet
+        // Not supported yet
+        fatal_error(FATAL_ERROR_ID_40, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
     }
 
     return is_allowed;
@@ -1761,6 +1900,15 @@ api_error_type abort_import_session(
  */
 bool_t generate_256bit_random(uint256_t* rand);
 
+/**
+ * @brief Generates a custom-sized random value by using RDSEED x86 instruction
+ * @param rand_array - Pointer to output random custom-sized value
+ * @param num_of_qwords - Number of quadwords to generate
+ *
+ * @return If the generation suceeded or not
+ */
+bool_t generate_custom_random(uint64_t* rand_array, uint64_t num_of_qwords);
+
 /*------------------------------------------------------------------------------
                  Optimized DR and MSR Write and Init Helpers
 -------------------------------------------------------------------------------*/
@@ -1822,6 +1970,17 @@ void clear_movss_sti_blocking(void);
 uint32_t check_mem_enc_alg(ia32_tme_capability_t tme_capability, ia32_tme_activate_t tme_activate);
 
 /**
+ * @brief Check that TD is in build phase
+ *
+ * Check for TDR fatal, init and keys state
+ *
+ * @param tdr_p - Pointer the checked, locked and mapped TDR
+ *
+ * @return Error code that states the reason of failure
+ */
+api_error_type check_td_in_correct_build_state(tdr_t *tdr_p);
+
+/**
  * @brief Called by TDH.SYS.SHUTDOWN to populate handoff data with values of some
  *        variables for the next TDX module
  *
@@ -1879,13 +2038,13 @@ _STATIC_INLINE_ void reset_to_next_iv(migsc_t *migsc, uint64_t iv_counter, uint1
     // Refresh the context
     if (aes_gcm_refresh_context(&migsc->aes_gcm_context) != AES_GCM_NO_ERROR)
     {
-        FATAL_ERROR();
+        fatal_error(FATAL_ERROR_ID_41, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
     }
 
     // Calculate the MAC
     if (aes_gcm_reset(&migsc->aes_gcm_context, &iv) != AES_GCM_NO_ERROR)
     {
-        FATAL_ERROR();
+        fatal_error(FATAL_ERROR_ID_42, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
     }
 }
 
@@ -1907,7 +2066,7 @@ tdx_static_assert(sizeof(servtd_hash_buff_t) == 58, servtd_hash_buff_t);
       servtd_has_buff entry.
    4. Return the actual number of entries. */
 uint32_t prepare_servtd_hash_buff(tdcs_t* tdcs_ptr, servtd_hash_buff_t* servtd_has_buf);
-void calculate_servtd_hash(tdcs_t* tdcs_ptr, bool_t handle_avx_state);
+void calculate_servtd_hash(tdcs_t* tdcs_ptr);
 
 // Update TDCS.CPUID_FLAGS based on TD_CTLS.REDUCE_VE and FEATURE_PARAVIRT_CTLS
 // This helper is used on write by the guest TD and at the end of mutable TD state import
@@ -1954,7 +2113,7 @@ _STATIC_INLINE_ void set_vm_vmcs_as_active(tdvps_t* tdvps_p, uint16_t vm_id)
 {
     if (get_local_data()->vp_ctx.active_vmcs != vm_id)
     {
-        uint64_t vm_vmcs_pa = tdvps_p->management.tdvps_pa[get_tdvps_vmcs_page_index(vm_id)];
+        uint64_t vm_vmcs_pa = tdvps_p->management.tdvps_page_pa[get_tdvps_vmcs_page_index(vm_id)];
 
         ia32_vmptrld((vmcs_ptr_t*)vm_vmcs_pa);
         get_local_data()->vp_ctx.active_vmcs = vm_id;
@@ -1981,7 +2140,7 @@ _STATIC_INLINE_ void clear_module_host_state_flags(tdvps_t* tdvps_p)
     // Mark all VMs' VMCSes as needing host state HPA updates to match the new LP
     for (uint16_t vm_id = 0; vm_id < MAX_VMS; vm_id++)
     {
-        tdvps_p->management.module_dependent_hpa_updated[vm_id] = false;
+        tdvps_p->management.module_dependent_fields_updated[vm_id] = false;
     }
 }
 
@@ -1991,13 +2150,13 @@ _STATIC_INLINE_ void clear_module_host_state_flags(tdvps_t* tdvps_p)
  */
 _STATIC_INLINE_ void update_host_state_in_td_vmcs(tdx_module_local_t* ld_p, tdvps_t* tdvps_p, uint16_t vm_id)
 {
-    if (!tdvps_p->management.module_dependent_hpa_updated[vm_id])
+    if (!tdvps_p->management.module_dependent_fields_updated[vm_id])
     {
         // TDX module has been updated, need to update host state fields.
         // This also updates LP-dependent host state fields.
         init_module_host_state_in_td_vmcs();
 
-        tdvps_p->management.module_dependent_hpa_updated[vm_id] = true;
+        tdvps_p->management.module_dependent_fields_updated[vm_id] = true;
         tdvps_p->management.lp_dependent_hpa_updated[vm_id] = true;
     }
     else if (!tdvps_p->management.lp_dependent_hpa_updated[vm_id])
@@ -2189,18 +2348,25 @@ api_error_type l2_sept_walk_guest_side(
  *          - If bit W is 1, bit R must be 1
  *          - If bit PWA is 1, bit R must be 1
  *          - Bit SVE must be 0
+ *          - If is_mmio is set - Bits Xs, Xu, VGP, PWA, SSS must be 0
  *
  * @param gpa_attr
  *
  * @return bool_t
  */
-_STATIC_INLINE_ bool_t is_gpa_attr_legal(const gpa_attr_single_vm_t gpa_attr_single_vm)
+_STATIC_INLINE_ bool_t is_gpa_attr_legal(
+    const gpa_attr_single_vm_t gpa_attr_single_vm,
+    const bool_t is_mmio)
 {
     if ((!gpa_attr_single_vm.valid && gpa_attr_single_vm.raw) ||
          gpa_attr_single_vm.reserved_14_8 ||
         (gpa_attr_single_vm.w && (!gpa_attr_single_vm.r)) ||
         (gpa_attr_single_vm.pwa && (!gpa_attr_single_vm.r)) ||
-         gpa_attr_single_vm.sve)
+         gpa_attr_single_vm.sve ||
+         (is_mmio &&
+          !(gpa_attr_single_vm.xs == 0 && gpa_attr_single_vm.xu == 0 &&
+            gpa_attr_single_vm.vgp == 0 && gpa_attr_single_vm.pwa == 0 &&
+            gpa_attr_single_vm.sss == 0)))
     {
         TDX_ERROR("Illegal attributes - 0x%llx\n", gpa_attr_single_vm.raw)
         return false;
@@ -2325,5 +2491,86 @@ _STATIC_INLINE_ void restore_td_xcr0_if_required(tdx_module_local_t* local_data_
         local_data_ptr->vp_ctx.td_xcr0_state_modified = false;
     }
 }
+
+/**
+ * @brief Fills the xbuff_offsets and xbuff_size values in the given TDCS,
+ *        based on the given xfam
+ *
+ * @param tdcs_ptr - TDCS pointer
+ * @param xfam     - XFAM mask on which the filled values will be based
+ */
+void set_xbuff_offsets_and_size(tdcs_t* tdcs_ptr, uint64_t xfam);
+
+
+
+#define IA32_SPEC_CTRL_SSBD_BIT        BIT(2)
+#define IA32_SPEC_CTRL_IPRED_DIS_S_BIT BIT(4)
+
+_STATIC_INLINE_ uint64_t GET_TDX_MODULE_IA32_SPEC_CTRL(void)
+{
+    uint64_t res = 0;
+    {
+        res |= IA32_SPEC_CTRL_IPRED_DIS_S_BIT;
+    }
+
+    res |= IA32_SPEC_CTRL_SSBD_BIT;
+
+    return res;
+}
+
+_STATIC_INLINE_ void set_qword_bm(
+    uint64_t *bm_arr_ptr,
+    uint64_t idx,
+    bool_t enable_flag)
+{
+    uint64_t *entry_ptr = &bm_arr_ptr[idx / 64];
+    uint64_t val = (BIT(idx % 64));
+    if (enable_flag)
+    {
+        *entry_ptr |= val;
+    }
+    else
+    {
+        *entry_ptr &= ~val;
+    }
+}
+
+_STATIC_INLINE_ bool_t get_qword_bm(
+    uint64_t *bm_arr_ptr,
+    uint64_t idx)
+{
+    return (bm_arr_ptr[idx / 64] & BIT(idx % 64)) > 0;
+}
+
+_STATIC_INLINE_ bool_t is_event_allowed(tdcs_t* tdcs_p, uint16_t evt, uint16_t events_num)
+{
+    int32_t left = 0;
+    int32_t right = events_num - 1;
+
+    while (left <= right)
+    {
+        int32_t mid = left + (right - left) / 2;
+
+        if (tdcs_p->event_filters_internal[mid].raw == evt)
+        {
+            return true;
+        }
+        else if (tdcs_p->event_filters_internal[mid].raw < evt)
+        {
+            left = mid + 1;
+        }
+        else
+        {
+            right = mid - 1;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * @brief Stores host's XCR0 state before usage of AVX and marks AVX regs as 'used'
+ */
+void prepare_state_for_avx_usage(void);
 
 #endif /* SRC_COMMON_HELPERS_HELPERS_H_ */

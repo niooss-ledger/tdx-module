@@ -24,7 +24,7 @@
  *  Spreadsheet Format Version - '6'
  **/
 
-#include "auto_gen/msr_config_lookup.h"
+#include "./msr_config_lookup.h"
 
 
 const msr_lookup_t msr_lookup[MAX_NUM_MSR_LOOKUP] = {

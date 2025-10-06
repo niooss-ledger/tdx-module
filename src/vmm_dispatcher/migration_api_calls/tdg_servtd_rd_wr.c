@@ -28,7 +28,7 @@
 #include "tdx_basic_defs.h"
 #include "tdx_basic_types.h"
 #include "tdx_api_defs.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "data_structures/tdx_local_data.h"
 #include "x86_defs/x86_defs.h"
 #include "accessors/data_accessors.h"
@@ -141,7 +141,7 @@ static api_error_type tdg_servtd_rd_wr(servtd_binding_handle_t binding_handle, m
 
      if (!is_equal_256bit(target_tdr_ptr->management_fields.td_uuid, target_uuid))
      {
-         if (is_equal_256bit(target_tdcs_ptr->migration_fields.preimport_uuid, target_uuid))
+         if (is_equal_256bit(target_tdcs_ptr->migration_fields.pre_import_uuid, target_uuid))
          {
              // This is the case where the binding happened before import
              lp->vp_ctx.tdvps->guest_state.gpr_state.r10 = target_tdr_ptr->management_fields.td_uuid.qwords[0];

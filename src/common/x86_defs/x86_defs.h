@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -349,6 +349,12 @@ typedef enum {
     LVL_MAX     = 5,
 } ept_level_t;
 
+typedef enum{
+    PAGE_SIZE_4KB_LVL_PT    = _4KB,
+    PAGE_SIZE_2MB_LVL_PD    = _2MB,
+    PAGE_SIZE_1GB_LVL_PDPT  = _1GB
+} ept_level_page_size_t;
+
 typedef union ia32e_pxe_u {
     struct {
         uint64_t
@@ -391,7 +397,7 @@ typedef union ia32e_ept_u {
             w            :   1,  // 1
             x            :   1,  // 2
             mt           :   3,  // 3-5
-            ipat         :   1,  // 6
+            ipat_tdmem   :   1,  // 6
             leaf         :   1,  // 7 - Set to 1
             accessed     :   1,  // 8
             ignore_0     :   1,  // 9
@@ -408,7 +414,7 @@ typedef union ia32e_ept_u {
             w            :   1,  // 1
             x            :   1,  // 2
             mt           :   3,  // 3-5
-            ipat         :   1,  // 6
+            ipat_tdmem   :   1,  // 6
             leaf         :   1,  // 7 - Set to 1
             accessed     :   1,  // 8
             ignore_0     :   1,  // 9
@@ -425,7 +431,7 @@ typedef union ia32e_ept_u {
             w            :   1,  // 1
             x            :   1,  // 2
             mt           :   3,  // 3-5
-            ipat         :   1,  // 6
+            ipat_tdmem   :   1,  // 6
             ignore_0     :   1,  // 7 - Set to 1
             accessed     :   1,  // 8
             ignore_1     :   1,  // 9
@@ -451,13 +457,12 @@ tdx_static_assert(sizeof(ia32e_ept_t) == 8, ia32e_sept_t);
 #define SEPT_ENTRY_MT0_BIT_POSITION       3   // Memory Type
 #define SEPT_ENTRY_MT1_BIT_POSITION       4   // Memory Type
 #define SEPT_ENTRY_MT2_BIT_POSITION       5   // Memory Type
-#define SEPT_ENTRY_IPAT_BIT_POSITION      6   // IPAT
+#define SEPT_ENTRY_IPAT_TDMEM_BIT_POSITION 6  // IPAT TDMEM
 #define SEPT_ENTRY_PS_BIT_POSITION        7   // Non-Leaf(0) / Leaf(1)
 #define SEPT_ENTRY_A_BIT_POSITION         8   // Accessed bit
 #define SEPT_ENTRY_TDGL_BIT_POSITION      8   // Guest-side lock
 #define SEPT_ENTRY_D_BIT_POSITION         9   // Dirt bit
 #define SEPT_ENTRY_XU_BIT_POSITION        10
-#define SEPT_ENTRY_TDEL_BIT_POSITION      11  // Entry Lock
 #define SEPT_ENTRY_TDHP_BIT_POSITION      52  // Host Priority, used together with TDEL
 #define SEPT_ENTRY_TDEX_BIT_POSITION      53  // Exported
 #define SEPT_ENTRY_TDBW_BIT_POSITION      54  // Blocked for Writing
@@ -466,6 +471,7 @@ tdx_static_assert(sizeof(ia32e_ept_t) == 8, ia32e_sept_t);
 #define SEPT_ENTRY_VPW_BIT_POSITION       57  // Verify Paging-Write
 #define SEPT_ENTRY_PW_BIT_POSITION        58  // Paging-Write
 #define SEPT_ENTRY_TDWR_BIT_POSITION      59  // Saved W bit value
+#define SEPT_ENTRY_TDEL_BIT_POSITION      11  // Entry Lock
 #define SEPT_ENTRY_SSS_BIT_POSITION       60  // Supervisor Shadow Stack
 #define SEPT_ENTRY_TDSA_BIT_POSITION      60  // SEPT Alias (Link)
 #define SEPT_ENTRY_TDIO_BIT_POSITION      62  // Private(0) / MMIO(1)
@@ -501,30 +507,38 @@ typedef union ia32e_sept_u {
     } fields_2m;
     struct {
         uint64_t
-            r          :   1,  // 0
-            w          :   1,  // 1
-            x          :   1,  // 2
-            mt         :   3,  // 3-5 - Set to 110 (WB)
-            ipat       :   1,  // 6 - Set to 1
-            leaf       :   1,  // 7 - Non-Leaf(0) / Leaf(1), always 1 for 4KB (level 0)
-            a          :   1,  // 8 - Accessed
-            d          :   1,  // 9 - Dirty, set and cleared by the TDX module in all the *EXPORTED_* states
-            reserved_0 :   1,  // 10 - Xu, not enabled for L1 SEPT
-            tdel       :   1,  // 11 - Entry Lock
-            base       :   40, // 12-51
-            hp         :   1,  // 52 - Host Priority, used together with TDEL
-            tdex       :   1,  // 53 - Exported
-            tdbw       :   1,  // 54 - Blocked for Writing
-            tdb        :   1,  // 55 - Blocked
-            tdp        :   1,  // 56 - Pending
-            vpw        :   1,  // 57 - Verify Paging-Write
-            pw         :   1,  // 58 - Paging-Write
-            ignored_0  :   1,  // 59
-            sss_tdsa   :   1,  // 60 - Supervisor Shadow Stack / SEPT Alias (Link)
-            tdup       :   1,  // 61 - 1: Page is not pinned in memory even though I/O devices may be attached to the TD
-            reserved_1 :   1,  // 62
-            supp_ve    :   1;  // 63
+            r          :  1, // 0
+            w          :  1, // 1
+            x          :  1, // 2
+            mt         :  3, // 3-5 - Set to MEM type
+            ipat_tdmem :  1, // 6 - Set to 1
+            leaf       :  1, // 7 - Non-Leaf(0) / Leaf(1), always 1 for 4KB (level 0)
+            a          :  1, // 8 - Accessed
+            d          :  1, // 9 - Dirty, set and cleared by the TDX module in all the *EXPORTED_* states
+            ignored_0  :  1, // 10 -
+            tdel       :  1, // 11
+            base       : 40, // 12-51
+            hp         :  1, // 52 - Host Priority, used together with TDEL
+            tdex       :  1, // 53 - Exported
+            tdbw       :  1, // 54 - Blocked for Writing
+            tdb        :  1, // 55 - Blocked
+            tdp        :  1, // 56 - Pending
+            vgp        :  1, // 57
+            tdal1      :  1, // 58 - Alias flag for L2 VM #2 (indicating a non-FREE L2 entry)
+            tdal2      :  1, // 59 - Entry Lock
+            tdal3      :  1, // 60 - Alias flag for L2 VM #3 (indicating a non-FREE L2 entry)
+            reserved_1 :  1, // 61 - Reserved for IOMMU
+            reserved_2 :  1, // 62 - Reserved for IOMMU (BlockDMA)
+            supp_ve    :  1; // 63
+};
+    struct {
+        uint64_t
+        rsvd : 3,
+        mt0  : 1,  // 3 - Set to 0
+        mt1  : 1,  // 4 - Set to IPAT value
+        mt2  : 1;  // 5 - Set to IPAT value
     };
+
     uint64_t raw;
     struct {
         uint64_t
@@ -568,7 +582,7 @@ typedef union ia32e_sept_u {
             a           : 1,  // Bit 8 : Accessed
             d           : 1,  // Bit 9 : Dirty
             xu          : 1,  // Bit 10
-            reserved_11 : 1,  // Bit 11
+            snp         : 1,  // Bit 11 : IOMMU Snoop
             hpa         : 40, // Bits 51:12
             tdpwa       : 1,  // Bit 52
             reserved_53 : 1,  // Bit 53
@@ -579,8 +593,8 @@ typedef union ia32e_sept_u {
             pwa         : 1,  // Bit 58 : Paging-Write Access
             tdwr        : 1,  // Bit 59 : Saved W bit value
             sss         : 1,  // Bit 60 : Supervisor Shadow Stack
-            reserved_61 : 1,  // Bit 61
-            reserved_62 : 1,  // Bit 62 : Reserved (BlockDMA)
+            ir          : 1,  // Bit 61 : IOMMU Read
+            iw          : 1,  // Bit 62 : IOMMU Write
             sve         : 1;  // Bit 63 : Suppress #VE
     } l2_encoding;
 } ia32e_sept_t;
@@ -761,9 +775,10 @@ typedef struct
  * Exception Handling - Interrupt information vectors
  */
 //Following definitions reflect values of structure vmx_entry_inter_info_t
-#define DF_INTERRUPTION_INFO            0x80000B08ULL //Vector=E_DF, Interruption_type=HARDWARE, Deliver error code = True
-#define PF_INTERRUPTION_INFO            0x80000B0EULL //Vector=E_PF, Interruption_type=HARDWARE, Deliver error code = True
-#define GP_INTERRUPTION_INFO            0x80000B0DULL //Vector=E_GP, Interruption_type=HARDWARE, Deliver error code = True
+#define DELIVER_ERROR_CODE_OFFSET       11
+#define DF_INTERRUPTION_INFO            0x80000308ULL //Vector=E_DF, Interruption_type=HARDWARE, Deliver error code = False
+#define PF_INTERRUPTION_INFO            0x8000030EULL //Vector=E_PF, Interruption_type=HARDWARE, Deliver error code = False
+#define GP_INTERRUPTION_INFO            0x8000030DULL //Vector=E_GP, Interruption_type=HARDWARE, Deliver error code = False
 #define VE_INTERRUPTION_INFO            0x80000314ULL //Vector=E_VE, Interruption_type=HARDWARE
 #define UD_INTERRUPTION_INFO            0x80000306ULL //Vector=E_UD, Interruption_type=HARDWARE
 
@@ -856,6 +871,7 @@ tdx_static_assert(sizeof(loadiwkey_ctl_t) == 4, loadiwkey_ctl_t);
 #define CPUID_EXT_STATE_ENUM_XSAVES_SUBLEAF 1
 
 #define CPUID_TSC_ATTRIBUTES_LEAF       0x15
+#define PROCESSOR_FREQUENCY_INFORMATION_LEAF 0x16
 
 #define CPUID_KEYLOCKER_ATTRIBUTES_LEAF 0x19
 
@@ -1466,7 +1482,7 @@ typedef union ia32_apic_icr_u
     struct
     {
         uint32_t raw_low;
-        uint32_t raw_high;
+        uint32_t raw_high; // destination
     };
 } ia32_apic_icr_t;
 tdx_static_assert(sizeof(ia32_apic_icr_t) == 8, ia32_apic_icr_t);

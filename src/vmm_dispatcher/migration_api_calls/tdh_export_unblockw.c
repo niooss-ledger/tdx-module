@@ -25,9 +25,9 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include "auto_gen/op_state_lookup.h"
-#include "auto_gen/sept_state_lookup.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include OP_STATE_LOOKUP_HEADER
+#include SEPT_STATE_LOOKUP_HEADER
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "x86_defs/x86_defs.h"
 #include "accessors/ia32_accessors.h"
 #include "accessors/data_accessors.h"
@@ -199,8 +199,12 @@ api_error_type tdh_export_unblockw(uint64_t page_pa, uint64_t target_tdr_pa)
             sept_update_state(&new_septe, SEPT_STATE_PEND_EXP_DIRTY_MASK);
             break;
         default:
-            FATAL_ERROR();
+        {
+            extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_td_handle(target_tdr_pa, 0, LVL_PT, page_gpa.raw, page_sept_entry_copy);
+            fatal_error(FATAL_ERROR_ID_6, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
+        }
     }
+
 
     atomic_mem_write_64b(&page_sept_entry_ptr->raw, new_septe.raw);
 

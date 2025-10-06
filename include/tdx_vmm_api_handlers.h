@@ -525,10 +525,12 @@ api_error_type tdh_sys_rdall(uint64_t md_list_hpa, md_field_id_t field_id);
  * @brief Globally initialize the TDX-SEAM module.
  *
  * @note
- *
+ * 
+ * @param version Version of the API
+ * 
  * @return Success or Error type
  */
-api_error_type tdh_sys_init(void);
+api_error_type tdh_sys_init(uint8_t version);
 
 
 /**
@@ -638,7 +640,7 @@ api_error_type tdh_vp_wr(uint64_t tdvpr_pa,
  * @return Success or Error type
  */
 api_error_type tdh_servtd_bind(uint64_t target_tdr_pa, uint64_t servtd_tdr, uint64_t servtd_slot,
-        uint64_t servtd_type_raw, servtd_attributes_t servtd_attr);
+        uint64_t servtd_type, servtd_attributes_t servtd_attr);
 
 /**
  * @brief
@@ -646,7 +648,7 @@ api_error_type tdh_servtd_bind(uint64_t target_tdr_pa, uint64_t servtd_tdr, uint
  * @return Success or Error type
  */
 api_error_type tdh_servtd_prebind(uint64_t target_tdr_pa, uint64_t servtd_info_hash, uint64_t servtd_slot,
-        uint64_t servtd_type_raw, servtd_attributes_t servtd_attr);
+        uint64_t servtd_type, servtd_attributes_t servtd_attr);
 
 /**
  * @brief

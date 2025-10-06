@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -34,13 +34,13 @@
 #include "x86_defs/vmcs_defs.h"
 #include "data_structures/tdx_local_data.h"
 #include "tdx_td_api_handlers.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "vmm_dispatcher/tdx_vmm_dispatcher.h"
 #include "helpers/helpers.h"
 #include "memory_handlers/sept_manager.h"
 #include "td_dispatcher/vm_exits/td_vmexit.h"
 #include "td_transitions/td_exit.h"
-#include "auto_gen/msr_config_lookup.h"
+#include MSR_CONFIG_LOOKUP_HEADER
 
 const static msr_lookup_t* find_msr_entry(uint32_t msr_addr)
 {
@@ -107,7 +107,7 @@ static td_msr_access_status_t rd_wr_msr_generic_checks(uint32_t msr_addr, bool_t
     return TD_MSR_ACCESS_SUCCESS;
 }
 
-static uint16_t rd_wr_msr_generic_case(uint32_t msr_addr, bool_t wr, tdcs_t* tdcs_p)
+static uint16_t rd_wr_msr_generic_case(uint32_t msr_addr, bool_t wr, tdcs_t* tdcs_p, bool_t is_write)
 {
     const msr_lookup_t* msr_lookup_ptr = find_msr_entry(msr_addr);
 
@@ -125,8 +125,13 @@ static uint16_t rd_wr_msr_generic_case(uint32_t msr_addr, bool_t wr, tdcs_t* tdc
     IF_RARE ((bit_type == MSR_BITMAP_FIXED_0) || is_msr_dynamic_bit_cleared(tdcs_p, msr_addr, bit_type))
     {
         TDX_ERROR("VM exit (wr = %d) wasn't supposed to happen on MSR 0x%llx (FIXED/DYNAMIC 0)\n", wr, msr_addr);
+        tdx_module_local_t* local_data = get_local_data();
         // Fatal error
-        FATAL_ERROR();
+        extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_unexpected_vm_exit(local_data->vp_ctx.tdr_pa.raw,
+                                                                                                   local_data->current_td_vm_id,
+                                                                                                   (uint32_t)(is_write ? VMEXIT_REASON_MSR_WRITE : VMEXIT_REASON_MSR_READ),
+                                                                                                   msr_addr);
+        fatal_error(FATAL_ERROR_ID_103, FATAL_INFO_FORMAT_UNEXPECTED_VM_EXIT_INFO, &extended_fatal_info);
     }
 
     if (action == MSR_ACTION_VE)
@@ -210,13 +215,18 @@ static uint16_t rd_wr_msr_generic_case(uint32_t msr_addr, bool_t wr, tdcs_t* tdc
 
     // Any other case is not covered and not expected
     TDX_ERROR("Unexpected case of MSR 0x%llx (WR=%d) (action=%d)\n", msr_addr, wr, action);
+    tdx_module_local_t* local_data = get_local_data();
     // Fatal error
-    FATAL_ERROR();
+    extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_unexpected_vm_exit(local_data->vp_ctx.tdr_pa.raw,
+                                                                                               local_data->current_td_vm_id,
+                                                                                               (uint32_t)(is_write ? VMEXIT_REASON_MSR_WRITE : VMEXIT_REASON_MSR_READ),
+                                                                                               msr_addr);
+    fatal_error(FATAL_ERROR_ID_22, FATAL_INFO_FORMAT_UNEXPECTED_VM_EXIT_INFO, &extended_fatal_info);
 
     return TD_MSR_ACCESS_SUCCESS; // No real success, can't reach here due to FATAL_ERROR above
 }
 
-static td_msr_access_status_t wrmsr_ia32_xss(tdvps_t* tdvps_p)
+static td_msr_access_status_t wrmsr_ia32_xss(tdvps_t* tdvps_p, tdcs_t* tdcs_p)
 {
     tdx_module_global_t* tdx_global_data_ptr = get_global_data();
     ia32_xcr0_t value;
@@ -227,7 +237,7 @@ static td_msr_access_status_t wrmsr_ia32_xss(tdvps_t* tdvps_p)
     // support has been enumerated on TDH_SYS_INIT and used to verify XFAM on TDH_MNG_INIT.
     // Note that CPU support has been enumerated on TDHSYSINIT and used to verify XFAM on TDHMNGINIT.
 
-    if (0 != (value.raw & ~(tdx_global_data_ptr->ia32_xss_supported_mask & tdvps_p->management.xfam)))
+    if ((value.raw & ~((uint64_t)tdx_global_data_ptr->ia32_xss_supported_mask & tdcs_p->executions_ctl_fields.xfam)) != 0)
     {
         return TD_MSR_ACCESS_GP;
     }
@@ -313,7 +323,7 @@ static td_msr_access_status_t wrmsr_ia32_efer(tdvps_t* tdvps_p)
     if (tdvps_p->management.curr_vm != 0)
     {
         /* For L2 VMs, we allow the LME bit to be changed.
-         * For the comparison below, set the old value of this bit to the new values. 
+         * For the comparison below, set the old value of this bit to the new values.
          * We don't allow NXE bit to be changed.
          */
         old_value.lme = new_value.lme;
@@ -382,41 +392,14 @@ _STATIC_INLINE_ void rdmsr_set_value_in_tdvps(tdvps_t* tdvps_p, uint64_t value)
     tdvps_p->guest_state.gpr_state.rax = LOW_32BITS(value);
 }
 
-_STATIC_INLINE_ bool_t is_event_allowed(tdcs_t* tdcs_p, uint16_t evt, uint16_t events_num)
-{
-    int32_t left = 0;
-    int32_t right = events_num - 1;
-
-    while (left <= right)
-    {
-        int32_t mid = left + (right - left) / 2;
-
-        if (tdcs_p->event_filters_internal[mid].raw == evt)
-        {
-            return true;
-        }
-        else if (tdcs_p->event_filters_internal[mid].raw < evt)
-        {
-            left = mid + 1;
-        }
-        else
-        {
-            right = mid - 1;
-        }
-    }
-
-    return false;
-}
-
 /* Write an IA32_PERFEVTSEL MSR while handling event filtering
    Assumes either PERFMON is disabled or event filter is required (TDCS.EVENT_FILTERS_NUM > 0),
    otherwise no VM exit is expected.
 */
 _STATIC_INLINE_ td_msr_access_status_t wrmsr_ia32_perfevtsel(tdcs_t* tdcs_p, tdvps_t* tdvps_p, uint32_t msr_addr)
-
 {
-    tdx_sanity_check(8 == NUM_PMC, SCEC_MSR_ACEESS_SOURCE, 0);
-    tdx_sanity_check((msr_addr >= IA32_PERFEVTSEL0_MSR_ADDR) && (msr_addr <= IA32_PERFEVTSEL7_MSR_ADDR), SCEC_MSR_ACEESS_SOURCE, 1);
+    tdx_sanity_check(8 == NUM_PMC, FATAL_ERROR_ID_274, 0);
+    tdx_sanity_check((msr_addr >= IA32_PERFEVTSEL0_MSR_ADDR) && (msr_addr <= IA32_PERFEVTSEL7_MSR_ADDR), FATAL_ERROR_ID_275, 1);
 
     if (!tdcs_p->executions_ctl_fields.attributes.perfmon)
     {
@@ -424,7 +407,16 @@ _STATIC_INLINE_ td_msr_access_status_t wrmsr_ia32_perfevtsel(tdcs_t* tdcs_p, tdv
     }
 
     // VM exit should only happen if PERFMON is 0 or EVENT_FILTERS_NUM is not 0
-    tdx_sanity_check(tdcs_p->executions_ctl2_fields.event_filters_num > 0, SCEC_MSR_ACEESS_SOURCE, 2);
+    if (tdcs_p->executions_ctl2_fields.event_filters_num == 0)
+    {
+        extended_fatal_info_t extended_fatal_info =
+                prepare_extended_fatal_info_unexpected_vm_exit(get_local_data()->vp_ctx.tdr_pa.raw,
+                                                               get_local_data()->current_td_vm_id,
+                                                               VMEXIT_REASON_MSR_WRITE,
+                                                               msr_addr);
+
+        fatal_error(FATAL_ERROR_ID_276, FATAL_INFO_FORMAT_UNEXPECTED_VM_EXIT_INFO, &extended_fatal_info);
+    }
 
     uint32_t msr_index = msr_addr - IA32_PERFEVTSEL0_MSR_ADDR;
 
@@ -456,7 +448,7 @@ _STATIC_INLINE_ td_msr_access_status_t wrmsr_ia32_perfevtsel(tdcs_t* tdcs_p, tdv
         return TD_MSR_ACCESS_GP;
     }
 
-    tdvps_p->guest_msr_state.ia32_perfevtsel[msr_index] = perfevtsel_shadow.raw;
+    tdvps_p->guest_msr_state.ia32_perfevtselx[msr_index] = perfevtsel_shadow.raw;
 
     return TD_MSR_ACCESS_SUCCESS;
 }
@@ -469,8 +461,8 @@ _STATIC_INLINE_ td_msr_access_status_t wrmsr_ia32_perfevtsel(tdcs_t* tdcs_p, tdv
 _STATIC_INLINE_ td_msr_access_status_t rdmsr_ia32_perfevtsel(tdcs_t* tdcs_p, tdvps_t* tdvps_p, uint32_t msr_addr)
 
 {
-    tdx_sanity_check(8 == NUM_PMC, SCEC_MSR_ACEESS_SOURCE, 0);
-    tdx_sanity_check((msr_addr >= IA32_PERFEVTSEL0_MSR_ADDR) && (msr_addr <= IA32_PERFEVTSEL7_MSR_ADDR), SCEC_MSR_ACEESS_SOURCE, 1);
+    tdx_sanity_check(8 == NUM_PMC, FATAL_ERROR_ID_277, 0);
+    tdx_sanity_check((msr_addr >= IA32_PERFEVTSEL0_MSR_ADDR) && (msr_addr <= IA32_PERFEVTSEL7_MSR_ADDR), FATAL_ERROR_ID_278, 1);
 
     if (!tdcs_p->executions_ctl_fields.attributes.perfmon)
     {
@@ -478,11 +470,20 @@ _STATIC_INLINE_ td_msr_access_status_t rdmsr_ia32_perfevtsel(tdcs_t* tdcs_p, tdv
     }
 
     // VM exit should only happen if PERFMON is 0 or EVENT_FILTERS_NUM is not 0
-    tdx_sanity_check(tdcs_p->executions_ctl2_fields.event_filters_num > 0, SCEC_MSR_ACEESS_SOURCE, 2);
+    if (tdcs_p->executions_ctl2_fields.event_filters_num == 0)
+    {
+        extended_fatal_info_t extended_fatal_info =
+                prepare_extended_fatal_info_unexpected_vm_exit(get_local_data()->vp_ctx.tdr_pa.raw,
+                                                               get_local_data()->current_td_vm_id,
+                                                               VMEXIT_REASON_MSR_READ,
+                                                               msr_addr);
+
+        fatal_error(FATAL_ERROR_ID_279, FATAL_INFO_FORMAT_UNEXPECTED_VM_EXIT_INFO, &extended_fatal_info);
+    }
 
     uint32_t msr_index = msr_addr - IA32_PERFEVTSEL0_MSR_ADDR;
 
-    ia32_perfevtsel_t perfevtsel_value = { .raw = tdvps_p->guest_msr_state.ia32_perfevtsel[msr_index] };
+    ia32_perfevtsel_t perfevtsel_value = { .raw = tdvps_p->guest_msr_state.ia32_perfevtselx[msr_index] };
     perfevtsel_value.forbidden = 0;
 
     rdmsr_set_value_in_tdvps(tdvps_p, perfevtsel_value.raw);
@@ -508,7 +509,7 @@ static td_msr_access_status_t rdmsr_ia32_debugctl(tdvps_t* tdvps_p)
 static td_msr_access_status_t rdmsr_ia32_arch_capabilities(tdvps_t* tdvps_p, tdcs_t* tdcs_p)
 {
     // Return the value calculated on TDH.MNG.INIT or TDH.IMPORT.STATE.IMMUTABLE in EDX:EAX
-    rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_arch_capabilities);
+    rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virtual_ia32_arch_capabilities);
 
     return TD_MSR_ACCESS_SUCCESS;
 }
@@ -525,7 +526,7 @@ static td_msr_access_status_t rdmsr_ia32_perf_capabilities(tdvps_t* tdvps_p, tdc
 {
     if (tdcs_p->executions_ctl_fields.attributes.perfmon)
     {
-         if (!((ia32_xcr0_t)tdvps_p->management.xfam).pt)
+         if (!((ia32_xcr0_t)tdcs_p->executions_ctl_fields.xfam).pt)
          {
              // Return the native MSR value, with bit 16 (PEBS_TO_BT) cleared
              ia32_perf_capabilities_t perf_capabilities;
@@ -536,7 +537,13 @@ static td_msr_access_status_t rdmsr_ia32_perf_capabilities(tdvps_t* tdvps_p, tdc
          }
          else
          {
-             FATAL_ERROR();
+             extended_fatal_info_t extended_fatal_info =
+                     prepare_extended_fatal_info_unexpected_vm_exit(get_local_data()->vp_ctx.tdr_pa.raw,
+                                                                    get_local_data()->current_td_vm_id,
+                                                                    VMEXIT_REASON_MSR_READ,
+                                                                    IA32_PERF_CAPABILITIES_MSR_ADDR);
+
+             fatal_error(FATAL_ERROR_ID_104, FATAL_INFO_FORMAT_UNEXPECTED_VM_EXIT_INFO, &extended_fatal_info);
          }
     }
     else
@@ -627,7 +634,7 @@ uint16_t td_wrmsr_exit(void)
             status = (uint16_t)wrmsr_ia32_perfevtsel(tdcs_p, tdvps_p, msr_addr);
             break;
         case IA32_XSS_MSR_ADDR:
-            status = (uint16_t)wrmsr_ia32_xss(tdvps_p);
+            status = (uint16_t)wrmsr_ia32_xss(tdvps_p, tdcs_p);
             break;
         case IA32_DEBUGCTL_MSR_ADDR:
             status = (uint16_t)wrmsr_ia32_debugctl(tdvps_p);
@@ -641,7 +648,7 @@ uint16_t td_wrmsr_exit(void)
             {
                 return TD_MSR_ACCESS_GP;
             }
-            status = rd_wr_msr_generic_case(msr_addr, true, tdcs_p);
+            status = rd_wr_msr_generic_case(msr_addr, true, tdcs_p, true);
             break;
         }
     }
@@ -655,46 +662,46 @@ static bool_t rdmsr_l1_only_special_msrs(tdcs_t* tdcs_p, tdvps_t* tdvps_p, uint3
     switch (msr_addr)
     {
         case IA32_VMX_BASIC_MSR_ADDR:
-            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_basic.raw);
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virtual_ia32_vmx_basic.raw);
             break;
         case IA32_VMX_MISC_MSR_ADDR:
-            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_misc.raw);
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virtual_ia32_vmx_misc.raw);
             break;
         case IA32_VMX_CR0_FIXED0_MSR_ADDR:
-            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_cr0_fixed0.raw);
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virtual_ia32_vmx_cr0_fixed0.raw);
             break;
         case IA32_VMX_CR0_FIXED1_MSR_ADDR:
-            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_cr0_fixed1.raw);
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virtual_ia32_vmx_cr0_fixed1.raw);
             break;
         case IA32_VMX_CR4_FIXED0_MSR_ADDR:
-            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_cr4_fixed0.raw);
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virtual_ia32_vmx_cr4_fixed0.raw);
             break;
         case IA32_VMX_CR4_FIXED1_MSR_ADDR:
-            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_cr4_fixed1.raw);
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virtual_ia32_vmx_cr4_fixed1.raw);
             break;
         case IA32_VMX_PROCBASED_CTLS2_MSR_ADDR:
-            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_procbased_ctls2.raw);
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virtual_ia32_vmx_procbased_ctls2.raw);
             break;
         case IA32_VMX_EPT_VPID_CAP_MSR_ADDR:
-            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_ept_vpid_cap.raw);
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virtual_ia32_vmx_ept_vpid_cap.raw);
             break;
         case IA32_VMX_TRUE_PINBASED_CTLS_MSR_ADDR:
-            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_true_pinbased_ctls.raw);
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virtual_ia32_vmx_true_pinbased_ctls.raw);
             break;
         case IA32_VMX_TRUE_PROCBASED_CTLS_MSR_ADDR:
-            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_true_procbased_ctls.raw);
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virtual_ia32_vmx_true_procbased_ctls.raw);
             break;
         case IA32_VMX_TRUE_EXIT_CTLS_MSR_ADDR:
-            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_true_exit_ctls.raw);
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virtual_ia32_vmx_true_exit_ctls.raw);
             break;
         case IA32_VMX_TRUE_ENTRY_CTLS_MSR_ADDR:
-            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_true_entry_ctls.raw);
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virtual_ia32_vmx_true_entry_ctls.raw);
             break;
         case IA32_VMX_VMFUNC_MSR_ADDR:
-            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_vmfunc);
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virtual_ia32_vmx_vmfunc);
             break;
         case IA32_VMX_PROCBASED_CTLS3_MSR_ADDR:
-            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virt_ia32_vmx_procbased_ctls3);
+            rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virtual_ia32_vmx_procbased_ctls3);
             break;
         default:
             return false;
@@ -785,15 +792,6 @@ uint16_t td_rdmsr_exit(void)
         case IA32_ARCH_CAPABILITIES_MSR_ADDR:
             status = (uint16_t)rdmsr_ia32_arch_capabilities(tdvps_p, tdcs_p);
             break;
-        case IA32_XAPIC_DISABLE_STATUS_MSR_ADDR:
-        {
-            ia32_xapic_disable_status_t ia32_xapic_disable_status = { .raw = 0 };
-            ia32_xapic_disable_status.legacy_xapic_disabled = 1;
-
-            rdmsr_set_value_in_tdvps(tdvps_p, ia32_xapic_disable_status.raw);
-            status = TD_MSR_ACCESS_SUCCESS;
-            break;
-        }
         case IA32_X2APIC_APICID:
         {
             if (tdcs_p->executions_ctl_fields.td_ctls.enum_topology)
@@ -823,6 +821,15 @@ uint16_t td_rdmsr_exit(void)
 
             break;
         }
+        case IA32_XAPIC_DISABLE_STATUS_MSR_ADDR:
+        {
+            ia32_xapic_disable_status_t ia32_xapic_disable_status = { .raw = 0 };
+            ia32_xapic_disable_status.legacy_xapic_disabled = 1;
+
+            rdmsr_set_value_in_tdvps(tdvps_p, ia32_xapic_disable_status.raw);
+            status = TD_MSR_ACCESS_SUCCESS;
+            break;
+        }
         default:
         {
             if ((msr_addr >= IA32_VMX_BASIC_MSR_ADDR) && (msr_addr <= IA32_VMX_PROCBASED_CTLS3_MSR_ADDR))
@@ -837,7 +844,7 @@ uint16_t td_rdmsr_exit(void)
                 }
             }
 
-            status = rd_wr_msr_generic_case(msr_addr, false, tdcs_p);
+            status = rd_wr_msr_generic_case(msr_addr, false, tdcs_p, false);
             break;
         }
     }

@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -29,13 +29,14 @@
 #include "accessors/vt_accessors.h"
 #include "accessors/data_accessors.h"
 #include "x86_defs/vmcs_defs.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "data_structures/tdx_global_data.h"
 #include "data_structures/tdx_local_data.h"
 #include "tdx_vmm_api_handlers.h"
 #include "debug/tdx_debug.h"
 #include "helpers/helpers.h"
 #include "metadata_handlers/metadata_generic.h"
+
 
 
 
@@ -59,7 +60,7 @@ void tdx_vmm_dispatcher(void)
     vm_vmexit_exit_reason_t exit_reason;
     ia32_vmread(VMX_VM_EXIT_REASON_ENCODE, &exit_reason.raw);
 
-    tdx_sanity_check(exit_reason.basic_reason == VMEXIT_REASON_SEAMCALL, SCEC_VMM_DISPATCHER_SOURCE, 2);
+    tdx_sanity_check(exit_reason.basic_reason == VMEXIT_REASON_SEAMCALL, FATAL_ERROR_ID_308, 2);
 
     tdx_module_global_t * global_data = get_global_data();
     // Get leaf code from RAX in local data (saved on entry)
@@ -79,7 +80,7 @@ void tdx_vmm_dispatcher(void)
     // using Speculative Store Bypass Disable (SSBD), which delays speculative
     // execution of a load until the addresses for all older stores are known.
     local_data->vmm_non_extended_state.ia32_spec_ctrl = ia32_rdmsr(IA32_SPEC_CTRL_MSR_ADDR);
-    wrmsr_opt(IA32_SPEC_CTRL_MSR_ADDR, TDX_MODULE_IA32_SPEC_CTRL, local_data->vmm_non_extended_state.ia32_spec_ctrl);
+    wrmsr_opt(IA32_SPEC_CTRL_MSR_ADDR, GET_TDX_MODULE_IA32_SPEC_CTRL(), local_data->vmm_non_extended_state.ia32_spec_ctrl);
 
     // All IA32_DEBGCTL bits have been cleared by SEAMCALL.
     // Set IA32_DEBUGCTL.ENABLE_UNCORE_PMI to the VMM's value, all other bits remain 0.
@@ -123,10 +124,6 @@ void tdx_vmm_dispatcher(void)
         ia32_vmwrite(VMX_HOST_IA32_PERF_GLOBAL_CONTROL_FULL_ENCODE, tdx_module_perf_global_ctrl);
     }
 
-    // preserve VMM's XCR0 state
-    local_data->vmm_xcr0_state = ia32_xgetbv(0);
-    ia32_xsetbv(0, TDX_MODULE_XCR0_WITH_AVX);
-
     if ((leaf_opcode.reserved0 != 0) || (leaf_opcode.reserved1 != 0))
     {
         TDX_ERROR("Leaf and version not supported 0x%llx\n", leaf_opcode.raw);
@@ -134,6 +131,7 @@ void tdx_vmm_dispatcher(void)
         local_data->vmm_regs.rax = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RAX);
         goto EXIT;
     }
+
 
     // Only a few functions have multiple versions
     if (leaf_opcode.version > 0)
@@ -146,6 +144,7 @@ void tdx_vmm_dispatcher(void)
             case TDH_MNG_RD_LEAF:
             case TDH_VP_RD_LEAF:
             case TDH_VP_INIT_LEAF:
+            case TDH_SYS_INIT_LEAF:
                 break;
             default:
                 TDX_ERROR("Version greater than zero not supported for current leaf 0x%llx\n", leaf_opcode.raw);
@@ -429,7 +428,7 @@ void tdx_vmm_dispatcher(void)
     }
     case TDH_SYS_INIT_LEAF:
     {
-        local_data->vmm_regs.rax = tdh_sys_init();
+        local_data->vmm_regs.rax = tdh_sys_init((uint8_t)leaf_opcode.version);
         break;
     }
     case TDH_SYS_RD_LEAF:
@@ -501,16 +500,17 @@ void tdx_vmm_dispatcher(void)
                                              local_data->vmm_regs.r9);
         break;
     }
+
     case TDH_SERVTD_BIND_LEAF:
-    {
-        servtd_attributes_t servtd_attr = {.raw = local_data->vmm_regs.r10};
-        local_data->vmm_regs.rax = tdh_servtd_bind(local_data->vmm_regs.rcx,
-                                             local_data->vmm_regs.rdx,
-                                             local_data->vmm_regs.r8,
-                                             local_data->vmm_regs.r9,
-                                             servtd_attr);
-        break;
-    }
+        {
+            servtd_attributes_t servtd_attr = {.raw = local_data->vmm_regs.r10};
+            local_data->vmm_regs.rax = tdh_servtd_bind(local_data->vmm_regs.rcx,
+                                                 local_data->vmm_regs.rdx,
+                                                 local_data->vmm_regs.r8,
+                                                 local_data->vmm_regs.r9,
+                                                 servtd_attr);
+            break;
+        }
     case TDH_SERVTD_PREBIND_LEAF:
     {
         servtd_attributes_t servtd_attr = {.raw = local_data->vmm_regs.r10};
@@ -690,6 +690,9 @@ void tdx_vmm_dispatcher(void)
                                             local_data->vmm_regs.r13);
         break;
     }
+
+
+
     default:
     {
         TDX_ERROR("tdx_vmm_dispatcher - TDX_OPERAND_INVALID - invalid leaf = %d\n", leaf_opcode);
@@ -698,13 +701,16 @@ void tdx_vmm_dispatcher(void)
     }
     }
 
-    tdx_sanity_check(local_data->vmm_regs.rax != UNINITIALIZE_ERROR, SCEC_VMM_DISPATCHER_SOURCE, 1);
+    tdx_sanity_check(local_data->vmm_regs.rax != UNINITIALIZE_ERROR, FATAL_ERROR_ID_310, 1);
 
     IF_RARE (local_data->reset_avx_state)
     {
         // Current IPP crypto lib uses SSE state only (YMM's), so we only clear them
         clear_ymms();
         local_data->reset_avx_state = false;
+
+        // restore VMM's XCR0 state
+        ia32_xsetbv(0, local_data->vmm_xcr0_state);
     }
 
 EXIT:
@@ -722,7 +728,7 @@ void tdx_vmm_post_dispatching(void)
 
     // Restore IA32_SPEC_CTRL
     wrmsr_opt(IA32_SPEC_CTRL_MSR_ADDR, local_data_ptr->vmm_non_extended_state.ia32_spec_ctrl,
-                                       TDX_MODULE_IA32_SPEC_CTRL);
+                                       GET_TDX_MODULE_IA32_SPEC_CTRL());
 
     // If simplified LAM was saved & disabled, restore its state
     if (local_data_ptr->vmm_non_extended_state.ia32_lam_enable != 0)
@@ -730,18 +736,15 @@ void tdx_vmm_post_dispatching(void)
         ia32_wrmsr(IA32_LAM_ENABLE_MSR_ADDR, local_data_ptr->vmm_non_extended_state.ia32_lam_enable);
     }
 
-    // restore VMM's XCR0 state
-    ia32_xsetbv(0, local_data_ptr->vmm_xcr0_state);
-
     mark_lp_as_free();
 
     // Check that we have no mapped keyholes left
-    tdx_sanity_check(local_data_ptr->keyhole_state.total_ref_count == 0, SCEC_KEYHOLE_MANAGER_SOURCE, 20);
+    tdx_sanity_check(local_data_ptr->keyhole_state.total_ref_count - local_data_ptr->fatal_error_mem_mapped == 0, FATAL_ERROR_ID_311, 20);
 
     TDX_LOG("tdx_vmm_post_dispatching - preparing to do SEAMRET\n");
 
     tdx_seamret_to_vmm(); // Restore GPRs and SEAMRET
 
     // Shouldn't reach here:
-    tdx_sanity_check(0, SCEC_VMM_DISPATCHER_SOURCE, 0);
+    tdx_sanity_check(0, FATAL_ERROR_ID_312, 0);
 }

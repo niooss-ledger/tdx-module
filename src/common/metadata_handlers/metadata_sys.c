@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 /**
  * @file metadata_sys.c
@@ -26,14 +26,15 @@
 
 #include "metadata_generic.h"
 #include "metadata_sys.h"
-#include "auto_gen/global_sys_fields_lookup.h"
+#include GLOBAL_SYS_FIELDS_LOOKUP_HEADER
 #include "helpers/error_reporting.h"
 #include "accessors/data_accessors.h"
-#include "auto_gen/cpuid_configurations.h"
+#include CPUID_CONFIGURATIONS_HEADER
 #include "helpers/migration.h"
 #include "data_structures/loader_data.h"
 #include "x86_defs/msr_defs.h"
 #include "helpers/cpuid_fms.h"
+#include "helpers/helpers.h"
 
 static bool_t md_sys_get_elements(md_field_id_t field_id, const md_lookup_t* entry,
                                   uint64_t* element_array, uint64_t* array_size)
@@ -141,8 +142,11 @@ static bool_t md_sys_get_elements(md_field_id_t field_id, const md_lookup_t* ent
                 tdx_features_0.fixed_ctr12_prof = 1;
                 tdx_features_0.maxpa_virt = 1;
                 tdx_features_0.maxgpa_virt = 1;
+                tdx_features_0.fatal_diagnostics = 1;
                 tdx_features_0.cpuid2_virt = 1;
                 tdx_features_0.enhanced_event_filtering = 0;
+                tdx_features_0.tdx_io = 0;
+                tdx_features_0.tdx_connect_partitioning = tdx_features_0.tdx_io;
 
                 *element_array = tdx_features_0.raw;
             }
@@ -508,7 +512,7 @@ api_error_code_e md_sys_read_element(md_field_id_t field_id, const md_lookup_t* 
         uint64_t elem_num_in_field = (field_id.field_code - entry->field_id.field_code) % entry->num_of_elem;
         uint64_t offset = elem_num_in_field * elem_size;
 
-        tdx_sanity_check(offset + elem_size <= array_size, SCEC_METADATA_HANDLER_SOURCE, 20);
+        tdx_sanity_check(offset + elem_size <= array_size, FATAL_ERROR_ID_233, 20);
 
         uint64_t* elem_ptr = (uint64_t*)((uint8_t*)element_array + offset);
         read_value = *elem_ptr;
@@ -559,7 +563,7 @@ api_error_code_e md_sys_read_field(md_field_id_t field_id, const md_lookup_t* en
         for (uint32_t i = 0; i < entry->num_of_elem; i++)
         {
             uint64_t offset = i * elem_size;
-            tdx_sanity_check(offset + elem_size <= array_size, SCEC_METADATA_HANDLER_SOURCE, 21);
+            tdx_sanity_check(offset + elem_size <= array_size, FATAL_ERROR_ID_234, 21);
             uint64_t* elem_ptr = (uint64_t*)((uint8_t*)element_array + offset);
             read_value = *elem_ptr;
             value[i] = read_value & read_mask;

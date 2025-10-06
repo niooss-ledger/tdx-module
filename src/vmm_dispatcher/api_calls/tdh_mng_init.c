@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "x86_defs/x86_defs.h"
 #include "data_structures/td_control_structures.h"
 #include "x86_defs/vmcs_defs.h"
@@ -38,11 +38,11 @@
 #include "accessors/ia32_accessors.h"
 #include "accessors/data_accessors.h"
 #include "crypto/sha384.h"
-#include "auto_gen/msr_config_lookup.h"
-#include "auto_gen/cpuid_configurations.h"
+#include MSR_CONFIG_LOOKUP_HEADER
+#include CPUID_CONFIGURATIONS_HEADER
 #include "helpers/cpuid_fms.h"
 
-static void apply_cpuid_xfam_masks(cpuid_config_return_values_t* cpuid_values,
+static void apply_cpuid_xfam_masks(volatile cpuid_config_return_values_t* cpuid_values,
                                    uint64_t xfam,
                                    const cpuid_config_return_values_t* cpuid_masks)
 {
@@ -67,9 +67,9 @@ static api_error_type read_and_set_td_configurations(tdr_t * tdr_ptr,
                                                      tdcs_t * tdcs_ptr,
                                                      td_params_t * td_params_ptr)
 {
-    ia32e_eptp_t   target_eptp = { .raw = 0 };
-    td_param_attributes_t tmp_attributes;
-    ia32_xcr0_t    tmp_xfam;
+    volatile ia32e_eptp_t   target_eptp = { .raw = 0 };
+    volatile td_param_attributes_t tmp_attributes;
+    volatile ia32_xcr0_t    tmp_xfam;
 
     tdx_module_global_t* tdx_global_data_ptr = get_global_data();
 
@@ -98,7 +98,7 @@ static api_error_type read_and_set_td_configurations(tdr_t * tdr_ptr,
     set_xbuff_offsets_and_size(tdcs_ptr, tmp_xfam.raw);
 
     // Read and verify MAX_VCPUS
-    uint32_t max_vcpus = (uint32_t)td_params_ptr->max_vcpus;
+    volatile uint32_t max_vcpus = (uint32_t)td_params_ptr->max_vcpus;
     if ((max_vcpus == 0) || (max_vcpus > MAX_VCPUS_PER_TD))
     {
         return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_MAX_VCPUS);
@@ -106,7 +106,7 @@ static api_error_type read_and_set_td_configurations(tdr_t * tdr_ptr,
     }
     tdcs_ptr->executions_ctl_fields.max_vcpus = max_vcpus;
 
-    uint16_t num_l2_vms = (uint16_t)td_params_ptr->num_l2_vms;
+    volatile uint16_t num_l2_vms = (uint16_t)td_params_ptr->num_l2_vms;
     if (num_l2_vms > MAX_L2_VMS)
     {
         return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_NUM_L2_VMS);
@@ -131,7 +131,7 @@ static api_error_type read_and_set_td_configurations(tdr_t * tdr_ptr,
     }
 
     // Read and verify CONFIG_FLAGS
-    config_flags_t config_flags_local_var;
+    volatile config_flags_t config_flags_local_var;
     config_flags_local_var.raw = td_params_ptr->config_flags.raw;
 
     if (!verify_td_config_flags(config_flags_local_var))
@@ -142,8 +142,9 @@ static api_error_type read_and_set_td_configurations(tdr_t * tdr_ptr,
 
     // Read and verify EPTP_CONTROLS
     target_eptp.raw = td_params_ptr->eptp_controls.raw;
-
-    if (!verify_and_set_td_eptp_controls(tdr_ptr, tdcs_ptr, config_flags_local_var.gpaw, target_eptp))
+    config_flags_t config_flags_local_var_tmp = {.raw = config_flags_local_var.raw};
+    ia32e_eptp_t target_eptp_tmp = {.raw = target_eptp.raw};
+    if (!verify_and_set_td_eptp_controls(tdr_ptr, tdcs_ptr, config_flags_local_var_tmp.gpaw, target_eptp_tmp))
     {
         return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_EPTP_CONTROLS);
         goto EXIT;
@@ -152,7 +153,7 @@ static api_error_type read_and_set_td_configurations(tdr_t * tdr_ptr,
     tdcs_ptr->executions_ctl_fields.config_flags.raw = config_flags_local_var.raw;
     tdcs_ptr->executions_ctl_fields.gpaw = config_flags_local_var.gpaw;
 
-    uint16_t virt_tsc_freq = td_params_ptr->tsc_frequency;
+    volatile uint16_t virt_tsc_freq = td_params_ptr->tsc_frequency;
     if ((virt_tsc_freq < VIRT_TSC_FREQUENCY_MIN) || (virt_tsc_freq > VIRT_TSC_FREQUENCY_MAX))
     {
         return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_TSC_FREQUENCY);
@@ -185,11 +186,11 @@ static api_error_type read_and_set_td_configurations(tdr_t * tdr_ptr,
         goto EXIT;
     }
 
-    tdx_memcpy(tdcs_ptr->measurement_fields.mr_config_id.bytes, sizeof(measurement_t),
+    tdx_memcpy(tdcs_ptr->measurement_fields.mrconfigid.bytes, sizeof(measurement_t),
                td_params_ptr->mr_config_id.bytes, sizeof(measurement_t));
-    tdx_memcpy(tdcs_ptr->measurement_fields.mr_owner.bytes, sizeof(measurement_t),
+    tdx_memcpy(tdcs_ptr->measurement_fields.mrowner.bytes, sizeof(measurement_t),
                td_params_ptr->mr_owner.bytes, sizeof(measurement_t));
-    tdx_memcpy(tdcs_ptr->measurement_fields.mr_owner_config.bytes, sizeof(measurement_t),
+    tdx_memcpy(tdcs_ptr->measurement_fields.mrownerconfig.bytes, sizeof(measurement_t),
                td_params_ptr->mr_owner_config.bytes, sizeof(measurement_t));
 
     if (td_params_ptr->msr_config_ctls.reserved_0 != 0)
@@ -212,15 +213,16 @@ EXIT:
 }
 
 
-static api_error_type read_and_set_cpuid_configurations(tdcs_t * tdcs_ptr,
+static api_error_type read_and_set_cpuid_configurations(uint64_t target_tdr_pa,
+                                                        tdcs_t * tdcs_ptr,
                                                         td_params_t * td_params_ptr,
                                                         tdx_module_global_t * global_data_ptr,
                                                         tdx_module_local_t * local_data_ptr)
 {
     uint32_t cpuid_index = 0;
     cpuid_config_leaf_subleaf_t cpuid_leaf_subleaf;
-    cpuid_config_return_values_t config_values;
-    cpuid_config_return_values_t final_tdcs_values;
+    volatile cpuid_config_return_values_t config_values;
+    volatile cpuid_config_return_values_t final_tdcs_values;
     td_param_attributes_t attributes;
     ia32_xcr0_t xfam;
     api_error_type return_val = UNINITIALIZE_ERROR;
@@ -293,7 +295,6 @@ static api_error_type read_and_set_cpuid_configurations(tdcs_t * tdcs_ptr,
 
                 final_tdcs_values.eax = cpuid_01_eax.raw;
             }
-
             if (tdcs_ptr->executions_ctl_fields.attributes.migratable)
             {
                 if (!check_fms_config(cpuid_01_eax))
@@ -434,7 +435,8 @@ static api_error_type read_and_set_cpuid_configurations(tdcs_t * tdcs_ptr,
            }
            else
            {
-               FATAL_ERROR();
+               extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_td_handle(target_tdr_pa);
+               fatal_error(FATAL_ERROR_ID_57, FATAL_INFO_FORMAT_TD_HANDLE_INFO, &extended_fatal_info);
            }
         }
         else if (cpuid_leaf_subleaf.leaf == 0xA)
@@ -603,8 +605,8 @@ static api_error_type read_and_set_cpuid_configurations(tdcs_t * tdcs_ptr,
         }
 
         // Write the CPUID values to TDCS and set the CPUID_VALID flag
-        tdcs_ptr->cpuid_config_vals[cpuid_index].low = final_tdcs_values.low;
-        tdcs_ptr->cpuid_config_vals[cpuid_index].high = final_tdcs_values.high;
+        tdcs_ptr->cpuid_values[cpuid_index].low = final_tdcs_values.low;
+        tdcs_ptr->cpuid_values[cpuid_index].high = final_tdcs_values.high;
         tdcs_ptr->executions_ctl_fields.cpuid_valid[cpuid_index] = true;
     }
 
@@ -720,7 +722,7 @@ api_error_type tdh_mng_init(uint64_t target_tdr_pa, uint64_t target_td_params_pa
     tdcs_ptr->epoch_tracking.epoch_and_refcount.refcount[1] = 0;
 
     uint64_t native_tsc_frequency = get_global_data()->native_tsc_frequency;
-    tdx_sanity_check((native_tsc_frequency <= BIT_MASK_32BITS), SCEC_SEAMCALL_SOURCE(TDH_MNG_INIT_LEAF), 0);
+    tdx_sanity_check((native_tsc_frequency <= BIT_MASK_32BITS), FATAL_ERROR_ID_288, 0);
     // safe to cast to 32-bits due to the sanity check above
     tdcs_ptr->executions_ctl_fields.hp_lock_timeout = translate_usec_to_tsc(DEFAULT_HP_LOCK_TIMEOUT_USEC, (uint32_t)native_tsc_frequency);
 
@@ -791,8 +793,7 @@ api_error_type tdh_mng_init(uint64_t target_tdr_pa, uint64_t target_td_params_pa
     /**
      *  Handle CPUID Configuration
      */
-    return_val = read_and_set_cpuid_configurations(tdcs_ptr, td_params_ptr, global_data_ptr,
-                                                   local_data_ptr);
+    return_val = read_and_set_cpuid_configurations(target_tdr_pa, tdcs_ptr, td_params_ptr, global_data_ptr, local_data_ptr);
 
     if (return_val != TDX_SUCCESS)
     {
@@ -808,6 +809,7 @@ api_error_type tdh_mng_init(uint64_t target_tdr_pa, uint64_t target_td_params_pa
         return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_IA32_ARCH_CAPABILITIES_CONFIG);
         goto EXIT;
     }
+
 
     if (!td_immutable_state_cross_check(tdcs_ptr))
     {
@@ -829,17 +831,25 @@ api_error_type tdh_mng_init(uint64_t target_tdr_pa, uint64_t target_td_params_pa
     /**
      *  Initialize the TD Measurement Fields
      */
+
+     // preserve VMM's XCR0 state
+    local_data_ptr->vmm_xcr0_state = ia32_xgetbv(0);
+    ia32_xsetbv(0, TDX_MODULE_XCR0_WITH_AVX);
+
     store_ymms_in_buffer(ymms);
 
     if ((sha_error_code = sha384_init(&(tdcs_ptr->measurement_fields.td_sha_ctx))) != 0)
     {
         // Unexpected error - Fatal Error
         TDX_ERROR("Unexpected error in SHA384 - error = %d\n", sha_error_code);
-        FATAL_ERROR();
+        fatal_error(FATAL_ERROR_ID_58, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
     }
 
     load_ymms_from_buffer(ymms);
     basic_memset_to_zero(ymms, sizeof(ymms));
+
+    // restore VMM's XCR0 state
+    ia32_xsetbv(0, local_data_ptr->vmm_xcr0_state);
 
     // Zero the RTMR hash values
     basic_memset_to_zero(tdcs_ptr->measurement_fields.rtmr, (SIZE_OF_SHA384_HASH_IN_QWORDS<<3)*NUM_RTMRS);
@@ -852,14 +862,14 @@ EXIT:
     {
         free_la(event_filters_p);
     }
+    if (tdcs_ptr != NULL)
+    {
+        free_la(tdcs_ptr);
+    }
     if (tdr_locked_flag)
     {
         pamt_unwalk(tdr_pa, tdr_pamt_block, tdr_pamt_entry_ptr, TDX_LOCK_EXCLUSIVE, PT_4KB);
         free_la(tdr_ptr);
-    }
-    if (tdcs_ptr != NULL)
-    {
-        free_la(tdcs_ptr);
     }
     if (td_params_ptr != NULL)
     {

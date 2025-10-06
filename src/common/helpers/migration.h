@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 /*
  * migration.h
@@ -38,7 +38,6 @@
 #include "crypto/aes_gcm.h"
 #include "data_structures/tdx_tdvps.h"
 
-
 /*********************************************
 * MIGRATION BUNDLE HEADER
 *********************************************/
@@ -50,10 +49,11 @@
 #define NUM_SYS_STATE_EXPORT_PAGES           1   // Num pages used by TDH.EXPORT.STATE.IMMUTABLE for the SYS MD list
 
 #define MIN_TD_IMMUTABLE_STATE_EXPORT_PAGES  4
+
 #define MIN_TD_STATE_EXPORT_PAGES            2
 #define MIN_VP_STATE_EXPORT_PAGES            5
 
-#define MIN_TD_IMMUTABLE_STATE_IMPORT_PAGES  2   // Not including the pages for SYS metadata
+#define MIN_TD_IMMUTABLE_STATE_IMPORT_PAGES  1   // Not including the pages for SYS metadata
 #define MIN_TD_STATE_IMPORT_PAGES            1
 #define MIN_VP_STATE_IMPORT_PAGES            4
 
@@ -375,7 +375,7 @@ _STATIC_INLINE_ void migsc_unlock(migsc_link_t *mgsc_link)
     bool_t old;
 
     old = _lock_btr_64b(&mgsc_link->raw, MIGSC_LINK_LOCK_BIT);
-    tdx_sanity_check(old, SCEC_LOCK_SOURCE, 9);
+    tdx_sanity_check(old, FATAL_ERROR_ID_187, 9);
 }
 
 _STATIC_INLINE_ bool_t is_gpa_list_entry_op_cancel_or_nop(gpa_list_entry_t gpa_list_entry)

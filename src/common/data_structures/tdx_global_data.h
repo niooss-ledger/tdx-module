@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -36,7 +36,7 @@
 #include "x86_defs/msr_defs.h"
 #include "x86_defs/vmcs_defs.h"
 #include "x86_defs/x86_defs.h"
-#include "auto_gen/cpuid_configurations_defines.h"
+#include CPUID_CONFIGURATIONS_DEFINES_HEADER
 #include "crypto/sha384.h"
 
 
@@ -327,7 +327,7 @@ typedef struct tdx_module_global_s
     bool_t lam_supported;
     bool_t perfmon_ext_leaf_supported;
     bool_t lass_supported;
-	
+
     uint64_t crystal_clock_frequency;
     uint64_t native_tsc_frequency;
 
@@ -380,12 +380,17 @@ typedef struct tdx_module_global_s
     fms_info_t      platform_fms;
     cpuid_1a_eax_t  native_model_info;
 
+    // fatal error diagnostics
+    uint64_t* fatal_info_p;
+    uint64_t fatal_info_config_hpa;
+    sharex_lock_t fatal_info_lock;
+    uint64_t fatal_info_icr;
+
 #ifdef DEBUGFEATURE_TDX_DBG_TRACE
     debug_control_t debug_control;
     debug_message_t trace_buffer[TRACE_BUFFER_SIZE];
 #endif // DEBUGFEATURE_TDX_DBG_TRACE
 } tdx_module_global_t;
-
 tdx_static_assert(offsetof(tdx_module_global_t, global_lock) % 2 == 0, global_lock);
 
 // validate that all variables in kot are aligned to their natural size
@@ -421,15 +426,17 @@ tdx_static_assert((offsetof(tdx_module_global_t, tdmr_info_copy) + offsetof(tdmr
 tdx_static_assert((offsetof(tdx_module_global_t, tdmr_info_copy) + offsetof(tdmr_info_entry_t, pamt_4k_size)) % sizeof_field(tdmr_info_entry_t, pamt_4k_size) == 0, tdmr_info_entry_t);
 tdx_static_assert((offsetof(tdx_module_global_t, tdmr_info_copy) + offsetof(tdmr_info_entry_t, rsvd_areas)) % sizeof(uint64_t) == 0, tdmr_info_entry_t);
 
+#define SIZE_OF_CONNECT_FIELDS 0
 
-// !!! IMPORTANT !!!
-// ALL HANDED-OFF STRUCTURES NEEDS TO BE PACKED TO ELIMINATE POSSIBLE COMPILER BUILD DIFFS
+// // !!! IMPORTANT !!!
+// // ALL HANDED-OFF STRUCTURES NEEDS TO BE PACKED TO ELIMINATE POSSIBLE COMPILER BUILD DIFFS
 #define TDX_MIN_HANDOFF_SIZE   sizeof_field(tdx_module_global_t, kot.entries) + \
                                sizeof_field(tdx_module_global_t, wbt_entries) + \
                                sizeof_field(tdx_module_global_t, tdmr_table) + \
                                sizeof_field(tdx_module_global_t, num_of_tdmr_entries) + \
                                sizeof_field(tdx_module_global_t, hkid) + \
-                               sizeof_field(tdx_module_global_t, pkg_config_bitmap)
+                               sizeof_field(tdx_module_global_t, pkg_config_bitmap) +\
+                               SIZE_OF_CONNECT_FIELDS
 
 #define TDX_MIN_HANDOFF_PAGES  ((ROUND_UP(TDX_MIN_HANDOFF_SIZE, _4KB)) / _4KB)
 

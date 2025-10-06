@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 /**
  * @file metadata_td.c
@@ -26,9 +26,9 @@
 
 #include "metadata_generic.h"
 #include "metadata_td.h"
-#include "auto_gen/tdvps_fields_lookup.h"
-#include "auto_gen/td_vmcs_fields_lookup.h"
-#include "auto_gen/cpuid_configurations.h"
+#include TDVPS_FIELDS_LOOKUP_HEADER
+#include TD_VMCS_FIELDS_LOOKUP_HEADER
+#include CPUID_CONFIGURATIONS_HEADER
 #include "helpers/error_reporting.h"
 #include "helpers/helpers.h"
 #include "helpers/virt_msr_helpers.h"
@@ -41,7 +41,7 @@ _STATIC_INLINE_ uint64_t get_element_num(md_field_id_t field_id, const md_lookup
 
     IF_RARE (field_id.class_code == MD_TDCS_CPUID_CLASS_CODE)
     {
-        tdx_sanity_check(cpuid_lookup_index < MAX_NUM_CPUID_LOOKUP, SCEC_METADATA_HANDLER_SOURCE, 10);
+        tdx_sanity_check(cpuid_lookup_index < MAX_NUM_CPUID_LOOKUP, FATAL_ERROR_ID_235, 10);
 
         // Check that element size is really 8 byte, so we can use sizeof(uint64_t)
         tdx_debug_assert(entry->field_id.element_size_code == 3);
@@ -53,23 +53,11 @@ _STATIC_INLINE_ uint64_t get_element_num(md_field_id_t field_id, const md_lookup
     return field_id.field_code - entry->field_id.field_code;
 }
 
-static uint64_t translate_hp_lock_timeout_to_usec(uint64_t timeout_in_tsc_ticks)
+static uint64_t translate_hp_lock_timeout_to_usec(uint32_t timeout_in_tsc_ticks)
 {
-    uint64_t timeout_in_usec;
-
     // Assert that the casting below is safe
-    tdx_sanity_check((get_global_data()->native_tsc_frequency <= BIT_MASK_32BITS), SCEC_METADATA_HANDLER_SOURCE, 25);
-
-    // Avoid overflow in the calculation below (should not happen but better safe than sorry)
-    if (timeout_in_tsc_ticks >= (BIT_MASK_64BITS / 1000000ULL))
-    {
-        timeout_in_tsc_ticks = (BIT_MASK_64BITS / 1000000ULL);
-    }
-
-    // The order of calculation is important to avoid underflow.
-    timeout_in_usec = ((uint64_t)timeout_in_tsc_ticks * 1000000ULL) / get_global_data()->native_tsc_frequency;
-
-    return timeout_in_usec;
+    tdx_sanity_check((get_global_data()->native_tsc_frequency <= BIT_MASK_32BITS), FATAL_ERROR_ID_236, 25);
+    return ((uint64_t)timeout_in_tsc_ticks * 1000000ULL) / get_global_data()->native_tsc_frequency;
 }
 
 static uint64_t check_hp_lock_timeout_and_translate_to_tsc(uint64_t timeout, uint64_t* tsc)
@@ -83,7 +71,7 @@ static uint64_t check_hp_lock_timeout_and_translate_to_tsc(uint64_t timeout, uin
         return false;
     }
     uint64_t native_tsc_frequency = get_global_data()->native_tsc_frequency;
-    tdx_sanity_check((native_tsc_frequency <= BIT_MASK_32BITS), SCEC_METADATA_HANDLER_SOURCE, 26);
+    tdx_sanity_check((native_tsc_frequency <= BIT_MASK_32BITS), FATAL_ERROR_ID_237, 26);
 
     // safe to cast due to the sanity check above
     uint64_t tsc_tmp = translate_usec_to_tsc((uint32_t)timeout, (uint32_t)native_tsc_frequency);
@@ -131,7 +119,7 @@ static bool_t check_cpuid_compatibility_and_set_immutable_cpuid_flags(tdcs_t* td
 
     attributes.raw = tdcs_ptr->executions_ctl_fields.attributes.raw;
     xfam.raw = tdcs_ptr->executions_ctl_fields.xfam;
-    
+
     if (cpuid_index == CPUID_LOOKUP_IDX_NA)
     {
         // This can still be OK if the imported values are all-0 and the lookup table has this leaf as fixed-0
@@ -173,7 +161,7 @@ static bool_t check_cpuid_compatibility_and_set_immutable_cpuid_flags(tdcs_t* td
             }
         }
     }
-    
+
 
     // Special CPUID Leaves/Sub-Leaves Handling
     // - Check bits that are not allowed by XFAM
@@ -227,7 +215,7 @@ static bool_t check_cpuid_compatibility_and_set_immutable_cpuid_flags(tdcs_t* td
         //   This was done above.
         // - Virtual CPUID(5) bits that are not known by the TDX module to be reserved are checked for exact
         //   match with the native CPUID(5) values.
-        
+
         // CPUID(5) will always appear in the lookup table, since we sample its native values on TDH.SYS.INIT
         tdx_debug_assert(cpuid_index != CPUID_LOOKUP_IDX_NA);
 
@@ -628,7 +616,7 @@ static api_error_code_e md_td_get_element(md_field_id_t field_id, const md_looku
         {
             case MD_TDCS_HP_LOCK_TIMEOUT_FIELD_ID:
             {
-                read_value = translate_hp_lock_timeout_to_usec(read_value);
+                read_value = translate_hp_lock_timeout_to_usec((uint32_t)read_value);
                 break;
             }
             case MD_TDCS_NUM_CPUID_VALUES_FIELD_ID:
@@ -816,7 +804,7 @@ api_error_code_e md_td_write_element(md_field_id_t field_id, const md_lookup_t* 
         return TDX_METADATA_FIELD_NOT_WRITABLE;
     }
 
-    if (!md_check_forbidden_bits_unchanged(read_value, wr_value, wr_request_mask, wr_mask))
+    if (!md_check_forbidden_bits_unchanged(read_value, wr_value, wr_request_mask, wr_mask, rd_mask))
     {
         return TDX_METADATA_FIELD_VALUE_NOT_VALID;
     }
@@ -848,7 +836,7 @@ api_error_code_e md_td_write_element(md_field_id_t field_id, const md_lookup_t* 
                 }
                 else
                 {
-                    tdx_sanity_check(pv_ctls.reserved == 0, SCEC_METADATA_HANDLER_SOURCE, (uint32_t)pv_ctls.raw);   // This should be covered by the write mask
+                    tdx_sanity_check(pv_ctls.reserved == 0, FATAL_ERROR_ID_239, (uint32_t)pv_ctls.raw);   // This should be covered by the write mask
 
                     // Update the TDCS field now, since it's used below
                     md_ctx.tdcs_ptr->executions_ctl2_fields.feature_paravirt_ctls = pv_ctls;
@@ -862,9 +850,9 @@ api_error_code_e md_td_write_element(md_field_id_t field_id, const md_lookup_t* 
                 break;
             }
             case MD_TDCS_MIG_DEC_KEY_FIELD_ID:
-                // Note that we actually set this flag before MIG_KEY is written below.
+                // Note that we actually set this flag before mig_dec_key is written below.
                 // This is OK because the relevant case (writing by MigTD)
-                // runs with a shared lock on OP_STATE, which MIG_KEY_SET
+                // runs with a shared lock on OP_STATE, which mig_dec_key_SET
                 // is read by TDH.EXPORT.STATE.IMMUTABLE, which runs with an exclusive lock on OP_STATE.
                 md_ctx.tdcs_ptr->migration_fields.mig_dec_key_set = true;
                 break;
@@ -1047,13 +1035,13 @@ api_error_code_e md_td_write_field(md_field_id_t field_id, const md_lookup_t* en
             {
                 // TD_UUID is only written on import.
                 // Save the existing value, it is checked on metadata access by service TDs
-                md_ctx.tdcs_ptr->migration_fields.preimport_uuid.qwords[0] =
+                md_ctx.tdcs_ptr->migration_fields.pre_import_uuid.qwords[0] =
                         md_ctx.tdr_ptr->management_fields.td_uuid.qwords[0];
-                md_ctx.tdcs_ptr->migration_fields.preimport_uuid.qwords[1] =
+                md_ctx.tdcs_ptr->migration_fields.pre_import_uuid.qwords[1] =
                         md_ctx.tdr_ptr->management_fields.td_uuid.qwords[1];
-                md_ctx.tdcs_ptr->migration_fields.preimport_uuid.qwords[2] =
+                md_ctx.tdcs_ptr->migration_fields.pre_import_uuid.qwords[2] =
                         md_ctx.tdr_ptr->management_fields.td_uuid.qwords[2];
-                md_ctx.tdcs_ptr->migration_fields.preimport_uuid.qwords[3] =
+                md_ctx.tdcs_ptr->migration_fields.pre_import_uuid.qwords[3] =
                         md_ctx.tdr_ptr->management_fields.td_uuid.qwords[3];
                 break;
             }
@@ -1230,7 +1218,7 @@ api_error_code_e md_td_write_field(md_field_id_t field_id, const md_lookup_t* en
 
                 break;
             }
-            
+
             case MD_TDCS_SERVTD_NUM_FIELD_ID:
             {
                 // Sanity checks: see the TDR/TDCS spreadsheet
@@ -1270,7 +1258,16 @@ api_error_code_e md_td_write_field(md_field_id_t field_id, const md_lookup_t* en
             elem_ptr = (uint64_t*)(first_elem_addr + ((uint64_t)i * elem_size));
             read_value = *elem_ptr & md_get_element_size_mask(entry->field_id.element_size_code);
 
-            if (!md_check_forbidden_bits_unchanged(read_value, value[i], wr_request_mask, wr_mask))
+            // The caller must not attempt to modify any non-writable bit.
+            // Calculate the forbidden bit mask as follows:
+            // forbidden_mask[N] is 1 if and only if both conditions are met:
+            //    - Non-writable:  element_wr_mask[N] == 0
+            //    - Write attempt: wr_mask[N] == 1
+            // Then check if any of the forbidden bits is being modified.
+
+            uint64_t forbidden_mask = wr_request_mask & ~wr_mask;
+
+            if ((read_value & forbidden_mask) != (value[i] & forbidden_mask))
             {
                 return TDX_METADATA_FIELD_VALUE_NOT_VALID;
             }

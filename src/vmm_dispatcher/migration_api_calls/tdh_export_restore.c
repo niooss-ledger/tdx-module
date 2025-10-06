@@ -25,9 +25,9 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include "auto_gen/op_state_lookup.h"
-#include "auto_gen/sept_state_lookup.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include OP_STATE_LOOKUP_HEADER
+#include SEPT_STATE_LOOKUP_HEADER
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "x86_defs/x86_defs.h"
 #include "accessors/ia32_accessors.h"
 #include "accessors/data_accessors.h"
@@ -54,7 +54,7 @@ api_error_type tdh_export_restore(gpa_list_info_t gpa_list_info, uint64_t target
     // GPA list
     pa_t                    gpa;
     gpa_list_entry_t       *gpa_list_p = NULL;
-    gpa_list_entry_t        gpa_list_entry;
+    volatile gpa_list_entry_t        gpa_list_entry;
     uint64_t                entry_num = gpa_list_info.first_entry;
     uint64_t                problem_ops_count = 0;
 
@@ -182,7 +182,7 @@ api_error_type tdh_export_restore(gpa_list_info_t gpa_list_info, uint64_t target
 
             // Atomically decrement MIG_COUNT
             uint64_t old_value = _lock_xadd_64b(&tdcs_p->migration_fields.mig_count, (uint64_t)-1);
-            tdx_sanity_check(old_value != 0, SCEC_SEAMCALL_SOURCE(TDH_EXPORT_RESTORE_LEAF), 0);
+            tdx_sanity_check(old_value != 0, FATAL_ERROR_ID_306, 0);
 
             // Prepare the EPT entry value:
             //   - If the SEPT state is one of the PENDING_* states, update it to PENDING.

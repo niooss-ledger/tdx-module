@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "x86_defs/x86_defs.h"
 #include "data_structures/td_control_structures.h"
 #include "memory_handlers/keyhole_manager.h"
@@ -214,7 +214,11 @@ static api_error_type add_l1_and_l2_pages(uint64_t version, tdr_t* tdr_ptr, pa_t
 
         // Update the L1 SEPT entry in memory with the new Secure EPT page HPA and NL_MAPPED state.
         // Keep the L1 SEPT entry locked.
-        sept_set_mapped_non_leaf(page_sept_entry_ptr[0], sept_page_pa[0], true);
+
+        sept_set_mapped_non_leaf_given_hpa_with_hkid(
+            page_sept_entry_ptr[0],
+            set_hkid_to_pa(sept_page_pa[0], tdr_ptr->key_management_fields.hkid),
+            true); // Keep locked
 
         // Nullify the page HPA to indicate it no longer needs to be allocated
         flagged_sept_page_pa[0].raw = NULL_PA;
@@ -244,7 +248,10 @@ static api_error_type add_l1_and_l2_pages(uint64_t version, tdr_t* tdr_ptr, pa_t
                 sept_set_aliased(page_sept_entry_ptr[0], vm_id);
 
                 // Map the new page in the parent table
-                sept_l2_set_mapped_non_leaf(page_sept_entry_ptr[vm_id], sept_page_pa[vm_id]);
+                sept_l2_set_mapped_non_leaf_given_hpa_and_hkid(
+                    page_sept_entry_ptr[vm_id],
+                    sept_page_pa[vm_id],
+                    tdr_ptr->key_management_fields.hkid);
 
                 // Nullify the page HPA to indicate it no longer needs to be allocated
                 flagged_sept_page_pa[vm_id].raw = NULL_PA;

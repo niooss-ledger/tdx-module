@@ -24,7 +24,7 @@
  *  Spreadsheet Format Version - '26'
  **/
 
-#include "auto_gen/td_vmcs_fields_lookup.h"
+#include "./td_vmcs_fields_lookup.h"
 
 
 const md_lookup_t td_vmcs_lookup[MAX_NUM_TD_VMCS_LOOKUP] = {

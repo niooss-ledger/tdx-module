@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 /**
  * @file metadata_generic.c
@@ -25,12 +25,12 @@
  */
 
 #include "metadata_generic.h"
-#include "auto_gen/global_sys_fields_lookup.h"
-#include "auto_gen/tdr_tdcs_fields_lookup.h"
-#include "auto_gen/td_vmcs_fields_lookup.h"
-#include "auto_gen/td_l2_vmcs_fields_lookup.h"
-#include "auto_gen/tdvps_fields_lookup.h"
-#include "auto_gen/cpuid_configurations.h"
+#include GLOBAL_SYS_FIELDS_LOOKUP_HEADER
+#include TDR_TDCS_FIELDS_LOOKUP_HEADER
+#include TD_VMCS_FIELDS_LOOKUP_HEADER
+#include TD_L2_VMCS_FIELDS_LOOKUP_HEADER
+#include TDVPS_FIELDS_LOOKUP_HEADER
+#include CPUID_CONFIGURATIONS_HEADER
 #include "helpers/error_reporting.h"
 #include "helpers/helpers.h"
 #include "metadata_sys.h"
@@ -129,7 +129,7 @@ _STATIC_INLINE_ uint32_t md_get_num_of_td_vp_ctx_unused_entries(md_context_code_
             unused_entries = 0;
             break;
         default:
-            FATAL_ERROR();
+            fatal_error(FATAL_ERROR_ID_64, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
             break;
     }
 
@@ -175,7 +175,7 @@ const md_lookup_t* md_get_lookup_table(md_context_code_e ctx_code, md_field_id_t
             }
             break;
         default:
-            FATAL_ERROR();
+            fatal_error(FATAL_ERROR_ID_65, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
             break;
     }
 
@@ -260,7 +260,7 @@ static md_field_id_t md_get_next_cpuid_value_entry(md_field_id_t field_id, bool_
     md_cpuid_field_id_get_leaf_subleaf(field_id, &leaf, &subleaf);
     uint32_t index = get_cpuid_lookup_entry(leaf, subleaf);
 
-    tdx_sanity_check(index != CPUID_LOOKUP_IDX_NA, SCEC_METADATA_HANDLER_SOURCE, 0);
+    tdx_sanity_check(index != CPUID_LOOKUP_IDX_NA, FATAL_ERROR_ID_230, 0);
 
     do
     {
@@ -360,7 +360,7 @@ static void md_get_next_item_with_iterator(lookup_iterator_t* lookup_context, md
         goto EXIT;
     }
 
-    tdx_sanity_check(lookup_context->table_idx != MD_NO_ENTRY_IDX, SCEC_METADATA_HANDLER_SOURCE, 1);
+    tdx_sanity_check(lookup_context->table_idx != MD_NO_ENTRY_IDX, FATAL_ERROR_ID_231, 1);
 
     IF_RARE (is_special_cpuid_field_id(lookup_context->field_id))
     {
@@ -617,7 +617,7 @@ void md_get_rd_wr_mask(const md_lookup_t* entry, md_access_t access_type, md_acc
             break;
         default:
             TDX_ERROR("Incorrect access type : 0x%x\n", access_type);
-            FATAL_ERROR();
+            fatal_error(FATAL_ERROR_ID_66, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
             break;
     }
 
@@ -665,7 +665,7 @@ api_error_code_e md_read_element(md_context_code_e ctx_code, md_field_id_t field
             retval = md_vp_read_element(field_id, entry, access_type, access_qual, md_ctx, value);
             break;
         default:
-            FATAL_ERROR();
+            fatal_error(FATAL_ERROR_ID_67, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
             break;
     }
 
@@ -699,7 +699,7 @@ api_error_code_e md_write_element(md_context_code_e ctx_code, md_field_id_t fiel
                                          value, wr_mask, old_value, true);
             break;
         default:
-            FATAL_ERROR();
+            fatal_error(FATAL_ERROR_ID_68, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
             break;
     }
 
@@ -724,7 +724,7 @@ static const md_lookup_t* md_check_field_and_get_entry(md_context_code_e ctx_cod
         return NULL;
     }
 
-    tdx_sanity_check(entry->num_of_elem <= MAX_ELEMENTS_IN_FIELD, SCEC_METADATA_HANDLER_SOURCE, 2);
+    tdx_sanity_check(entry->num_of_elem <= MAX_ELEMENTS_IN_FIELD, FATAL_ERROR_ID_232, 2);
 
     if (lookup_context != NULL)
     {
@@ -762,7 +762,7 @@ static api_error_code_e md_read_field_with_entry(md_context_code_e ctx_code, md_
             retval = md_vp_read_field(field_id, entry, access_type, access_qual, md_ctx, value);
             break;
         default:
-            FATAL_ERROR();
+            fatal_error(FATAL_ERROR_ID_69, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
             break;
     }
 
@@ -792,7 +792,7 @@ static api_error_code_e md_write_field_with_entry(md_context_code_e ctx_code, md
             retval = md_vp_write_field(field_id, entry, access_type, access_qual, md_ctx, value, wr_mask);
             break;
         default:
-            FATAL_ERROR();
+            fatal_error(FATAL_ERROR_ID_70, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
             break;
     }
 
@@ -887,7 +887,8 @@ static dump_seq_status_e md_dump_sequence(md_sequence_t* sequence_ptr, md_contex
         {
             TDX_ERROR("Unexpected error during sequence dump - 0x%llx, field_id = 0x%llx\n",
                     retval, lkp_ctx->field_id.raw);
-            FATAL_ERROR();
+            
+            fatal_error(FATAL_ERROR_ID_71, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
         }
 
         // Fetch next field in context and class
@@ -913,7 +914,6 @@ static dump_seq_status_e md_dump_sequence(md_sequence_t* sequence_ptr, md_contex
             }
             break;
         }
-
         entry = &lkp_ctx->lookup_table[lkp_ctx->table_idx];
     }
 
@@ -988,10 +988,9 @@ api_error_code_e md_dump_list(md_context_code_e ctx_code, md_field_id_t field_id
 #ifdef DEBUGFEATURE_TDX_DBG_TRACE
         uint64_t prev_field_id = lookup_context.field_id.raw;
 #endif // DEBUGFEATURE_TDX_DBG_TRACE
-
         sequence_done = md_dump_sequence(sequence_ptr, ctx_code, md_ctx, buff_size, access_type, access_qual,
                                          &elements_written, &lookup_context);
-
+        
         // Check that it's not an empty sequence
         IF_COMMON (sequence_done != DUMP_SEQUENCE_EMPTY)
         {
@@ -1018,7 +1017,7 @@ api_error_code_e md_dump_list(md_context_code_e ctx_code, md_field_id_t field_id
         // Fetch next field table entry, to see the number of elements in the loop condition
         entry = &lookup_context.lookup_table[lookup_context.table_idx];
     }
-
+    
     // Next field id will either get -1 if we finished the context, or the next field id to be written
     // in case of unfinished sequence, or unfinished context
     next_field_id->raw = lookup_context.field_id.raw;
@@ -1284,7 +1283,11 @@ api_error_code_e md_write_list(md_context_code_e ctx_code, md_field_id_t expecte
                                    &elements_read, &lkp_iter, skip_non_writable, ext_err_info, is_import);
         if (retval != TDX_SUCCESS)
         {
-            return api_error_with_operand_id(retval, i);
+            if (retval != UNINITIALIZE_ERROR)
+            {
+                retval += i;
+            }
+            return retval;
         }
 
         // Decrement the written element size and sequence header size from the buffer

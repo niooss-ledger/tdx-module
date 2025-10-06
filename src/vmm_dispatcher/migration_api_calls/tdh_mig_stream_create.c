@@ -149,27 +149,31 @@ api_error_type tdh_mig_stream_create(uint64_t migsc_pa, uint64_t target_tdr_pa)
 
 EXIT:
     // Release all acquired locks
-    if (op_state_locked_flag)
-    {
-        release_sharex_lock_hp(&(tdcs_p->management_fields.op_state_lock), TDX_LOCK_EXCLUSIVE);
-    }
-    if (tdr_locked_flag)
-    {
-        pamt_unwalk(tdr_pa, tdr_pamt_block, tdr_pamt_entry_ptr, TDX_LOCK_SHARED, PT_4KB);
-        free_la(tdr_p);
-    }
-    if (mig_lock_flag)
-    {
-        release_sharex_lock(&tdcs_p->migration_fields.mig_lock, TDX_LOCK_EXCLUSIVE);
-    }
-    if (tdcs_p != NULL)
-    {
-        free_la(tdcs_p);
-    }
     if(migsc_pamt_locked_flag)
     {
         pamt_unwalk(migsc, migsc_pamt_block, migsc_pamt_entry_p, TDX_LOCK_EXCLUSIVE, PT_4KB);
         free_la(migsc_p);
+    }
+
+    if (mig_lock_flag)
+    {
+        release_sharex_lock(&tdcs_p->migration_fields.mig_lock, TDX_LOCK_EXCLUSIVE);
+    }
+
+    if (op_state_locked_flag)
+    {
+        release_sharex_lock_hp(&(tdcs_p->management_fields.op_state_lock), TDX_LOCK_EXCLUSIVE);
+    }
+
+    if (tdcs_p != NULL)
+    {
+        free_la(tdcs_p);
+    }
+
+    if (tdr_locked_flag)
+    {
+        pamt_unwalk(tdr_pa, tdr_pamt_block, tdr_pamt_entry_ptr, TDX_LOCK_SHARED, PT_4KB);
+        free_la(tdr_p);
     }
 
     return return_val;

@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "x86_defs/x86_defs.h"
 #include "data_structures/td_control_structures.h"
 #include "memory_handlers/keyhole_manager.h"
@@ -114,7 +114,7 @@ api_error_type tdh_vp_create(uint64_t target_tdvpr_pa, uint64_t target_tdr_pa)
      */
     tdvps_ptr->management.num_tdvps_pages = 1;
     tdvps_ptr->management.assoc_lpid = (uint32_t)-1;
-    tdvps_ptr->management.tdvps_pa[0] = assign_hkid_to_hpa(tdr_ptr, tdvpr_pa).raw;
+    tdvps_ptr->management.tdvps_page_pa[0] = assign_hkid_to_hpa(tdr_ptr, tdvpr_pa).raw;
 
     // Register the new TDVPR page in its owner TDR
     (void)_lock_xadd_64b(&(tdr_ptr->management_fields.chldcnt), 1);

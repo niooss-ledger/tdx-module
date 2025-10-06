@@ -24,7 +24,7 @@
  *  Spreadsheet Format Version - '2'
  **/
 
-#include "auto_gen/global_sys_fields_lookup.h"
+#include "./global_sys_fields_lookup.h"
 
 
 const md_lookup_t global_sys_lookup[MAX_NUM_GLOBAL_SYS_LOOKUP] = {

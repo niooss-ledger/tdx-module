@@ -28,13 +28,13 @@
 #include "tdx_basic_defs.h"
 #include "tdx_basic_types.h"
 #include "tdx_vmm_api_handlers.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 
 #include "data_structures/tdx_global_data.h"
 #include "helpers/helpers.h"
 #include "memory_handlers/keyhole_manager.h"
 #include "accessors/data_accessors.h"
-#include "auto_gen/cpuid_configurations.h"
+#include CPUID_CONFIGURATIONS_HEADER
 
 #define MAX_TDMRS 64
 

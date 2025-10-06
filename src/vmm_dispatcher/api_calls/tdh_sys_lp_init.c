@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -28,7 +28,7 @@
 #include "tdx_basic_defs.h"
 #include "tdx_basic_types.h"
 #include "tdx_vmm_api_handlers.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 
 #include "data_structures/tdx_global_data.h"
 #include "data_structures/tdx_local_data.h"
@@ -40,10 +40,9 @@
 #include "accessors/ia32_accessors.h"
 #include "accessors/data_accessors.h"
 #include "accessors/vt_accessors.h"
-
 #include "helpers/smrrs.h"
 #include "memory_handlers/keyhole_manager.h"
-#include "auto_gen/cpuid_configurations.h"
+#include CPUID_CONFIGURATIONS_HEADER
 
 _STATIC_INLINE_ api_error_type check_msrs(tdx_module_global_t* tdx_global_data_ptr)
 {
@@ -162,7 +161,14 @@ _STATIC_INLINE_ api_error_type compare_cpuid_configuration(tdx_module_global_t* 
     uint32_t last_base_leaf, last_extended_leaf;
     uint32_t ebx, ecx, edx;
 
+    /**
+     * Read CPUID leaf 0 to get the last base leaf number.
+     * Note that we support base leaf numbers higher than the CPU supports; for such leaf numbers
+     * we virtualize the return values as all-0.  This is done later.
+     */
     ia32_cpuid(CPUID_MAX_INPUT_VAL_LEAF, 0, &last_base_leaf, &ebx, &ecx, &edx);
+
+    // Read CPUID leaf 0x80000000 to get the last extended leaf number
     ia32_cpuid(CPUID_MAX_EXTENDED_VAL_LEAF, 0, &last_extended_leaf, &ebx, &ecx, &edx);
 
     for (uint32_t i = 0; i < MAX_NUM_CPUID_LOOKUP; i++)
@@ -175,56 +181,59 @@ _STATIC_INLINE_ api_error_type compare_cpuid_configuration(tdx_module_global_t* 
         tmp_cpuid_config.leaf_subleaf =
                 cpuid_lookup[i].leaf_subleaf;
 
-        ia32_cpuid(tmp_cpuid_config.leaf_subleaf.leaf, tmp_cpuid_config.leaf_subleaf.subleaf,
-                &tmp_cpuid_config.values.eax, &tmp_cpuid_config.values.ebx,
-                &tmp_cpuid_config.values.ecx, &tmp_cpuid_config.values.edx);
 
-        if (!((tmp_cpuid_config.leaf_subleaf.leaf <= last_base_leaf) ||
+        /**
+         * We may support base leaf numbers higher than the CPU supports; for such leaf numbers
+         * CPUID is virtualized as 0 and there's no need to check vs. the valued sampled by TDH.SYS.INIT.
+         */
+        if ((tmp_cpuid_config.leaf_subleaf.leaf <= last_base_leaf) ||
             ((tmp_cpuid_config.leaf_subleaf.leaf >= CPUID_FIRST_EXTENDED_LEAF) &&
-             (tmp_cpuid_config.leaf_subleaf.leaf <= last_extended_leaf))))
+             (tmp_cpuid_config.leaf_subleaf.leaf <= last_extended_leaf)))
         {
-            continue;
-        }
 
-        tmp_verify_same_mask.values.low = (tmp_cpuid_config.values.low & cpuid_lookup[i].verify_same.low);
-        tmp_verify_same_mask.values.high = (tmp_cpuid_config.values.high & cpuid_lookup[i].verify_same.high);
+            ia32_cpuid(tmp_cpuid_config.leaf_subleaf.leaf, tmp_cpuid_config.leaf_subleaf.subleaf,
+                       &tmp_cpuid_config.values.eax, &tmp_cpuid_config.values.ebx,
+                       &tmp_cpuid_config.values.ecx, &tmp_cpuid_config.values.edx);
 
-        pl_verify_same_mask.values.low = (tdx_global_data_ptr->cpuid_values[i].values.low &
-                cpuid_lookup[i].verify_same.low);
-        pl_verify_same_mask.values.high = (tdx_global_data_ptr->cpuid_values[i].values.high &
-                cpuid_lookup[i].verify_same.high);
+            tmp_verify_same_mask.values.low = (tmp_cpuid_config.values.low & cpuid_lookup[i].verify_same.low);
+            tmp_verify_same_mask.values.high = (tmp_cpuid_config.values.high & cpuid_lookup[i].verify_same.high);
 
-        if (tmp_verify_same_mask.values.low != pl_verify_same_mask.values.low ||
-            tmp_verify_same_mask.values.high != pl_verify_same_mask.values.high)
-        {
-            tdx_local_data_ptr->vmm_regs.rcx = tmp_cpuid_config.leaf_subleaf.raw;
-            tdx_local_data_ptr->vmm_regs.rdx = cpuid_lookup[i].verify_same.low;
-            tdx_local_data_ptr->vmm_regs.r8 = cpuid_lookup[i].verify_same.high;
+            pl_verify_same_mask.values.low = (tdx_global_data_ptr->cpuid_values[i].values.low &
+                                              cpuid_lookup[i].verify_same.low);
+            pl_verify_same_mask.values.high = (tdx_global_data_ptr->cpuid_values[i].values.high &
+                                               cpuid_lookup[i].verify_same.high);
 
-            return TDX_INCONSISTENT_CPUID_FIELD;
-        }
+            if (tmp_verify_same_mask.values.low != pl_verify_same_mask.values.low ||
+                tmp_verify_same_mask.values.high != pl_verify_same_mask.values.high)
+            {
+                tdx_local_data_ptr->vmm_regs.rcx = tmp_cpuid_config.leaf_subleaf.raw;
+                tdx_local_data_ptr->vmm_regs.rdx = cpuid_lookup[i].verify_same.low;
+                tdx_local_data_ptr->vmm_regs.r8 = cpuid_lookup[i].verify_same.high;
 
-        /*------------------------------------------------------
-           Special Handling of Selected CPUID Leaves/Sub-Leaves
-        ------------------------------------------------------*/
+                return TDX_INCONSISTENT_CPUID_FIELD;
+            }
 
-        // Determine current core and packege IDs.
-        if ((tmp_cpuid_config.leaf_subleaf.leaf == CPUID_GET_TOPOLOGY_LEAF) &&
-            (tmp_cpuid_config.leaf_subleaf.subleaf == 0))
-        {
-            tdx_local_data_ptr->lp_info.core =
+            /*------------------------------------------------------
+            Special Handling of Selected CPUID Leaves/Sub-Leaves
+            ------------------------------------------------------*/
+
+            // Determine current core and packege IDs.
+            if ((tmp_cpuid_config.leaf_subleaf.leaf == CPUID_GET_TOPOLOGY_LEAF) &&
+                (tmp_cpuid_config.leaf_subleaf.subleaf == 0))
+            {
+                tdx_local_data_ptr->lp_info.core =
                     (tmp_cpuid_config.values.edx >> tdx_global_data_ptr->x2apic_core_id_shift_count) &
                     tdx_global_data_ptr->x2apic_core_id_mask;
-            tdx_local_data_ptr->lp_info.pkg  =
+                tdx_local_data_ptr->lp_info.pkg =
                     (tmp_cpuid_config.values.edx >> tdx_global_data_ptr->x2apic_pkg_id_shift_count);
 
-            // Sanity check
-            if (tdx_local_data_ptr->lp_info.pkg >= MAX_PKGS)
-            {
-                return api_error_with_operand_id(TDX_INVALID_PKG_ID, tdx_local_data_ptr->lp_info.pkg);
+                // Sanity check
+                if (tdx_local_data_ptr->lp_info.pkg >= MAX_PKGS)
+                {
+                    return api_error_with_operand_id(TDX_INVALID_PKG_ID, tdx_local_data_ptr->lp_info.pkg);
+                }
             }
         }
-
     }
 
     // Compare IA32_TSC_ADJUST to the value sampled on TDHSYSINIT
@@ -410,6 +419,27 @@ _STATIC_INLINE_ api_error_type check_enumeration_and_compare_configuration(tdx_m
     return TDX_SUCCESS;
 }
 
+_STATIC_INLINE_ void map_fatal_info_pointer(void)
+{
+    tdx_module_global_t* global_data = get_global_data();
+
+    // only the first thread who reaches here should do the mapping
+    if (LOCK_RET_SUCCESS == acquire_sharex_lock_ex(&global_data->fatal_info_lock))
+    {
+        // verify all checks in tdh_sys_init passed and the fatal error info mem should be mapped
+        if ((uint64_t)(-1) != global_data->fatal_info_config_hpa)
+        {
+            global_data->fatal_info_p = (uint64_t*)map_pa((void*)global_data->fatal_info_config_hpa, TDX_RANGE_RW);
+            get_local_data()->fatal_error_mem_mapped = 1;
+
+            zero_cacheline((void*)global_data->fatal_info_p);
+            global_data->fatal_info_config_hpa = (uint64_t)(-1);
+        }
+
+        release_sharex_lock_ex(&global_data->fatal_info_lock);
+    }
+}
+
 _STATIC_INLINE_ void increment_num_of_lps(tdx_module_global_t* tdx_global_data_ptr)
 {
     (void)_lock_xadd_32b(&tdx_global_data_ptr->num_of_init_lps, 1);
@@ -420,14 +450,6 @@ _STATIC_INLINE_ void tdx_local_init(tdx_module_local_t* tdx_local_data_ptr,
 {
 
     sysinfo_table_t* sysinfo_table = get_sysinfo_table();
-
-    //Set local defs
-    init_keyhole_state();
-
-    /**
-     * Calc LPID from local_data_ptr
-     */
-    tdx_local_data_ptr->lp_info.lp_id = (uint32_t)get_current_thread_num(sysinfo_table, tdx_local_data_ptr);
 
     uint64_t last_page_addr = sysinfo_table->data_rgn_base + sysinfo_table->data_rgn_size - _4KB;
     ia32_vmwrite(VMX_HOST_FS_BASE_ENCODE, last_page_addr);
@@ -452,6 +474,7 @@ _STATIC_INLINE_ void tdx_local_init(tdx_module_local_t* tdx_local_data_ptr,
 
     tdx_local_data_ptr->guest_rcx_on_td_entry = 0;
 }
+
 
 api_error_type tdh_sys_lp_init(void)
 {
@@ -504,7 +527,7 @@ api_error_type tdh_sys_lp_init(void)
     }
     tdx_local_data_ptr->single_step_def_state.lfsr_value = lfsr_value;
 
-    /* Do a global EPT flush.  This is required to help ensure security in case of
+    /* Do a global EPT flush.  This is required to guarantee security in case of
        a TDX-SEAM module update. */
     const ept_descriptor_t zero_descriptor = { 0 };
     ia32_invept(&zero_descriptor, INVEPT_GLOBAL);
@@ -526,6 +549,18 @@ api_error_type tdh_sys_lp_init(void)
         TDX_ERROR("comparing LP configuration with platform failed\n");
         goto EXIT;
     }
+
+    // Initialize keyhole
+    init_keyhole_state();
+
+    // map the fatal error info memmory if needed
+    map_fatal_info_pointer();
+
+    /**
+     * Calc LPID from local_data_ptr
+     */
+    tdx_local_data_ptr->lp_info.lp_id = (uint32_t)get_current_thread_num(get_sysinfo_table(), tdx_local_data_ptr);
+
 
     tdx_local_init(tdx_local_data_ptr, tdx_global_data_ptr);
 

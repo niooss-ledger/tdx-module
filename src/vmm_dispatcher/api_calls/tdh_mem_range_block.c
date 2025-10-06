@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "x86_defs/x86_defs.h"
 #include "data_structures/td_control_structures.h"
 #include "memory_handlers/keyhole_manager.h"
@@ -36,7 +36,7 @@
 #include "accessors/ia32_accessors.h"
 #include "accessors/data_accessors.h"
 
-static void block_sept_entry(ia32e_sept_t* sept_entry, ept_level_t level)
+static void block_sept_entry(ia32e_sept_t* sept_entry, ept_level_t level, pa_t page_gpa, uint64_t target_tdr_pa)
 {
     sept_cleanup_if_pending(sept_entry, level);
     switch (sept_entry->raw & SEPT_STATE_ENCODING_MASK)
@@ -60,7 +60,10 @@ static void block_sept_entry(ia32e_sept_t* sept_entry, ept_level_t level)
             sept_update_state(sept_entry, SEPT_STATE_PEND_BLOCKED_MASK);
             break;
         default:
-            FATAL_ERROR();
+        {
+            extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_td_handle(target_tdr_pa, 0, level, page_gpa.raw, *sept_entry);
+            fatal_error(FATAL_ERROR_ID_12, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
+        }
     }
 }
 
@@ -230,7 +233,7 @@ api_error_type tdh_mem_range_block(page_info_api_input_t sept_level_and_gpa,
     ia32e_sept_t new_septe_val;
     new_septe_val.raw = page_sept_entry_copy.raw;
 
-    block_sept_entry(&new_septe_val, sept_level_and_gpa.level);
+    block_sept_entry(&new_septe_val, sept_level_and_gpa.level, page_gpa, target_tdr_pa);
 
     // Update the SEPT entry in memory
     atomic_mem_write_64b(&page_sept_entry_ptr->raw, new_septe_val.raw);
@@ -249,7 +252,9 @@ api_error_type tdh_mem_range_block(page_info_api_input_t sept_level_and_gpa,
         return_val = l2_sept_walk(tdr_ptr, tdcs_ptr, vm_id, page_gpa, &page_level_entry, &l2_sept_entry_ptr);
         if (return_val != TDX_SUCCESS)
         {
-            FATAL_ERROR(); // Should not happen - no need to free the L2 SEPT PTR's
+            // Should not happen - no need to free the L2 SEPT PTR's
+            extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_td_handle(target_tdr_pa, vm_id, page_level_entry, page_gpa.raw, *l2_sept_entry_ptr);
+            fatal_error(FATAL_ERROR_ID_11, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
         }
 
         block_l2_sept_entry(l2_sept_entry_ptr, sept_state_is_any_blockedw(page_sept_entry_copy));
@@ -264,8 +269,10 @@ api_error_type tdh_mem_range_block(page_info_api_input_t sept_level_and_gpa,
     // Atomically update the PAMT.BEPOCH for the blocked page
     // Read the TD’s epoch (TDCS.TD_EPOCH) and write it to the PAMT entry of the
     // blocked Secure EPT page or TD private page (PAMT.BEPOCH)
+    // Note that the order is important: we sample TD_EPOCH after we block the page.
     td_page_pa.raw = 0;
     td_page_pa.page_4k_num = page_sept_entry_copy.base;
+    td_page_pa = set_hkid_to_pa(td_page_pa, tdr_ptr->key_management_fields.hkid);
 
     if (is_secure_ept_leaf_entry(&page_sept_entry_copy))
     {

@@ -25,8 +25,8 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include "auto_gen/op_state_lookup.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include OP_STATE_LOOKUP_HEADER
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "x86_defs/x86_defs.h"
 #include "accessors/ia32_accessors.h"
 #include "accessors/data_accessors.h"
@@ -214,12 +214,12 @@ api_error_type tdh_export_track(uint64_t target_tdr_pa, uint64_t hpa_and_size_pa
     if (aes_gcm_process_aad(&migsc_p->aes_gcm_context, (uint8_t*)&mbmd_tmp.epoch_token,
             MBMD_SIZE_NO_MAC(mbmd_tmp.epoch_token)) != AES_GCM_NO_ERROR)
     {
-        FATAL_ERROR();
+        fatal_error(FATAL_ERROR_ID_144, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
     }
 
     if (aes_gcm_finalize(&migsc_p->aes_gcm_context, mbmd_tmp.epoch_token.mac) != AES_GCM_NO_ERROR)
     {
-        FATAL_ERROR();
+        fatal_error(FATAL_ERROR_ID_145, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
     }
 
     // Update the MBMD with values not included in the MAC calculation

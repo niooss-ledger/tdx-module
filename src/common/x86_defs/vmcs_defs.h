@@ -309,6 +309,18 @@ typedef union vmx_exit_qualification_s {
 } vmx_exit_qualification_t;
 tdx_static_assert(sizeof(vmx_exit_qualification_t) == 8, vmx_exit_qualification_t);
 
+typedef union vmx_extended_exit_qualification_s {
+    struct
+    {
+        uint64_t type      :  4;  // Bits 0 - 3
+        uint64_t reserved3 : 28;  // Bits 4 - 31
+        uint64_t info      : 32;  // Bits 32 - 63
+    };
+
+    uint64_t  raw;
+} vmx_extended_exit_qualification_t;
+tdx_static_assert(sizeof(vmx_extended_exit_qualification_t) == 8, vmx_extended_exit_qualification_t);
+
 #define VMEXIT_CR_ACCESS_MOV_TO_CR          0
 #define VMEXIT_CR_ACCESS_MOV_FROM_CR        1
 #define VMEXIT_CR_ACCESS_CLTS               2
@@ -322,7 +334,8 @@ typedef enum vmx_eeq_type_e
     VMX_EEQ_TD_ENTRY_MSR_LOAD_FAILURE    = 3,
     VMX_EEQ_TD_ENTRY_XSTATE_LOAD_FAILURE = 4,
     VMX_EEQ_ATTR_WR                      = 5,
-    VMX_EEQ_PENDING_EPT_VIOLATION        = 6
+    VMX_EEQ_PENDING_EPT_VIOLATION        = 6,
+    VM_ENTRY_FAILURE                     = 7
 } vmx_eeq_type_t;
 
 typedef union vmx_ext_exit_qual_u

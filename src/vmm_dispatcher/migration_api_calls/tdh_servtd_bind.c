@@ -25,7 +25,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "x86_defs/x86_defs.h"
 #include "helpers/helpers.h"
 #include "helpers/service_td.h"
@@ -252,7 +252,10 @@ api_error_type tdh_servtd_bind(uint64_t target_tdr_pa, uint64_t servtd_tdr, uint
 
         break;
     default:
-        FATAL_ERROR();
+    {
+        extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_td_handle(target_tdr_pa);
+        fatal_error(FATAL_ERROR_ID_59, FATAL_INFO_FORMAT_TD_HANDLE_INFO, &extended_fatal_info);
+    }
     }
 
     tdcs_p->service_td_fields.servtd_bindings_table[servtd_slot].state = SERVTD_BOUND;

@@ -24,7 +24,7 @@
  *  Spreadsheet Format Version - '10'
  **/
 
-#include "auto_gen/cpuid_configurations.h"
+#include "./cpuid_configurations.h"
 
 // Lookup table first MAX_NUM_CPUID_CONFIG entries will be in the same order as in cpuid_configurable table
 

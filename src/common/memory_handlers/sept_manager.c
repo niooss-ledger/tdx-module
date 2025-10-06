@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -59,7 +59,7 @@ _STATIC_INLINE_ uint64_t get_ept_entry_idx(pa_t gpa, ept_level_t lvl)
             idx = gpa.fields_4k.pt_index;
             break;
         default:
-            tdx_sanity_check(0, SCEC_SEPT_MANAGER_SOURCE, 0);
+            tdx_sanity_check(0, FATAL_ERROR_ID_225, 0);
             break;
     }
 
@@ -124,7 +124,7 @@ _STATIC_INLINE_ bool_t is_secure_ept_entry_misconfigured(ia32e_sept_t* pte, ept_
              ((level == LVL_PD) && pte->leaf) ||
               (level == LVL_PT) )
         {
-            // Looking here at 4K struct because the MT bits location is the same in 1G and 2M
+                        // Looking here at 4K struct because the MT bits location is the same in 1G and 2M
             if ((pte->mt == MT_RSVD0) || (pte->mt == MT_RSVD1) ||
                 (pte->mt == MT_UCM))
             {
@@ -297,7 +297,8 @@ ept_walk_result_t gpa_translate(ia32e_eptp_t eptp, pa_t gpa, bool_t private_gpa,
         // Misconfigurations on Secure EPT are not expected and considered to be fatal errors
         IF_RARE (private_gpa && is_secure_ept_entry_misconfigured((ia32e_sept_t*)cached_ept_entry, current_lvl))
         {
-            FATAL_ERROR();
+            extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_eptp(eptp.raw, (uint8_t)current_lvl, gpa.raw, *(ia32e_sept_t*)cached_ept_entry);
+            fatal_error(FATAL_ERROR_ID_17, FATAL_INFO_FORMAT_SEPT_EPTP_INFO, &extended_fatal_info);
         }
 
         // Check violation conditions
@@ -325,7 +326,7 @@ ept_walk_result_t gpa_translate(ia32e_eptp_t eptp, pa_t gpa, bool_t private_gpa,
         // Cannot continue to next level, this should be the last one
         IF_RARE (current_lvl == LVL_PT)
         {
-            FATAL_ERROR();
+            fatal_error(FATAL_ERROR_ID_44, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
         }
 
         pt_pa.raw = cached_ept_entry->raw & IA32E_PAGING_STRUCT_ADDR_MASK;
@@ -354,7 +355,7 @@ ia32e_sept_t* secure_ept_walk(ia32e_eptp_t septp, pa_t gpa, uint16_t private_hki
     ept_level_t requested_level = *level;
     ept_level_t current_lvl;
 
-    tdx_sanity_check(requested_level <= LVL_PML5, SCEC_SEPT_MANAGER_SOURCE, 1);
+    tdx_sanity_check(requested_level <= LVL_PML5, FATAL_ERROR_ID_226, 1);
 
     // Get root PML EPT page address
     pt_pa.raw = septp.raw & IA32E_PAGING_STRUCT_ADDR_MASK;
@@ -379,7 +380,9 @@ ia32e_sept_t* secure_ept_walk(ia32e_eptp_t septp, pa_t gpa, uint16_t private_hki
 
         IF_RARE (is_secure_ept_entry_misconfigured(cached_sept_entry, current_lvl))
         {
-            FATAL_ERROR();
+            tdx_module_local_t* local_data = get_local_data();
+            extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_td_handle(local_data->vp_ctx.tdr_pa.raw, local_data->current_td_vm_id, current_lvl, gpa.raw, *cached_sept_entry);
+            fatal_error(FATAL_ERROR_ID_18, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
         }
 
         // Check if entry not present, or a leaf - so can't walk any further.
@@ -395,7 +398,7 @@ ia32e_sept_t* secure_ept_walk(ia32e_eptp_t septp, pa_t gpa, uint16_t private_hki
         // Cannot continue to next level, this should be the last one
         IF_RARE (current_lvl == LVL_PT)
         {
-            FATAL_ERROR();
+            fatal_error(FATAL_ERROR_ID_45, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
         }
 
         // Continue to next level in the walk
@@ -409,8 +412,8 @@ ia32e_sept_t* secure_ept_walk(ia32e_eptp_t septp, pa_t gpa, uint16_t private_hki
     return pte;
 }
 
-static void sept_set_leaf_no_lock_internal(ia32e_sept_t * ept_entry, uint64_t attributes, pa_t page_pa,
-                                           uint64_t state_encoding, bool_t set_lock)
+static void sept_set_leaf_no_lock_internal_given_hpa_with_hkid(ia32e_sept_t * ept_entry, uint64_t attributes, pa_t page_pa,
+                                                                uint64_t state_encoding, bool_t set_lock)
 {
     ia32e_sept_t septe_value = {.raw = attributes};
 
@@ -418,8 +421,8 @@ static void sept_set_leaf_no_lock_internal(ia32e_sept_t * ept_entry, uint64_t at
     tdx_debug_assert((attributes & (~SEPT_MIGRATABLE_ATTRIBUTES_MASK)) == 0);
 
     septe_value.raw |= state_encoding;
-    septe_value.mt = MT_WB;
-    septe_value.ipat = 1;
+    sept_set_mt_from_ipat_tdmem(&septe_value);
+
     septe_value.base = page_pa.page_4k_num;
 
     tdx_debug_assert(septe_value.leaf == 1);   // PS is part of the state encoding assigned above
@@ -431,37 +434,57 @@ static void sept_set_leaf_no_lock_internal(ia32e_sept_t * ept_entry, uint64_t at
     atomic_mem_write_64b(&ept_entry->raw, septe_value.raw);
 }
 
-void sept_set_leaf_and_release_locks(ia32e_sept_t * ept_entry, uint64_t attributes,
-                                     pa_t page_pa, uint64_t state_encoding)
+static void sept_set_leaf_no_lock_internal_given_hpa_and_hkid(ia32e_sept_t * ept_entry, uint64_t attributes, pa_t page_pa, uint16_t hkid,
+                                                                uint64_t state_encoding, bool_t set_lock)
 {
-    sept_set_leaf_no_lock_internal(ept_entry, attributes, page_pa, state_encoding, false);
+    sept_set_leaf_no_lock_internal_given_hpa_with_hkid(
+        ept_entry,
+        attributes,
+        set_hkid_to_pa(page_pa, hkid),
+        state_encoding,
+        set_lock);
 }
 
-void sept_set_leaf_and_keep_lock(ia32e_sept_t * ept_entry, uint64_t attributes,
-                                 pa_t page_pa, uint64_t state_encoding)
+void sept_set_leaf_and_release_locks_given_hpa_and_hkid(ia32e_sept_t * ept_entry, uint64_t attributes, pa_t page_pa,
+                                                        uint16_t hkid, uint64_t state_encoding)
+{
+    sept_set_leaf_no_lock_internal_given_hpa_and_hkid(ept_entry, attributes, page_pa, hkid, state_encoding, false);
+}
+
+void sept_set_leaf_and_keep_lock_given_hpa_and_hkid(ia32e_sept_t * ept_entry, uint64_t attributes, pa_t page_pa,
+                                                    uint16_t hkid, uint64_t state_encoding)
 {
     // Sanity check, entry should already be locked
-    tdx_sanity_check(ept_entry->tdel, SCEC_SEPT_MANAGER_SOURCE, 3);
+    tdx_sanity_check(ept_entry->tdel, FATAL_ERROR_ID_227, 3);
 
-    sept_set_leaf_no_lock_internal(ept_entry, attributes, page_pa, state_encoding, true);
+    sept_set_leaf_no_lock_internal_given_hpa_and_hkid(ept_entry, attributes, page_pa, hkid, state_encoding, true);
 }
 
-void sept_set_leaf_unlocked_entry(ia32e_sept_t * ept_entry, uint64_t attributes,
-                                  pa_t page_pa, uint64_t state_encoding)
+void sept_set_leaf_and_keep_lock_given_hpa_with_hkid(ia32e_sept_t * ept_entry, uint64_t attributes,
+                                                    pa_t page_pa, uint64_t state_encoding)
+{
+    // Sanity check, entry should already be locked
+    tdx_sanity_check(ept_entry->tdel, FATAL_ERROR_ID_228, 3);
+
+    sept_set_leaf_no_lock_internal_given_hpa_with_hkid(ept_entry, attributes, page_pa, state_encoding, true);
+}
+
+void sept_set_leaf_unlocked_entry_given_hpa_and_hkid(ia32e_sept_t * ept_entry, uint64_t attributes, pa_t page_pa,
+                                                     uint16_t hkid, uint64_t state_encoding)
 {
     // Sanity check: SEPT entry must be unlocked
-    tdx_sanity_check(ept_entry->tdel == 0, SCEC_SEPT_MANAGER_SOURCE, 4);
+    tdx_sanity_check(ept_entry->tdel == 0, FATAL_ERROR_ID_229, 4);
 
-    sept_set_leaf_no_lock_internal(ept_entry, attributes, page_pa, state_encoding, false);
+    sept_set_leaf_no_lock_internal_given_hpa_and_hkid(ept_entry, attributes, page_pa, hkid, state_encoding, false);
 }
 
-void sept_set_mapped_non_leaf(ia32e_sept_t * ept_entry, pa_t page_pa, bool_t lock)
+void sept_set_mapped_non_leaf_given_hpa_with_hkid(ia32e_sept_t * ept_entry, pa_t page_pa_with_hkid, bool_t lock)
 {
     ia32e_sept_t curr_entry = {.raw = SEPT_PERMISSIONS_RWX | SEPT_STATE_NL_MAPPED_MASK};
 
     tdx_debug_assert(curr_entry.leaf == 0);   // PS is part of the state encoding assigned above
 
-    curr_entry.base = page_pa.page_4k_num;
+    curr_entry.base = page_pa_with_hkid.page_4k_num;
     curr_entry.supp_ve = 1;
     curr_entry.tdel = lock;
 
@@ -469,8 +492,36 @@ void sept_set_mapped_non_leaf(ia32e_sept_t * ept_entry, pa_t page_pa, bool_t loc
     atomic_mem_write_64b(&ept_entry->raw, curr_entry.raw);
 }
 
-void sept_l2_set_leaf(ia32e_sept_t* l2_sept_entry_ptr, gpa_attr_single_vm_t gpa_attr_single_vm,
-                      pa_t pa, bool_t is_l2_blocked)
+/**
+ * @brief - Set an L2 secure EPT leaf entry.
+ *          *** See the SEPT spreadsheet for L2 SEPT entry format ***
+ *          MT and IPAT bits are set based on is_mmio - see the SEPT spreadsheet
+ *              - MT0        (bit 3) = 0
+ *              - MT1        (bit 4) = !is_mmio
+ *              - MT2        (bit 5) = !is_mmio
+ *              - IPAT_TDMEM (bit 6) = !is_mmio
+ *          - Attributes are set based on the provided attributes.
+ *          - State is set based on the is_mmio and is_l2_blocked flags:
+ *            is_mmio    is_l2_blocked   State
+ *            -------    -------------   -----
+ *            false      false           L2_MAPPED
+ *            false      true            L2_BLOCKED
+ *            true       false           L2_MMIO_MAPPED
+ *            true       true            L2_MMIO_BLOCKED
+ *          - State is set to L2_MAPPED or L2_BLOCKED based on the is_l2_blocked flag.
+ *          - If is_l2_blocked is 1, then R, W, Xs and Xu are set to 0, and the values
+ *            specified by in the provided attributes are saved in TDRR, TDWR, TDXS and TDXU.
+ *            Else, TDRD, TDWR, TDXS and TDXU are set to their proper values:  TDRD, TDXS and TDXU are
+ *            part of MT (see above) and TDWR is set to 0.
+ *
+ * @param l2_sept_entry_ptr
+ * @param gpa_attr_single_vm
+ * @param pa
+ * @param is_l2_blocked
+ */
+void sept_l2_set_leaf_given_hpa_with_hkid(ia32e_sept_t* l2_sept_entry_ptr, gpa_attr_single_vm_t gpa_attr_single_vm,
+                                          pa_t pa, bool_t is_l2_blocked
+)
 {
     ia32e_sept_t tmp_sept = *l2_sept_entry_ptr;
     tmp_sept.l2_encoding.r = gpa_attr_single_vm.r;
@@ -482,16 +533,16 @@ void sept_l2_set_leaf(ia32e_sept_t* l2_sept_entry_ptr, gpa_attr_single_vm_t gpa_
     tmp_sept.l2_encoding.sss = gpa_attr_single_vm.sss;
     tmp_sept.l2_encoding.sve = gpa_attr_single_vm.sve;
     tmp_sept.l2_encoding.hpa = pa.page_4k_num;
+    tmp_sept.l2_encoding.mt0_tdrd = 0;
+    tmp_sept.l2_encoding.mt1_tdxs = 1;
+    tmp_sept.l2_encoding.mt2_tdxu = 1;
+    tmp_sept.l2_encoding.ipat_tdmem = 1;
 
-    tmp_sept.mt = MT_WB;
     tmp_sept.l2_encoding.tdwr = 0;
-    tmp_sept.ipat = 1;
 
-    sept_state_mask_t sept_state_mask = SEPT_STATE_L2_MAPPED_MASK;
 
     if (is_l2_blocked)
     {
-        sept_state_mask = SEPT_STATE_L2_BLOCKED_MASK;
         tmp_sept.l2_encoding.mt0_tdrd = gpa_attr_single_vm.r;
         tmp_sept.l2_encoding.r = 0;
         tmp_sept.l2_encoding.tdwr = gpa_attr_single_vm.w;
@@ -502,13 +553,27 @@ void sept_l2_set_leaf(ia32e_sept_t* l2_sept_entry_ptr, gpa_attr_single_vm_t gpa_
         tmp_sept.l2_encoding.xu = 0;
     }
 
+    sept_state_mask_t sept_state_mask;
+
+    {
+        if (is_l2_blocked)
+        {
+            sept_state_mask = SEPT_STATE_L2_BLOCKED_MASK; 
+        }
+        else // !is_l2_blocked
+        {
+            sept_state_mask = SEPT_STATE_L2_MAPPED_MASK;
+        }
+    }
+
     sept_l2_update_state(&tmp_sept, sept_state_mask);
 
     atomic_mem_write_64b(&l2_sept_entry_ptr->raw, tmp_sept.raw);
 }
 
-void sept_l2_set_mapped_non_leaf(ia32e_sept_t * ept_entry, pa_t page_pa)
+void sept_l2_set_mapped_non_leaf_given_hpa_and_hkid(ia32e_sept_t * ept_entry, pa_t page_pa, uint16_t hkid)
 {
+    page_pa = set_hkid_to_pa(page_pa, hkid);
     ia32e_sept_t curr_entry = {.raw = SEPT_PERMISSIONS_RW_XS_XU | SEPT_STATE_L2_NL_MAPPED_MASK};
 
     tdx_debug_assert(curr_entry.leaf == 0);   // PS is part of the state encoding assigned above
@@ -546,6 +611,9 @@ void set_arch_septe_details_in_vmm_regs(ia32e_sept_t sept_entry, ept_level_t lev
         }
         // No need to restore the values of MT1 and MT2, they are not overwritten
     }
+
+    // Zero-out the HKID bits
+    detailed_arch_sept_entry.raw = remove_hkid_from_pa((pa_t) detailed_arch_sept_entry.raw).raw;
 
     // Build the architectural information of the Secure EPT entry
     detailed_arch_info.raw = 0;
@@ -596,6 +664,9 @@ void set_arch_l2_septe_details_in_vmm_regs(ia32e_sept_t l2_sept_entry, uint16_t 
             detailed_arch_sept_entry.raw &= L2_SEPT_ARCH_ENTRY_NON_LEAF_MASK;
         }
     }
+
+    // Zero-out the HKID bits
+    detailed_arch_sept_entry.raw = set_hkid_to_pa((pa_t) detailed_arch_sept_entry.raw, 0).raw;
 
     // Build the architectural information of the Secure EPT entry
     detailed_arch_info.raw = 0;

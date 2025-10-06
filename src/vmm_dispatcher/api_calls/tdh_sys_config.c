@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -29,14 +29,14 @@
 #include "tdx_basic_defs.h"
 #include "tdx_basic_types.h"
 #include "tdx_vmm_api_handlers.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "data_structures/tdx_global_data.h"
 #include "memory_handlers/pamt_manager.h"
 #include "data_structures/loader_data.h"
 #include "accessors/data_accessors.h"
 #include "helpers/helpers.h"
 #include "memory_handlers/keyhole_manager.h"
-#include "auto_gen/cpuid_configurations.h"
+#include CPUID_CONFIGURATIONS_HEADER
 
 typedef struct pamt_data_s
 {
@@ -767,7 +767,8 @@ api_error_type tdh_sys_config(uint64_t tdmr_info_array_pa,
 
     if (tdx_global_data_ptr->num_of_init_lps < tdx_global_data_ptr->num_of_lps)
     {
-        TDX_ERROR("Num of initialized lps %d is smaller than total num of lps %d\n", tdx_global_data_ptr->num_of_init_lps, tdx_global_data_ptr->num_of_lps);
+        TDX_ERROR("Num of initialized lps %d is smaller than total num of lps %d\n",
+                    tdx_global_data_ptr->num_of_init_lps, tdx_global_data_ptr->num_of_lps);
         retval = TDX_SYS_CONFIG_NOT_PENDING;
         goto EXIT;
     }
@@ -803,12 +804,12 @@ api_error_type tdh_sys_config(uint64_t tdmr_info_array_pa,
 
     tdx_global_data_ptr->kot.entries[hkid].state = KOT_STATE_HKID_RESERVED;
     tdx_global_data_ptr->hkid = hkid;
-	
+
     tdmr_pa_array = map_pa(tdmr_info_pa.raw_void, TDX_RANGE_RO);
     tdmr_info_p_init = true;
 
     // map only 2 tdmr entries each time
-    pa_t tdmr_entry;
+    volatile pa_t tdmr_entry;
     pamt_data_t pamt_data_array[MAX_TDMRS];
     api_error_type err;
 
@@ -868,4 +869,3 @@ EXIT:
 
     return retval;
 }
-

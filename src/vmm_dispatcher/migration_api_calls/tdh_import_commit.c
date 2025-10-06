@@ -24,8 +24,8 @@
  * @brief TDH_IMPORT_COMMIT API handler
  */
 #include "tdx_vmm_api_handlers.h"
-#include "auto_gen/op_state_lookup.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include OP_STATE_LOOKUP_HEADER
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "helpers/helpers.h"
 
 

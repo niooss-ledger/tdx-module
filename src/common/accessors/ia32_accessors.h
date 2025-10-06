@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -123,6 +123,28 @@ _STATIC_INLINE_ void ia32_ud2( void )
     _ASM_VOLATILE_ ("ud2" ::: "memory") ;
 }
 
+/**
+ * @brief Induce GP exception
+ */
+_STATIC_INLINE_ void ia32_gp(void)
+{
+    _ASM_VOLATILE_(
+        "movq $0x8000000000000000, %%rax\n"
+        "movq $0, (%%rax)\n"
+        ::: "memory", "rax");
+}
+
+/**
+ * @brief Induce SEAM shutdown by jumping to linear address 0 (long mode)
+ */
+_STATIC_INLINE_ void induce_shutdown(void)
+{
+    _ASM_VOLATILE_(
+        "movq $0, %%rax\n"
+        "jmpq *(%%rax)\n"
+        ::: "memory", "rax");
+}
+
 _STATIC_INLINE_ uint64_t ia32_rdmsr(uint64_t addr)
 {
     uint32_t low,high;
@@ -224,6 +246,55 @@ _STATIC_INLINE_ bool_t ia32_is_timeout_expired(uint64_t endtime)
 {
     return (int64_t)(endtime - ia32_rdtsc()) < 0;
 }
+
+_STATIC_INLINE_ uint64_t get_tsc_ratio(void)
+{
+    uint32_t eax, ebx, ecx, edx;
+    ia32_cpuid(CPUID_TSC_ATTRIBUTES_LEAF, 0,
+               &eax, &ebx,
+               &ecx, &edx);
+
+    tdx_sanity_check(eax != 0, FATAL_ERROR_ID_62, 0);
+    uint64_t ratio = ((ebx / eax) * ecx);
+
+    if (ratio == 0)
+    {
+        ia32_cpuid(PROCESSOR_FREQUENCY_INFORMATION_LEAF, 0,
+                   &eax, &ebx,
+                   &ecx, &edx);
+        ratio = eax;
+    }
+
+    // Convert from megahertz to herz
+    return (ratio / 1000000);
+}
+
+/**
+ * @brief Busy wait for the input uSeconds
+ *
+ * @param usec - Microseconds to wait
+ * @param tsc_ratio - Optional input
+ */
+_STATIC_INLINE_ void busy_wait_usec(
+    const uint32_t usec,
+    uint64_t tsc_ratio_optional)
+{
+    IF_RARE (tsc_ratio_optional == 0)
+    {
+        tsc_ratio_optional = get_tsc_ratio();
+    }
+
+    const uint64_t timeout_end = ia32_set_timeout(usec * tsc_ratio_optional);
+
+    while (true)
+    {
+        if (ia32_is_timeout_expired(timeout_end))
+        {
+            return;
+        }
+    }
+}
+
 /**
  * Extended State operations
  */
@@ -295,6 +366,7 @@ _STATIC_INLINE_ uint64_t ia32_safe_xrstors(const void* xsave_area, uint64_t xfam
                     "xrstors %1 \n"
                             : "=S"(fault_indicator)
                             : "m"(*(uint64_t*)xsave_area), "a"((uint32_t)xfam), "d"((uint32_t)(xfam >> 32)),
+                              "S"(0),
                               "c"(0) // indicate the compiler not to use RCX, because in case of #GP
                                      // XRSTORS will be retried with modified RCX (value 0x8b)
                                      // - same #GP flow is used for WRMSR handling/retrying
@@ -446,6 +518,14 @@ _STATIC_INLINE_ uint128_t _lock_read_128b(uint128_t * src)
             : "m"(*src) , "a"(0),"b"(0),"c"(0),"d"(0)
             : "memory" );
     return result;
+}
+
+_STATIC_INLINE_ uint8_t _xchg_8_bit(uint8_t* mem, uint8_t quantum)
+{
+    //according to SDM, XCHG on memory operand is automatically uses the processor's locking protocol
+    //regardless of LOCK prefix
+    _ASM_VOLATILE_("xchgb %2, %0" : "=m" (*mem), "=a"(quantum) : "a"(quantum) : "memory");
+    return quantum;
 }
 
 _STATIC_INLINE_ uint16_t _xchg_16b(uint16_t *mem, uint16_t quantum)

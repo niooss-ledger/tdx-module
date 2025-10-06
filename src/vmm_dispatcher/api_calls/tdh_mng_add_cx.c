@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "x86_defs/x86_defs.h"
 #include "data_structures/td_control_structures.h"
 #include "memory_handlers/keyhole_manager.h"
@@ -144,8 +144,8 @@ api_error_type tdh_mng_add_cx(uint64_t target_tdcx_pa, uint64_t target_tdr_pa)
            to initialize it separately. */
     tdx_sanity_check(offsetof(tdcs_t, management_fields) + offsetof(tdcs_management_fields_t, op_state) <=
                      _4KB - sizeof(tdcs_p->management_fields.op_state),
-                     SCEC_SEAMCALL_SOURCE(TDH_MNG_ADDCX_LEAF), 0);  // Ensure it fits in the first page
-    tdx_sanity_check(0 == OP_STATE_UNINITIALIZED, SCEC_SEAMCALL_SOURCE(TDH_MNG_ADDCX_LEAF), 0);
+                     FATAL_ERROR_ID_286, 0);  // Ensure it fits in the first page
+    tdx_sanity_check(0 == OP_STATE_UNINITIALIZED, FATAL_ERROR_ID_287, 0);
 
     if ((tdcx_index_num + 1) >= MIN_NUM_TDCS_PAGES)
     {
@@ -194,15 +194,16 @@ EXIT:
         free_la(tdcs_p);
     }
     // Release all acquired locks and free keyhole mappings
-    if (tdr_locked_flag)
-    {
-        pamt_unwalk(tdr_pa, tdr_pamt_block, tdr_pamt_entry_ptr, TDX_LOCK_EXCLUSIVE, PT_4KB);
-        free_la(tdr_ptr);
-    }
     if (tdcx_locked_flag)
     {
         pamt_unwalk(tdcx_pa, tdcx_pamt_block, tdcx_pamt_entry_ptr, TDX_LOCK_EXCLUSIVE, PT_4KB);
         free_la(tdcx_ptr);
+    }
+
+    if (tdr_locked_flag)
+    {
+        pamt_unwalk(tdr_pa, tdr_pamt_block, tdr_pamt_entry_ptr, TDX_LOCK_EXCLUSIVE, PT_4KB);
+        free_la(tdr_ptr);
     }
 
     return return_val;

@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -27,7 +27,7 @@
 
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "x86_defs/x86_defs.h"
 #include "helpers/helpers.h"
 #include "memory_handlers/sept_manager.h"
@@ -160,9 +160,10 @@ api_error_type tdh_mem_page_relocate(uint64_t source_page_pa,
 
     // Get currently mapped page HPA
     source_pa.raw = leaf_ept_entry_to_hpa(mapped_page_sept_entry_copy, mapped_gpa.raw, mapped_page_level_entry);
+    source_pa = set_hkid_to_pa(source_pa, tdr_ptr->key_management_fields.hkid);
 
     // Verify mapped HPA is different than target HPA
-    if (source_pa.full_pa == target_pa.full_pa)
+    if (remove_hkid_from_pa(source_pa).full_pa == target_pa.full_pa)
     {
         return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_R8);
         goto EXIT;
@@ -170,7 +171,7 @@ api_error_type tdh_mem_page_relocate(uint64_t source_page_pa,
 
     // Verify the TLB tacking of the blocked page has been completed
     if ((return_val = pamt_implicit_get_and_lock(source_pa, (page_size_t)mapped_page_level_entry,
-                      TDX_LOCK_EXCLUSIVE, &mapped_page_pamt_ptr)) != TDX_SUCCESS)
+                      TDX_LOCK_EXCLUSIVE, &mapped_page_pamt_ptr, false)) != TDX_SUCCESS)
     {
         TDX_ERROR("Can't acquire lock on mapped page pamt entry\n");
         return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
@@ -195,8 +196,12 @@ api_error_type tdh_mem_page_relocate(uint64_t source_page_pa,
         // Check TLB tracking
         if (!is_tlb_tracked(tdcs_ptr, mapped_page_pamt_ptr->bepoch))
         {
-            TDX_ERROR("Target splitted page TLB tracking not done\n");
-            return_val = api_error_with_operand_id(TDX_TLB_TRACKING_NOT_DONE, OPERAND_ID_RCX);
+            TDX_ERROR("TLB tracking not done\n");
+            return_val = TDX_TLB_TRACKING_NOT_DONE;
+        }
+        if (return_val != TDX_SUCCESS)
+        {
+            return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
             goto EXIT;
         }
     }
@@ -222,7 +227,7 @@ api_error_type tdh_mem_page_relocate(uint64_t source_page_pa,
     // ephemeral private HKID and direct writes(MOVDIR64B)
     if (!sept_state_is_any_pending(mapped_page_sept_entry_copy))
     {
-        mapped_ptr = map_pa_with_hkid(source_pa.raw_void, tdr_ptr->key_management_fields.hkid, TDX_RANGE_RO);
+        mapped_ptr = map_pa(source_pa.raw_void, TDX_RANGE_RO);
         cache_aligned_copy_direct((uint64_t)mapped_ptr, (uint64_t)target_ptr, TDX_PAGE_SIZE_IN_BYTES);
     }
 
@@ -252,11 +257,13 @@ api_error_type tdh_mem_page_relocate(uint64_t source_page_pa,
         return_val = l2_sept_walk(tdr_ptr, tdcs_ptr, vm_id, mapped_gpa, &mapped_page_level_entry, &l2_sept_entry_ptr);
         if (return_val != TDX_SUCCESS)
         {
-            FATAL_ERROR(); // Should not happen - no need to free the L2 SEPT PTR's
+            // Should not happen - no need to free the L2 SEPT PTR's
+            extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_td_handle(target_tdr_pa, vm_id, mapped_page_level_entry, mapped_gpa.raw, *l2_sept_entry_ptr);
+            fatal_error(FATAL_ERROR_ID_9, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
         }
 
         ia32e_sept_t l2_epte_val = {.raw = l2_sept_entry_ptr->raw};
-        l2_epte_val.base = target_pa.full_pa >> 12;
+        l2_epte_val.base = set_hkid_to_pa(target_pa, tdr_ptr->key_management_fields.hkid).page_4k_num;
 
         if (!sept_state_is_any_pending(mapped_page_sept_entry_copy))
         {
@@ -271,6 +278,7 @@ api_error_type tdh_mem_page_relocate(uint64_t source_page_pa,
     // Update the Secure EPT entry with the target page
     // HPA and SEPT_PRESENT state
     ia32e_sept_t epte_val = {.raw = mapped_page_sept_entry_copy.raw};
+    target_pa = set_hkid_to_pa(target_pa, tdr_ptr->key_management_fields.hkid);
     epte_val.base = target_pa.full_pa >> 12;
     sept_unblock(&epte_val);
 
@@ -278,7 +286,7 @@ api_error_type tdh_mem_page_relocate(uint64_t source_page_pa,
     atomic_mem_write_64b(&mapped_page_sept_entry_ptr->raw, epte_val.raw);
 
     // Update RCX with the old physical page HPA
-    local_data_ptr->vmm_regs.rcx = source_pa.raw;
+    local_data_ptr->vmm_regs.rcx = remove_hkid_from_pa(source_pa).raw;
 
 EXIT:
     // Release all acquired locks and free keyhole mappings

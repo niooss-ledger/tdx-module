@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -27,7 +27,7 @@
 #include "tdx_td_api_handlers.h"
 #include "tdx_basic_defs.h"
 #include "tdx_basic_types.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "accessors/data_accessors.h"
 #include "accessors/vt_accessors.h"
 #include "tdx_api_defs.h"
@@ -113,7 +113,7 @@ api_error_type tdg_vp_enter(uint64_t flags, uint64_t reg_list_gpa)
 
     // Check for pending interrupts to L1
     ia32_vmread(VMX_GUEST_INTERRUPT_STATUS_ENCODE, &interrupt_status.raw);
-    if ((interrupt_status.rvi & 0xF0UL) > (tdvps_p->vapic.apic[PPR_INDEX] & 0xF0UL))
+    if ((interrupt_status.rvi & 0xF0UL) > (tdvps_p->vapic.vapic[PPR_INDEX] & 0xF0UL))
     {
         return TDX_PENDING_INTERRUPT;
     }
@@ -180,7 +180,7 @@ api_error_type tdg_vp_enter(uint64_t flags, uint64_t reg_list_gpa)
         (void)ia32_invvpid(&descriptor, INVVPID_SINGLE_CONTEXT_RETAINING_GLOBAL);
         break;
     default:
-        FATAL_ERROR();
+        fatal_error(FATAL_ERROR_ID_108, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
         break;
     }
 
@@ -210,8 +210,7 @@ api_error_type tdg_vp_enter(uint64_t flags, uint64_t reg_list_gpa)
         tdx_return_to_td(false, false, &tdvps_p->guest_state.gpr_state);
     }
 
-    // The flow should never reach here.  Any VM entry error is considered fatal
-    FATAL_ERROR();
+    resume_l1_and_emulate_termination(L1_FAILED_TO_ENTER_L2);
 
     return TDX_SUCCESS;
 }

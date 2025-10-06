@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "x86_defs/x86_defs.h"
 #include "data_structures/td_control_structures.h"
 #include "memory_handlers/keyhole_manager.h"
@@ -173,7 +173,11 @@ api_error_type tdh_mem_page_aug(page_info_api_input_t gpa_page_info,
     // ALL_CHECKS_PASSED:  The function is guaranteed to succeed
 
     // Update the parent EPT entry with the new TD page HPA and SEPT_PENDING state
-    sept_set_leaf_and_release_locks(page_sept_entry_ptr, SEPT_PERMISSIONS_NONE, td_page_pa, SEPT_STATE_PEND_MASK);
+    sept_set_leaf_and_release_locks_given_hpa_and_hkid(page_sept_entry_ptr,
+                                                       SEPT_PERMISSIONS_NONE,
+                                                       td_page_pa,
+                                                       tdr_ptr->key_management_fields.hkid,
+                                                       SEPT_STATE_PEND_MASK);
     septe_locked_flag = false;
 
     // Increment TDR child count, use an atomic operation since we have SHARED lock on TDR

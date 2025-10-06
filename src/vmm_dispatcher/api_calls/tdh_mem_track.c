@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "x86_defs/x86_defs.h"
 #include "data_structures/td_control_structures.h"
 #include "memory_handlers/keyhole_manager.h"
@@ -113,7 +113,8 @@ api_error_type tdh_mem_track(uint64_t target_tdr_pa)
 
     if (tdcs_ptr->epoch_tracking.epoch_and_refcount.td_epoch >= BITS(62, 0))
     {
-        FATAL_ERROR();
+        extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_td_handle(target_tdr_pa);
+        fatal_error(FATAL_ERROR_ID_56, FATAL_INFO_FORMAT_TD_HANDLE_INFO, &extended_fatal_info);
     }
 
 EXIT:

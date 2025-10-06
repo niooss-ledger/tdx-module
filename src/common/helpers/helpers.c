@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -29,8 +29,8 @@
 #include "x86_defs/mktme.h"
 #include "x86_defs/vmcs_defs.h"
 #include "tdx_api_defs.h"
-#include "auto_gen/cpuid_configurations.h"
-#include "auto_gen/msr_config_lookup.h"
+#include CPUID_CONFIGURATIONS_HEADER
+#include MSR_CONFIG_LOOKUP_HEADER
 
 #include "accessors/ia32_accessors.h"
 #include "accessors/vt_accessors.h"
@@ -41,6 +41,8 @@
 #include "td_dispatcher/tdx_td_dispatcher.h"
 #include "td_dispatcher/vm_exits/td_vmexit.h"
 #include "virt_msr_helpers.h"
+#include "crypto/sha384.h"
+
 
 #if (!defined(__cplusplus))
 void* memset(void *str, int c, uint32_t n)
@@ -61,7 +63,8 @@ api_error_code_e program_mktme_keys(uint16_t hkid)
 
 	// set the command, hkid as keyid and encryption algorithm
 	mktme_key_program.keyid_ctrl.command = MKTME_KEYID_SET_KEY_RANDOM;
-    mktme_key_program.keyid = hkid;
+
+	mktme_key_program.keyid = hkid;
 
     if (get_sysinfo_table()->mcheck_fields.tdx_without_integrity)
     {
@@ -107,7 +110,7 @@ api_error_code_e program_mktme_keys(uint16_t hkid)
         else
         {
             // unexpected - FATAL ERROR
-            FATAL_ERROR();
+            fatal_error(FATAL_ERROR_ID_33, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
         }
     }
 
@@ -118,7 +121,7 @@ EXIT:
 
 void basic_memset(uint64_t dst, uint64_t dst_bytes, uint8_t val, uint64_t nbytes)
 {
-    tdx_sanity_check (dst_bytes >= nbytes, SCEC_HELPERS_SOURCE, 2);
+    tdx_sanity_check (dst_bytes >= nbytes, FATAL_ERROR_ID_176, 2);
 
     volatile uint64_t junk;
 
@@ -381,7 +384,7 @@ api_error_type check_and_lock_explicit_private_hpa(
         bool_t* is_locked
         )
 {
-    api_error_code_e errc;
+    api_error_code_e errc = UNINITIALIZE_ERROR;
 
     errc = hpa_check_with_pwr_2_alignment(hpa, alignment);
     if (errc != TDX_SUCCESS)
@@ -413,7 +416,7 @@ api_error_type check_and_lock_explicit_4k_private_hpa(
         bool_t* is_locked
         )
 {
-    api_error_type errc;
+    api_error_type errc = UNINITIALIZE_ERROR;
 
     page_size_t leaf_size = PT_4KB;
 
@@ -441,7 +444,7 @@ api_error_type check_and_lock_free_range_hpa(
     tdx_debug_assert(range_size != PT_1GB);
     tdx_debug_assert(lock_type == TDX_LOCK_EXCLUSIVE);
 
-    api_error_type errc;
+    api_error_type errc = UNINITIALIZE_ERROR;
     page_size_t pamt_level = range_size;
     uint64_t alignment = (range_size == PT_2MB) ? _2MB : _4KB;
 
@@ -476,7 +479,7 @@ api_error_type lock_and_map_implicit_tdr(
         tdr_t** tdr_p
         )
 {
-    api_error_code_e errc = pamt_implicit_get_and_lock(tdr_pa, PT_4KB, lock_type, pamt_entry);
+    api_error_code_e errc = pamt_implicit_get_and_lock(tdr_pa, PT_4KB, lock_type, pamt_entry, false);
 
     if (errc != TDX_SUCCESS)
     {
@@ -507,7 +510,7 @@ tdcs_t* map_implicit_tdcs(
                                 other_td ? STATIC_KEYHOLE_IDX_OTHERTD_TDCS : STATIC_KEYHOLE_IDX_TDCS);
 }
 
-static api_error_type check_td_in_correct_build_state(tdr_t *tdr_p)
+api_error_type check_td_in_correct_build_state(tdr_t *tdr_p)
 {
     if (tdr_p->management_fields.fatal)
     {
@@ -644,7 +647,7 @@ tdvps_t* map_tdvps(
     uint16_t num_of_tdvps_pages = MIN_TDVPS_PAGES + (TDVPS_PAGES_PER_L2_VM * num_l2_vms);
 
     // First TDVX PA is actually the PA of the TDVPR itself, since we already mapped it, it can be skipped
-    (void)map_continuous_pages(&tdvpr_lp->management.tdvps_pa[1], num_of_tdvps_pages - 1, mapping_type,
+    (void)map_continuous_pages(&tdvpr_lp->management.tdvps_page_pa[1], num_of_tdvps_pages - 1, mapping_type,
                          STATIC_KEYHOLE_IDX_TDVPS + 1);
 
     return tdvpr_lp;
@@ -664,7 +667,7 @@ bool_t check_gpa_validity(pa_t gpa, bool_t gpaw, bool_t check_is_private, uint8_
     {
         virt_maxpa = MAX_PA;
     }
-    
+
     uint16_t min_gpa_width = (virt_maxpa < gpa_width) ? virt_maxpa : gpa_width;
 
     // Create a mask with bits above min GPA width set, and shared bit removed
@@ -703,6 +706,28 @@ bool_t verify_page_info_input(page_info_api_input_t gpa_page_info, ept_level_t m
     }
 
     return true;
+}
+
+uint64_t get_page_size_per_level(ept_level_t ept_level)
+{
+    uint64_t res = 0;
+    switch (ept_level)
+    {
+    case LVL_PT:
+        res = PAGE_SIZE_4KB_LVL_PT;
+        break;
+    case LVL_PD:
+        res = PAGE_SIZE_2MB_LVL_PD;
+        break;
+    case LVL_PDPT:
+        res = PAGE_SIZE_1GB_LVL_PDPT;
+        break;
+    default:
+        fatal_error(FATAL_ERROR_ID_34, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
+        break;
+    }
+
+    return res;
 }
 
 typedef enum sept_walk_type_e
@@ -790,11 +815,33 @@ api_error_type lock_sept_check_and_walk_private_gpa(
     tdx_debug_assert(lock_type != TDX_LOCK_NO_LOCK);
 
     return lock_sept_check_and_walk_internal(tdcs_p, operand_id, gpa, hkid,
-                                             lock_type,          // Lock the SEPT tree
-                                             true,               // Check private GPA validity
-                                             SEPT_WALK_TO_LEVEL, // Walk to requested level
+                                             lock_type, // Lock the SEPT tree
+                                             true,      // Check private GPA validity
+                                             SEPT_WALK_TO_LEVEL,     // Walk to requested level
                                              sept_entry_ptr, level, cached_sept_entry, is_sept_locked);
 }
+
+api_error_type lock_sept_check_and_walk_private_gpa_to_leaf(
+        tdcs_t* tdcs_p,
+        uint64_t operand_id,
+        pa_t gpa,
+        uint16_t hkid,
+        lock_type_t lock_type,
+        ia32e_sept_t** sept_entry_ptr,
+        ept_level_t* level,
+        ia32e_sept_t* cached_sept_entry,
+        bool_t* is_sept_locked
+        )
+{
+    tdx_debug_assert(lock_type != TDX_LOCK_NO_LOCK);
+
+    return lock_sept_check_and_walk_internal(tdcs_p, operand_id, gpa, hkid,
+                                             lock_type, // Lock the SEPT tree
+                                             true,      // Check private GPA validity
+                                             SEPT_WALK_TO_LEAF,
+                                             sept_entry_ptr, level, cached_sept_entry, is_sept_locked);
+}
+
 
 api_error_type check_and_walk_private_gpa_to_leaf(
         tdcs_t* tdcs_p,
@@ -836,12 +883,105 @@ api_error_type walk_private_gpa(
                                              sept_entry_ptr, level, cached_sept_entry, &is_sept_locked);
 }
 
+uint64_t get_guest_cr0_pe(void)
+{
+    ia32_cr0_t cr0;
+    ia32_vmread(VMX_GUEST_CR0_ENCODE, &cr0.raw);
+    return cr0.pe;
+}
+
 static void inject_ve_and_return_to_td(tdvps_t* tdvps_p, pa_t gpa, vmx_exit_qualification_t exit_qual, ve_category_e category)
 {
     tdx_inject_ve(VMEXIT_REASON_EPT_VIOLATION, exit_qual.raw, category, tdvps_p, gpa.raw, 0);
     bus_lock_exit();
     check_pending_voe_on_debug_td_return();
     tdx_return_to_td(true, false, &tdvps_p->guest_state.gpr_state);
+}
+
+static void map_permissions(vmx_exit_qualification_t *exit_qual, access_rights_t access_rights)
+{
+    if (access_rights.raw == 0x3) // RW
+    {
+
+        // change ept violation to Permissoin::W
+        exit_qual->ept_violation.data_write = 1;
+        exit_qual->ept_violation.data_read = 0;
+    }
+    else
+    {
+        // change ept violation to Permissoin::R
+        exit_qual->ept_violation.data_read = 1;
+        exit_qual->ept_violation.data_write = 0;
+    }
+    exit_qual->ept_violation.insn_fetch = 0;
+}
+
+void walk_and_map_guest_side_gpa(
+        const tdcs_t *const tdcs_p,
+        const pa_t gpa,
+        const uint16_t hkid,
+        const mapping_type_t mapping_type,
+        void ** la
+        )
+{
+    ia32e_eptp_t eptp;
+    ia32e_ept_t ept_entry_copy = {.raw = 0};
+    ept_walk_result_t walk_result;
+    access_rights_t accumulated_rwx;
+
+    bool_t gpaw = tdcs_p->executions_ctl_fields.gpaw;
+    vmx_exit_qualification_t exit_qual;
+
+    pa_t page_hpa;
+
+    bool_t shared_bit = get_gpa_shared_bit(gpa.raw, gpaw);
+
+    access_rights_t access_rights = { .raw = 0 };
+
+    access_rights.r = 1;
+    access_rights.w = (mapping_type == TDX_RANGE_RW) ? 1 : 0;
+    access_rights.x = (uint8_t)0;
+
+    exit_qual.raw = (uint64_t)access_rights.raw;
+
+    if (shared_bit)
+    {
+        // read the shared EPT from the TD VMCS
+        ia32_vmread(VMX_GUEST_SHARED_EPT_POINTER_FULL_ENCODE, &eptp.raw);
+        eptp.fields.enable_ad_bits = tdcs_p->executions_ctl_fields.eptp.fields.enable_ad_bits;
+        eptp.fields.enable_sss_control = tdcs_p->executions_ctl_fields.eptp.fields.enable_sss_control;
+        eptp.fields.ept_ps_mt = tdcs_p->executions_ctl_fields.eptp.fields.ept_ps_mt;
+        eptp.fields.ept_pwl = tdcs_p->executions_ctl_fields.eptp.fields.ept_pwl;
+    }
+    else
+    {
+        eptp.raw = tdcs_p->executions_ctl_fields.eptp.raw;
+    }
+
+    walk_result = gpa_translate(eptp, gpa, !shared_bit, hkid, access_rights,
+                                &page_hpa, &ept_entry_copy, &accumulated_rwx);
+
+    if (walk_result != EPT_WALK_SUCCESS)
+    {
+        *la = NULL;
+        return;
+    }
+
+    if (shared_bit)
+    {
+        if (ept_entry_copy.fields_4k.mt != MT_WB)
+        {
+            *la = map_pa_non_wb(page_hpa.raw_void, mapping_type);
+        }
+        else
+        {
+            *la = map_pa(page_hpa.raw_void, mapping_type);
+        }
+    }
+    else
+    {
+        *la = map_pa_with_hkid(page_hpa.raw_void, hkid, mapping_type);
+    }
 }
 
 api_error_code_e check_walk_and_map_guest_side_gpa(
@@ -896,9 +1036,11 @@ api_error_code_e check_walk_and_map_guest_side_gpa(
     walk_result = gpa_translate(eptp, gpa, !shared_bit, hkid, access_rights,
                                 &page_hpa, &ept_entry_copy, &accumulated_rwx);
 
-    exit_qual.ept_violation.data_read      = access_rights.r & ~accumulated_rwx.r;
-    exit_qual.ept_violation.data_write     = access_rights.w & ~accumulated_rwx.w;
-    exit_qual.ept_violation.insn_fetch     = access_rights.x & ~accumulated_rwx.x;
+    // In case of EPT Violation TD exit should return GPA but without offset in page
+    pa_t gpa_without_offset = {.raw = gpa.raw};
+    gpa_without_offset.fields_4k.page_offset = 0;
+
+    map_permissions(&exit_qual, access_rights);
     exit_qual.ept_violation.gpa_readable   = accumulated_rwx.r;
     exit_qual.ept_violation.gpa_writeable  = accumulated_rwx.w;
     exit_qual.ept_violation.gpa_executable = accumulated_rwx.x;
@@ -918,7 +1060,7 @@ api_error_code_e check_walk_and_map_guest_side_gpa(
             {
                 // The TD is configured to TD exit on access to a PENDING page
                 ext_exit_qual.type = VMX_EEQ_PENDING_EPT_VIOLATION;
-                tdx_ept_violation_exit_to_vmm(gpa, vm_exit_reason, exit_qual.raw, ext_exit_qual.raw);
+                tdx_ept_violation_exit_to_vmm(gpa_without_offset, vm_exit_reason, exit_qual.raw, ext_exit_qual.raw);
             }
             else
             {
@@ -929,17 +1071,17 @@ api_error_code_e check_walk_and_map_guest_side_gpa(
         else
         {
             // This is not a PENDING page, do an EPT Violation TD exit
-            tdx_ept_violation_exit_to_vmm(gpa, vm_exit_reason, exit_qual.raw, 0);
+            tdx_ept_violation_exit_to_vmm(gpa_without_offset, vm_exit_reason, exit_qual.raw, 0);
         }
     }
 
     IF_RARE (walk_result == EPT_WALK_MISCONFIGURATION)
     {
-        tdx_ept_misconfig_exit_to_vmm(gpa);
+        tdx_ept_misconfig_exit_to_vmm(gpa_without_offset);
     }
     else IF_RARE (walk_result == EPT_WALK_VIOLATION)
     {
-        tdx_ept_violation_exit_to_vmm(gpa, vm_exit_reason, exit_qual.raw, ext_exit_qual.raw);
+        tdx_ept_violation_exit_to_vmm(gpa_without_offset, vm_exit_reason, exit_qual.raw, ext_exit_qual.raw);
     }
     else IF_RARE (walk_result == EPT_WALK_CONVERTIBLE_VIOLATION)
     {
@@ -1028,7 +1170,7 @@ api_error_code_e check_and_associate_vcpu(tdvps_t * tdvps_ptr,
                                           bool_t* new_association,
                                           bool_t allow_disabled)
 {
-    uint8_t curr_vcpu_state = tdvps_ptr->management.state;
+    uint8_t curr_vcpu_state = tdvps_ptr->management.vcpu_state;
 
     /**
      *  Check the VCPU state to make sure it has been initialized and is not
@@ -1094,7 +1236,7 @@ void init_tdvps_fields(tdcs_t * tdcs_ptr, tdvps_t * tdvps_ptr)
     {
         if (indx > 0)
         {
-            tdvps_ptr->management.shadow_procbased_exec_ctls2[indx] = tdx_global_data_ptr->l2_vmcs_values.procbased_ctls2; 
+            tdvps_ptr->management.shadow_procbased_exec_ctls2[indx] = tdx_global_data_ptr->l2_vmcs_values.procbased_ctls2;
         }
         tdvps_ptr->management.shadow_shared_eptp[indx] = NULL_PA;
         tdvps_ptr->management.l2_enter_guest_state_gpa[indx] = NULL_PA;
@@ -1221,7 +1363,7 @@ void inject_pf(uint64_t gla, pfec_t pfec)
         {
             vmx_exit_qualification_t exit_qual = { .raw = 0 };
             vmx_exit_inter_info_t exit_inter_info = { .raw = 0 };
-            td_l2_to_l1_exit(vm_exit_reason, exit_qual, 0, exit_inter_info);
+            td_l2_to_l1_exit(vm_exit_reason, exit_qual, 0, exit_inter_info, false);
         }
     }
 
@@ -1236,7 +1378,7 @@ void inject_pf(uint64_t gla, pfec_t pfec)
     //  In all other cases, we inject the requested #PF
     else
     {
-        ia32_vmwrite(VMX_VM_ENTRY_INTR_INFO_ENCODE, PF_INTERRUPTION_INFO);
+        ia32_vmwrite(VMX_VM_ENTRY_INTR_INFO_ENCODE, PF_INTERRUPTION_INFO | (get_guest_cr0_pe() << DELIVER_ERROR_CODE_OFFSET));
         ia32_vmwrite(VMX_VM_ENTRY_EXCEPTION_ERRORCODE_ENCODE, (uint64_t)pfec.raw);
     }
 
@@ -1246,6 +1388,21 @@ void inject_pf(uint64_t gla, pfec_t pfec)
     rflags.rf = 1;
     ia32_vmwrite(VMX_GUEST_RFLAGS_ENCODE, rflags.raw);
 }
+
+//Acquire / release mutex lock
+// Accomplished by acquire_mutex_lock/release_mutex_lock
+//
+//Walk PAMT to 4K page(include exclusive locking and shared lock for parents), and check page_type(specifically for PT_NDA)
+//  accomplished by non_shared_hpa_metadata_check_and_lock
+//
+//Update PAMT entry
+// Can be done manually
+//
+//Map page using TDX reserved HKID, wither WB or UC type
+// Accomplished by map_pa_with_global_hkid_uncached
+//
+//Initialize page using MOVDIR64
+// Accomplished by zero_area_cacheline(dst, _4KB, 0)
 
 uint64_t calculate_virt_tsc(uint64_t native_tsc, uint64_t tsc_multiplier, uint64_t tsc_offset)
 {
@@ -1364,7 +1521,9 @@ bool_t is_guest_cr4_allowed_by_td_config(ia32_cr4_t cr4, tdcs_t* tdcs_p, ia32_xc
     return true;
 }
 
-uint16_t write_guest_cr4(uint64_t value, tdcs_t* tdcs_p, tdvps_t* tdvps_p)
+cr_write_status_e write_guest_cr4(uint64_t value, tdcs_t* tdcs_p
+                                  , tdvps_t* tdvps_p
+)
 {
     ia32_cr0_t cr0;
     ia32_cr4_t cr4;
@@ -1386,7 +1545,7 @@ uint16_t write_guest_cr4(uint64_t value, tdcs_t* tdcs_p, tdvps_t* tdvps_p)
     // If the guest attempted to set bits for features that are not enabled by XFAM,
     //   inject a #GP(0)
     ia32_xcr0_t cur_xfam;
-    cur_xfam.raw = tdvps_p->management.xfam;
+    cur_xfam.raw = tdcs_p->executions_ctl_fields.xfam;
 
     if (!is_guest_cr4_allowed_by_td_config(cr4, tdcs_p, cur_xfam))
     {
@@ -1539,14 +1698,6 @@ bool_t verify_and_set_td_eptp_controls(tdr_t* tdr_ptr, tdcs_t* tdcs_ptr, bool_t 
         return false;
     }
 
-    uint64_t tdx_max_pa = get_global_data()->max_pa;
-
-    if ((eptp.fields.ept_pwl == LVL_PML5) &&
-        (tdx_max_pa < MIN_PA_FOR_PML5))
-    {
-        return false;
-    }
-
     // Check compatibility with GPAW.  If the SHARED bit is 52 then this must be a 5-level EPT
     if (gpaw && (eptp.fields.ept_pwl < LVL_PML5))
     {
@@ -1559,7 +1710,6 @@ bool_t verify_and_set_td_eptp_controls(tdr_t* tdr_ptr, tdcs_t* tdcs_ptr, bool_t 
     // which has already been initialized to 0 during TDADDCX
     pa_t sept_root_pa;
     sept_root_pa.raw = tdr_ptr->management_fields.tdcx_pa[SEPT_ROOT_PAGE_INDEX];
-    sept_root_pa = set_hkid_to_pa(sept_root_pa, 0);
 
     eptp.fields.base_pa = sept_root_pa.page_4k_num;
 
@@ -1582,7 +1732,7 @@ void calculate_tsc_virt_params(uint64_t tsc, uint64_t native_tsc_freq, uint16_t 
     // tmp_128b = virt_tsc_frequency * 25000000 * (1ULL < 48);
     // tsc_multiplier = tmp_128b / native_tsc_frequency;
 
-    tdx_sanity_check((native_tsc_freq >= NATIVE_TSC_FREQUENCY_MIN), SCEC_SEAMCALL_SOURCE(TDH_MNG_INIT_LEAF), 0);
+    tdx_sanity_check((native_tsc_freq >= NATIVE_TSC_FREQUENCY_MIN), FATAL_ERROR_ID_177, 0);
 
     _ASM_VOLATILE_ (
         "mulq %2\n"
@@ -1689,7 +1839,7 @@ uint32_t lfsr_get_random ()
         lfsr_value = (lfsr_value >> 1) ^ POLY_MASK_32;
     }
 
-    tdx_sanity_check(lfsr_value != 0, SCEC_HELPERS_SOURCE, 2);
+    tdx_sanity_check(lfsr_value != 0, FATAL_ERROR_ID_178, 2);
 
     local_data_ptr->single_step_def_state.lfsr_value = lfsr_value;
 
@@ -1864,8 +2014,8 @@ void set_msr_bitmaps(tdcs_t * tdcs_ptr)
             byte_offset += (msr_addr & HIGH_MSR_MASK) / 8;
             bit_offset = (msr_addr & HIGH_MSR_MASK) % 8;
 
-            uint32_t* byte_addr_rd = (uint32_t*)&tdcs_ptr->MSR_BITMAPS[byte_offset];
-            uint32_t* byte_addr_wr = (uint32_t*)&tdcs_ptr->MSR_BITMAPS[byte_offset + (MSR_BITMAP_SIZE * 2)];
+            uint32_t* byte_addr_rd = (uint32_t*)&tdcs_ptr->msr_bitmaps[byte_offset];
+            uint32_t* byte_addr_wr = (uint32_t*)&tdcs_ptr->msr_bitmaps[byte_offset + (MSR_BITMAP_SIZE * 2)];
 
             if (clear_rd_bit)
             {
@@ -1948,11 +2098,6 @@ api_error_type check_and_init_imported_td_state_immutable (tdcs_t* tdcs_ptr)
     tdcs_ptr->epoch_tracking.epoch_and_refcount.refcount[0] = 0;
     tdcs_ptr->epoch_tracking.epoch_and_refcount.refcount[1] = 0;
 
-    /**
-     * Execution control fields
-     */
-    set_xbuff_offsets_and_size(tdcs_ptr, tdcs_ptr->executions_ctl_fields.xfam);
-
     /** CONFIG_FLAGS is optionally imported since older TDX module versions didn't support it.  Set the GPAW bit
      *  based on the separate GPAW field that is always imported.
      */
@@ -1974,8 +2119,13 @@ api_error_type check_and_init_imported_td_state_immutable (tdcs_t* tdcs_ptr)
     api_error_type return_val = check_cpuid_1f_and_compute_cpuid_0b(tdcs_ptr, false);
     if (return_val != TDX_SUCCESS)
     {
-        return return_val;
+        return api_error_fatal(return_val);
     }
+
+    /**
+     * Execution control fields
+     */
+    set_xbuff_offsets_and_size(tdcs_ptr, tdcs_ptr->executions_ctl_fields.xfam);
 
     // Check that all CPUID4_NATIVE_VALID are set.
     // If not (e.g., importing from an older TDX module), clear TDCS.VE_REDUCTION_VALID;
@@ -1988,7 +2138,7 @@ api_error_type check_and_init_imported_td_state_immutable (tdcs_t* tdcs_ptr)
         }
     }
 
-    calculate_servtd_hash(tdcs_ptr, true);
+    calculate_servtd_hash(tdcs_ptr);
 
     /**
      *  Build the MSR bitmaps
@@ -2014,7 +2164,7 @@ api_error_type check_imported_vp_state(tdr_t* tdr_p, tdcs_t* tdcs_p, tdvps_t* td
             {
                 if (i != tdvps_p->management.vcpu_index)
                 {
-                    return api_error_with_operand_id(TDX_X2APIC_ID_NOT_UNIQUE, x2apic_id);
+                    return api_error_with_operand_id_fatal(TDX_X2APIC_ID_NOT_UNIQUE, x2apic_id);
                 }
             }
         }
@@ -2028,7 +2178,7 @@ void prepare_td_vmcs(tdvps_t *tdvps_p, uint16_t vm_id)
     vmcs_header_t   *td_vmcs_p;
     ia32_vmx_basic_t vmx_basic;
 
-    pa_t tdvps_vmcs_pa = { .raw = tdvps_p->management.tdvps_pa[get_tdvps_vmcs_page_index(vm_id)] };
+    pa_t tdvps_vmcs_pa = { .raw = tdvps_p->management.tdvps_page_pa[get_tdvps_vmcs_page_index(vm_id)] };
 
     // Map the TD VMCS page
     td_vmcs_p = (vmcs_header_t *)map_pa(tdvps_vmcs_pa.raw_void, TDX_RANGE_RW);
@@ -2084,25 +2234,25 @@ api_error_code_e get_tdinfo_and_teeinfohash(tdcs_t* tdcs_p, ignore_tdinfo_bitmap
     if (!ignore_tdinfo.mrtd)
     {
         tdx_memcpy(td_info->mr_td.bytes, sizeof(measurement_t),
-                   tdcs_p->measurement_fields.mr_td.bytes,
+                   tdcs_p->measurement_fields.mrtd.bytes,
                    sizeof(measurement_t));
     }
     if (!ignore_tdinfo.mrconfig)
     {
         tdx_memcpy(td_info->mr_config_id.bytes, sizeof(measurement_t),
-                   tdcs_p->measurement_fields.mr_config_id.bytes,
+                   tdcs_p->measurement_fields.mrconfigid.bytes,
                    sizeof(measurement_t));
     }
     if (!ignore_tdinfo.mrowner)
     {
         tdx_memcpy(td_info->mr_owner.bytes, sizeof(measurement_t),
-                   tdcs_p->measurement_fields.mr_owner.bytes,
+                   tdcs_p->measurement_fields.mrowner.bytes,
                    sizeof(measurement_t));
     }
     if (!ignore_tdinfo.mrownerconfig)
     {
         tdx_memcpy(td_info->mr_owner_config.bytes, sizeof(measurement_t),
-                   tdcs_p->measurement_fields.mr_owner_config.bytes,
+                   tdcs_p->measurement_fields.mrownerconfig.bytes,
                    sizeof(measurement_t));
     }
     for (uint32_t i = 0; i < NUM_OF_RTMRS; i++)
@@ -2131,6 +2281,17 @@ api_error_code_e get_tdinfo_and_teeinfohash(tdcs_t* tdcs_p, ignore_tdinfo_bitmap
     }
     else
     {
+        if (is_guest)
+        {
+            save_td_xcr0_and_set_tdx_xcr0(get_local_data());
+        }
+        else
+        {
+            // preserve VMM's XCR0 state
+            get_local_data()->vmm_xcr0_state = ia32_xgetbv(0);
+            ia32_xsetbv(0, TDX_MODULE_XCR0_WITH_AVX);
+        }
+
         // Compute TEE_INFO_HASH
         store_ymms_in_buffer(ymms);
 
@@ -2140,11 +2301,21 @@ api_error_code_e get_tdinfo_and_teeinfohash(tdcs_t* tdcs_p, ignore_tdinfo_bitmap
         {
             // Unexpected error - Fatal Error
             TDX_ERROR("Unexpected error in SHA384 - error = %d\n", sha_error_code);
-            FATAL_ERROR();
+            fatal_error(FATAL_ERROR_ID_35, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
         }
 
         load_ymms_from_buffer(ymms);
         basic_memset_to_zero(ymms, sizeof(ymms));
+
+        if (is_guest)
+        {
+            restore_td_xcr0_if_required(get_local_data());
+        }
+        else
+        {
+            // restore VMM's XCR0 state
+            ia32_xsetbv(0, get_local_data()->vmm_xcr0_state);
+        }
 
         if (ignore_tdinfo.raw == 0)
         {
@@ -2189,15 +2360,20 @@ api_error_type abort_import_session(
 
 bool_t generate_256bit_random(uint256_t* rand)
 {
-    uint8_t successfull_randomizations = 0;
+    return generate_custom_random(rand->qwords, QUADWORDS_IN_256b);
+}
 
-    for (uint8_t i = 0; i < get_global_data()->num_rdseed_retries; i++)
+bool_t generate_custom_random(uint64_t* rand_array, uint64_t num_of_qwords)
+{
+    uint64_t successfull_randomizations = 0;
+
+    for (uint8_t i = 0; i < (get_global_data()->num_rdseed_retries * num_of_qwords); i++)
     {
-        if (ia32_rdseed(&rand->qwords[successfull_randomizations]))
+        if (ia32_rdseed(&rand_array[successfull_randomizations]))
         {
             successfull_randomizations++;
 
-            if (QUADWORDS_IN_256b == successfull_randomizations)
+            if (num_of_qwords == successfull_randomizations)
             {
                 break;
             }
@@ -2209,9 +2385,9 @@ bool_t generate_256bit_random(uint256_t* rand)
         }
     }
 
-    if (successfull_randomizations < QUADWORDS_IN_256b)
+    if (successfull_randomizations < num_of_qwords)
     {
-        basic_memset_to_zero(rand, sizeof(uint256_t));
+        basic_memset_to_zero(rand_array, sizeof(uint64_t) * num_of_qwords);
         return false;
     }
 
@@ -2290,7 +2466,7 @@ void retrieve_handoff_data(uint16_t hv, uint32_t size, uint8_t* data)
 
     uint32_t total_required_size = TDX_MIN_HANDOFF_SIZE;
 
-    tdx_sanity_check(total_required_size <= size, SCEC_HELPERS_SOURCE, 5);
+    tdx_sanity_check(total_required_size <= size, FATAL_ERROR_ID_179, 5);
 
     // Copy KOT entries (no need to copy the lock)
     copy_global_field_from_handoff(&g_d->kot.entries, sizeof(g_d->kot.entries), &data);
@@ -2309,6 +2485,7 @@ void retrieve_handoff_data(uint16_t hv, uint32_t size, uint8_t* data)
 
     // Copy PKG_CONFIG_BITMAP
     copy_global_field_from_handoff(&g_d->pkg_config_bitmap, sizeof(g_d->pkg_config_bitmap), &data);
+
 }
 
 void complete_cpuid_handling(tdx_module_global_t* tdx_global_data_ptr)
@@ -2518,7 +2695,8 @@ bool_t translate_l2_enter_guest_state_gpa(
 
         // Update the HPA
         hpa = leaf_ept_entry_to_hpa(sept_entry_copy, gpa, sept_entry_level);
-        tdvps_ptr->management.l2_enter_guest_state_hpa[vm_id] = set_hkid_to_pa((pa_t)hpa, tdr_ptr->key_management_fields.hkid).raw;
+        hpa = set_hkid_to_pa((pa_t)hpa, tdr_ptr->key_management_fields.hkid).raw;
+        tdvps_ptr->management.l2_enter_guest_state_hpa[vm_id] = hpa;
 
         if (sept_entry_ptr != NULL)
         {
@@ -2601,7 +2779,7 @@ bool_t translate_gpas(
             free_la(sept_entry_ptr);
         }
     }
-    
+
     return true;
 
 EXIT:
@@ -2672,7 +2850,7 @@ bool_t adjust_tlb_tracking_state(tdr_t* tdr_ptr, tdcs_t* tdcs_ptr, tdvps_t* tdvp
 
 void vmclear_vmcs(tdvps_t *tdvps_p, uint16_t vm_id)
 {
-    ia32_vmclear((void*)tdvps_p->management.tdvps_pa[get_tdvps_vmcs_page_index(vm_id)]);
+    ia32_vmclear((void*)tdvps_p->management.tdvps_page_pa[get_tdvps_vmcs_page_index(vm_id)]);
 
     // Mark the guest TD as not launched.  Next VM entry will require VMLAUNCH
     tdvps_p->management.vm_launched[vm_id] = false;
@@ -2681,7 +2859,7 @@ void vmclear_vmcs(tdvps_t *tdvps_p, uint16_t vm_id)
 api_error_type l2_sept_walk(tdr_t* tdr_ptr, tdcs_t* tdcs_ptr, uint16_t vm_id, pa_t page_gpa,
                             ept_level_t* level, ia32e_sept_t** l2_septe_ptr)
 {
-    ia32e_eptp_t septp = get_l2_septp(tdr_ptr, tdcs_ptr, vm_id);
+    ia32e_eptp_t septp = get_l2_septp_with_hkid(tdr_ptr, tdcs_ptr, vm_id);
     ia32e_sept_t cached_sept_entry = { .raw = 0 };
 
     ept_level_t requested_level = *level;
@@ -2705,7 +2883,7 @@ api_error_type l2_sept_walk_guest_side(
     ia32e_sept_t* cached_l2_sept_entry,
     ia32e_sept_t** l2_septe_ptr)
 {
-    ia32e_eptp_t septp = get_l2_septp(tdr_ptr, tdcs_ptr, vm_id);
+    ia32e_eptp_t septp = get_l2_septp_with_hkid(tdr_ptr, tdcs_ptr, vm_id);
 
     ept_level_t requested_level = *level;
     *l2_septe_ptr = secure_ept_walk(septp, page_gpa, tdr_ptr->key_management_fields.hkid,
@@ -2744,7 +2922,7 @@ uint32_t prepare_servtd_hash_buff(tdcs_t* tdcs_ptr, servtd_hash_buff_t* servtd_h
     return num_tds;
 }
 
-void calculate_servtd_hash(tdcs_t* tdcs_ptr, bool_t handle_avx_state)
+void calculate_servtd_hash(tdcs_t* tdcs_ptr)
 {
     servtd_hash_buff_t servtd_hash_buff[MAX_SERVTDS];
     basic_memset_to_zero((void*)servtd_hash_buff, (sizeof(servtd_hash_buff_t) * MAX_SERVTDS));
@@ -2756,28 +2934,15 @@ void calculate_servtd_hash(tdcs_t* tdcs_ptr, bool_t handle_avx_state)
     }
     else
     {
-        ALIGN(32) uint256_t ymms[16];
-
-        if (handle_avx_state)
-        {
-            store_ymms_in_buffer(ymms);
-        }
-
         crypto_api_error sha_error_code = sha384_generate_hash((const uint8_t*)servtd_hash_buff,
             num_servtds * sizeof(servtd_hash_buff_t),
             (uint64_t*)&tdcs_ptr->service_td_fields.servtd_hash);
-
-        if (handle_avx_state)
-        {
-            load_ymms_from_buffer(ymms);
-            basic_memset_to_zero(ymms, sizeof(ymms));
-        }
 
         if (sha_error_code != 0)
         {
             // Unexpected error - Fatal Error
             TDX_ERROR("Unexpected error in SHA384 - error = %d\n", sha_error_code);
-            FATAL_ERROR();
+            fatal_error(FATAL_ERROR_ID_36, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
         }
     }
 }
@@ -2789,9 +2954,9 @@ void update_mutable_cpuid_flags(tdcs_t* tdcs_p)
 
     // Update mutable CPUID flags based on CPUID(1)
     uint32_t cpuid_i = get_cpuid_lookup_entry(1, CPUID_LOOKUP_IDX_NA);
-    tdx_sanity_check(cpuid_i != CPUID_LOOKUP_IDX_NA, SCEC_HELPERS_SOURCE, cpuid_i);
+    tdx_sanity_check(cpuid_i != CPUID_LOOKUP_IDX_NA, FATAL_ERROR_ID_180, cpuid_i);
 
-    cpuid_config_return_values_t cpuid_values = tdcs_p->cpuid_config_vals[cpuid_i];
+    cpuid_config_return_values_t cpuid_values = tdcs_p->cpuid_values[cpuid_i];
 
     cpuid_01_ecx_t cpuid_01_ecx = { .raw = cpuid_values.ecx };
     tdcs_p->executions_ctl_fields.cpuid_flags.dca_supported = cpuid_01_ecx.dca && (!reduce_ve || pv_ctls.dca);
@@ -2810,9 +2975,9 @@ void update_mutable_cpuid_flags(tdcs_t* tdcs_p)
 
     // Update mutable CPUID flags based on CPUID(7, 0)
     cpuid_i = get_cpuid_lookup_entry(7, 0);
-    tdx_sanity_check(cpuid_i != CPUID_LOOKUP_IDX_NA, SCEC_HELPERS_SOURCE, cpuid_i);
+    tdx_sanity_check(cpuid_i != CPUID_LOOKUP_IDX_NA, FATAL_ERROR_ID_181, cpuid_i);
 
-    cpuid_values = tdcs_p->cpuid_config_vals[cpuid_i];
+    cpuid_values = tdcs_p->cpuid_values[cpuid_i];
 
     cpuid_07_00_ebx_t cpuid_07_00_ebx = { .raw = cpuid_values.ebx };
 
@@ -2839,7 +3004,7 @@ bool_t check_imported_cpuid_fixed0_bitmap(tdcs_t* tdcs_p)
     // Get bits that are 1 in the imported CPUID_FIXED0_BITMAP, but 0 in the FIXED0_BITMAP of the local lookup table.
     cpuid_fixed0_bitmap_t bitmap = { .raw = tdcs_p->executions_ctl2_fields.cpuid_fixed0_bitmap & ~(uint64_t)CPUID_FIXED0_BITMAP };
     uint32_t leaf = 0;
-    
+
     // all reserved bits in the bitmap must be 0
     if (bitmap.raw & BITS(CPUID_FIXED0_BITMAP_BASE_RANGE - 1, CPUID_LAST_BASE_LEAF + 1))
     {
@@ -2851,7 +3016,7 @@ bool_t check_imported_cpuid_fixed0_bitmap(tdcs_t* tdcs_p)
     {
         if (i == CPUID_LAST_BASE_LEAF + 1)
         {
-            // reserved bits handling is covered above, when reaching reserved range jump straight to the extended range 
+            // reserved bits handling is covered above, when reaching reserved range jump straight to the extended range
             i = CPUID_FIRST_EXTENDED_LEAF;
             leaf_mask = BIT(CPUID_FIXED0_BITMAP_BASE_RANGE);
         }
@@ -2861,7 +3026,7 @@ bool_t check_imported_cpuid_fixed0_bitmap(tdcs_t* tdcs_p)
             // This leaf is marked fixed-0 in the imported CPUID_FIXED0_BITMAP, but not in the
             // FIXED0_BITMAP of the local lookup table.  This can still be OK.
             // Check that it appears in the local lookup table and that its virtual value in TDCS
-            // for all sub-leaves is 0. 
+            // for all sub-leaves is 0.
 
             uint32_t sub_leaf = 0;
             uint32_t cpuid_index = get_cpuid_lookup_entry(leaf, sub_leaf);
@@ -2876,7 +3041,7 @@ bool_t check_imported_cpuid_fixed0_bitmap(tdcs_t* tdcs_p)
             do
             {
                 // All values must be 0
-                if (!tdx_memcmp_to_zero(tdcs_p->cpuid_config_vals[cpuid_index].values, sizeof(cpuid_config_return_values_t)))
+                if (!tdx_memcmp_to_zero(tdcs_p->cpuid_values[cpuid_index].values, sizeof(cpuid_config_return_values_t)))
                 {
                     return false;
                 }
@@ -2918,7 +3083,7 @@ api_error_type check_cpuid_1f_and_compute_cpuid_0b(tdcs_t* tdcs_p, bool_t allow_
     {
         uint32_t cpuid_1f_idx = get_cpuid_lookup_entry(CPUID_GET_TOPOLOGY_LEAF, subleaf);
 
-        cpuid_config_return_values_t cpuid_values = tdcs_p->cpuid_config_vals[cpuid_1f_idx];
+        cpuid_config_return_values_t cpuid_values = tdcs_p->cpuid_values[cpuid_1f_idx];
 
         // Null configuration case:  if all CPUID(0x1F) sub-leaves are configured as all-0, use the h/w values.
         // If the first subleaf is configured as 0, all the rest must be 0.
@@ -2945,8 +3110,8 @@ api_error_type check_cpuid_1f_and_compute_cpuid_0b(tdcs_t* tdcs_p, bool_t allow_
         {
             cpuid_values = get_global_data()->cpuid_values[cpuid_1f_idx].values;
 
-            tdcs_p->cpuid_config_vals[cpuid_1f_idx].low = cpuid_values.low;
-            tdcs_p->cpuid_config_vals[cpuid_1f_idx].high = cpuid_values.high;
+            tdcs_p->cpuid_values[cpuid_1f_idx].low = cpuid_values.low;
+            tdcs_p->cpuid_values[cpuid_1f_idx].high = cpuid_values.high;
         }
 
         // We continue even if we use the h/w values, in order to set CPUID(0xB)
@@ -2976,7 +3141,7 @@ api_error_type check_cpuid_1f_and_compute_cpuid_0b(tdcs_t* tdcs_p, bool_t allow_
 
                 // CPUID(0x0B, 0) is the SMT level. It is identical to CPUID(0x1F) at the SMT level.
                 cpuid_0b_idx = get_cpuid_lookup_entry(0xB, 0);
-                tdcs_p->cpuid_config_vals[cpuid_0b_idx] = cpuid_values;
+                tdcs_p->cpuid_values[cpuid_0b_idx] = cpuid_values;
 
                 cpuid_0b_level = 1;
             }
@@ -3014,7 +3179,7 @@ api_error_type check_cpuid_1f_and_compute_cpuid_0b(tdcs_t* tdcs_p, bool_t allow_
     cpuid_1f_ecx.level_number = cpuid_0b_level;
     cpuid_1f_ecx.level_type = LEVEL_TYPE_CORE;
     last_cpuid_values.ecx = cpuid_1f_ecx.raw;
-    tdcs_p->cpuid_config_vals[cpuid_0b_idx] = last_cpuid_values;
+    tdcs_p->cpuid_values[cpuid_0b_idx] = last_cpuid_values;
 
     // Fill the next CPUID(0x0B) levels up to 2 as null, indicating last sub-leaf
     while (cpuid_0b_level < 2)
@@ -3031,8 +3196,23 @@ api_error_type check_cpuid_1f_and_compute_cpuid_0b(tdcs_t* tdcs_p, bool_t allow_
         cpuid_1f_ecx.level_type = LEVEL_TYPE_INVALID;
         last_cpuid_values.ecx = cpuid_1f_ecx.raw;
 
-        basic_memset_to_zero((void*)&tdcs_p->cpuid_config_vals[cpuid_0b_idx], sizeof(cpuid_config_return_values_t));
+        basic_memset_to_zero((void*)&tdcs_p->cpuid_values[cpuid_0b_idx], sizeof(cpuid_config_return_values_t));
     }
 
     return TDX_SUCCESS;
+}
+
+
+void prepare_state_for_avx_usage(void)
+{
+    tdx_module_local_t* local_data = get_local_data();
+
+    if (!local_data->reset_avx_state)
+    {
+        local_data->reset_avx_state = true;
+
+        // preserve VMM's XCR0 state
+        local_data->vmm_xcr0_state = ia32_xgetbv(0);
+        ia32_xsetbv(0, TDX_MODULE_XCR0_WITH_AVX);
+    }
 }

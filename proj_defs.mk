@@ -1,23 +1,23 @@
-#// Copyright (C) 2023 Intel Corporation                                          
-#//                                                                               
-#// Permission is hereby granted, free of charge, to any person obtaining a copy  
-#// of this software and associated documentation files (the "Software"),         
-#// to deal in the Software without restriction, including without limitation     
-#// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-#// and/or sell copies of the Software, and to permit persons to whom             
-#// the Software is furnished to do so, subject to the following conditions:      
-#//                                                                               
-#// The above copyright notice and this permission notice shall be included       
-#// in all copies or substantial portions of the Software.                        
-#//                                                                               
-#// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-#// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-#// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-#// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-#// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-#// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-#// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-#//                                                                               
+#// Copyright (C) 2023 Intel Corporation
+#//
+#// Permission is hereby granted, free of charge, to any person obtaining a copy
+#// of this software and associated documentation files (the "Software"),
+#// to deal in the Software without restriction, including without limitation
+#// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+#// and/or sell copies of the Software, and to permit persons to whom
+#// the Software is furnished to do so, subject to the following conditions:
+#//
+#// The above copyright notice and this permission notice shall be included
+#// in all copies or substantial portions of the Software.
+#//
+#// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+#// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+#// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+#// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+#// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+#// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+#// OR OTHER DEALINGS IN THE SOFTWARE.
+#//
 #// SPDX-License-Identifier: MIT
 
 # proj_defs.mk - Project related defintions
@@ -42,20 +42,15 @@ else # TDX_MODULE_BUILD_NUM
 PROJ_FLAGS += -DTDX_MODULE_BUILD_NUM=0
 endif # TDX_MODULE_BUILD_NUM
 
-ifdef TDX_MODULE_SEAM_SVN
-PROJ_FLAGS += -DTDX_MINOR_SEAM_SVN=$(TDX_MODULE_SEAM_SVN)
-else # TDX_MODULE_SEAM_SVN
-PROJ_FLAGS += -DTDX_MINOR_SEAM_SVN=0
-endif # TDX_MODULE_SEAM_SVN
+ifdef TDX_MODULE_SEAM_MINOR_SVN
+ PROJ_FLAGS += -DTDX_MINOR_SEAM_SVN=$(TDX_MODULE_SEAM_MINOR_SVN)
+else # TDX_MODULE_SEAM_MINOR_SVN
+ PROJ_FLAGS += -DTDX_MINOR_SEAM_SVN=0
+endif # TDX_MODULE_SEAM_MINOR_SVN
 
 PROJ_FLAGS += -DTDX_MODULE_MAJOR_VER=1
 PROJ_FLAGS += -DTDX_MODULE_MINOR_VER=5
-
-ifdef TDX_MODULE_UPDATE_VER
-PROJ_FLAGS += -DTDX_MODULE_UPDATE_VER=$(TDX_MODULE_UPDATE_VER)
-else # TDX_MODULE_UPDATE_VER
-PROJ_FLAGS += -DTDX_MODULE_UPDATE_VER=9
-endif # TDX_MODULE_UPDATE_VER
+PROJ_FLAGS += -DTDX_MODULE_UPDATE_VER=13
 
 ifdef TDX_MODULE_INTERNAL_VER
 PROJ_FLAGS += -DTDX_MODULE_INTERNAL_VER=$(TDX_MODULE_INTERNAL_VER)
@@ -123,8 +118,8 @@ endif # PRODUCTION_SIGN
 
 
 #Architecture git data
-COMMIT_ID = 92dab9b9
-ARCHITECTURE_BRANCH_NAME = TDX_Module_1.5.09_v0.92
+COMMIT_ID = 051f11dc
+ARCHITECTURE_BRANCH_NAME = TDX_Module_1.5.12_v0.94
 CPUID_EXCEL_VERSION_SUPPORTED = 10
 MSR_EXCEL_VERSION_SUPPORTED = 6
 TDVPS_EXCEL_VERSION_SUPPORTED = 28

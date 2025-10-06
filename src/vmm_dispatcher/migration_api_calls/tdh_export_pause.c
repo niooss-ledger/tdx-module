@@ -25,8 +25,8 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include "auto_gen/op_state_lookup.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include OP_STATE_LOOKUP_HEADER
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "x86_defs/x86_defs.h"
 #include "accessors/ia32_accessors.h"
 #include "accessors/data_accessors.h"
@@ -99,7 +99,7 @@ api_error_type tdh_export_pause(uint64_t target_tdr_pa)
     */
     if ((tdcs_p->epoch_tracking.epoch_and_refcount.refcount[0] != 0) || (tdcs_p->epoch_tracking.epoch_and_refcount.refcount[1] != 0))
     {
-        FATAL_ERROR();
+        fatal_error(FATAL_ERROR_ID_133, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
     }
     tdcs_p->epoch_tracking.epoch_and_refcount.td_epoch++;
 

@@ -31,8 +31,6 @@
 const fms_info_t allowed_fms[TOTAL_KNOWN_FMS] = {
 
         { .raw = (CWF_NATIVE_FMS    | CWF_LATEST_STEPPING) },
-        { .raw = (GNR_D_NATIVE_FMS  | GNR_D_LATEST_STEPPING) },
-        { .raw = (GNR_SP_NATIVE_FMS | GNR_SP_LATEST_STEPPING) },
         { .raw = (SRF_NATIVE_FMS    | SRF_LATEST_STEPPING) },
         { .raw = (EMR_NATIVE_FMS    | EMR_LATEST_STEPPING) },
         { .raw = (SPR_NATIVE_FMS    | SPR_LATEST_STEPPING) },
@@ -60,7 +58,7 @@ static uint16_t find_table_start(void)
     }
 
     // Should never happen
-    FATAL_ERROR();
+    fatal_error(FATAL_ERROR_ID_32, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
 
     return 0;
 }

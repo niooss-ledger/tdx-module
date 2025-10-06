@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "x86_defs/x86_defs.h"
 #include "x86_defs/vmcs_defs.h"
 #include "data_structures/tdx_global_data.h"
@@ -188,7 +188,7 @@ api_error_type tdh_vp_init(uint64_t target_tdvpr_pa, uint64_t td_vcpu_rcx)
     }
 
     // Check the VCPU state
-    if (tdvps_ptr->management.state != VCPU_UNINITIALIZED)
+    if (tdvps_ptr->management.vcpu_state != VCPU_UNINITIALIZED)
     {
         TDX_ERROR("TDVPS is already initialized\n");
         return_val = TDX_VCPU_STATE_INCORRECT;
@@ -243,9 +243,6 @@ api_error_type tdh_vp_init(uint64_t target_tdvpr_pa, uint64_t td_vcpu_rcx)
     // Read TSC and store as the initial value of LAST_EXIT_TSC
     tdvps_ptr->management.last_exit_tsc = ia32_rdtsc();
 
-    // Copy XFAM to TDVPS; in DEBUG mode the debugger is allowed to change it per VCPU
-    tdvps_ptr->management.xfam = tdcs_ptr->executions_ctl_fields.xfam;
-
     // ALL_CHECKS_PASSED:  The function is guaranteed to succeed
 
     /**
@@ -267,7 +264,7 @@ api_error_type tdh_vp_init(uint64_t target_tdvpr_pa, uint64_t td_vcpu_rcx)
 
     // Bit 63 of XCOMP_BV should be set to 1, to indicate compact format.
     // Otherwise XSAVES and XRSTORS won't work
-    tdvps_ptr->guest_extension_state.xbuf.xsave_header.xcomp_bv = BIT(63);
+    tdvps_ptr->guest_extension_state.xbuff.xsave_header.xcomp_bv = BIT(63);
 
     // Initialize TDVPS.LBR_DEPTH to MAX_LBR_DEPTH supported on the core
     if (((ia32_xcr0_t)tdcs_ptr->executions_ctl_fields.xfam).lbr)
@@ -282,7 +279,7 @@ api_error_type tdh_vp_init(uint64_t target_tdvpr_pa, uint64_t td_vcpu_rcx)
      */
 
     // Mark the VCPU as initialized and ready
-    tdvps_ptr->management.state = VCPU_READY;
+    tdvps_ptr->management.vcpu_state = VCPU_READY;
     tdvps_ptr->management.last_td_exit = LAST_EXIT_ASYNC_FAULT;
 
     init_tdvps_fields(tdcs_ptr, tdvps_ptr);

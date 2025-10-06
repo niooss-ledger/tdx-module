@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -36,7 +36,7 @@
 #define UNDEFINED_IDX_BYTE           0xFF
 
 #define MAX_KEYHOLE_PER_LP          128
-#define MAX_STATIC_KEYHOLES         34
+#define MAX_STATIC_KEYHOLES         40
 #define MAX_CACHEABLE_KEYHOLES      (MAX_KEYHOLE_PER_LP - MAX_STATIC_KEYHOLES)
 
 #define KH_ENTRY_FREE               0
@@ -65,6 +65,18 @@ typedef enum
  * @brief Initializes the keyhole manager state
  */
 void init_keyhole_state(void);
+
+/**
+ * @brief Maps a physical page address to a random linear page address.
+ * @note Do not map more than @c MAX_CACHEABLE_KEYHOLES different pages without freeing them.
+ *
+ * @param pa Physical address inside the page that needs to be mapped
+ * @param mapping_type If write access should be allowed for the linear mapping
+ * @param is_wb_memtype map address as WB memtype (True) or UC memtype (False)
+ *
+ * @return Linear address of the newly mapped page
+ */
+void* map_pa_with_memtype(void* pa, mapping_type_t mapping_type, bool_t is_wb_memtype);
 
 /**
  * @brief Maps a physical page address to a random linear page address. WB memtype is used.

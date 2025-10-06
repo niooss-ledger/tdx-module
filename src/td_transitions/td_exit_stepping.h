@@ -28,7 +28,7 @@
 #ifndef SRC_TD_TRANSITIONS_TD_EXIT_STEPPING_H_
 #define SRC_TD_TRANSITIONS_TD_EXIT_STEPPING_H_
 
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "data_structures/td_control_structures.h"
 
 typedef enum {

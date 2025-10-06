@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -82,7 +82,7 @@ _STATIC_INLINE_ ia32_vmx_allowed_bits_t calc_allowed32_vmx_ctls(uint32_t init, u
 
     // Sanity check on the TDX-SEAM module's constants:
     // Any bit can't be both fixed-1 (bits that are 1 in NOT_ALLOWED0) and fixed-0 (bits that are 0 in ALLOWED1)
-    tdx_sanity_check((allowed.not_allowed0 & ~allowed.allowed1) == 0, SCEC_HELPERS_SOURCE, 30);
+    tdx_sanity_check((allowed.not_allowed0 & ~allowed.allowed1) == 0, FATAL_ERROR_ID_206, 30);
 
     return allowed;
 }
@@ -112,7 +112,7 @@ _STATIC_INLINE_ void calc_allowed64_vmx_ctls(uint64_t init, uint64_t variable_ma
     // Sanity check:
     // Any bit can't be both fixed-1 (bits that are 1 in not_allowed0) and
     // fixed-0 (bits that are 0 in allowed1)
-    tdx_sanity_check((*not_allowed0 & ~(*allowed1)) == 0, SCEC_HELPERS_SOURCE, 31);
+    tdx_sanity_check((*not_allowed0 & ~(*allowed1)) == 0, FATAL_ERROR_ID_207, 31);
 }
 
 /* Calculate the initial value of L2 VMCS' pin-based controls field,
@@ -322,8 +322,7 @@ _STATIC_INLINE_ bool_t check_native_ia32_arch_capabilities(ia32_arch_capabilitie
            (arch_cap.fbsdp_no == 1)             &&   // Bit 14
            (arch_cap.psdp_no == 1)              &&   // Bit 15
            (arch_cap.fb_clear_ctrl == 0)        &&   // Bit 18
-           (arch_cap.xapic_disable_status == 1)   // Bit 21
-           ;
+           (arch_cap.xapic_disable_status == 1);     // Bit 21
 }
 
 /**
@@ -346,6 +345,17 @@ bool_t init_virt_ia32_arch_capabilities(tdcs_t* tdcs_p, bool_t config_flag, uint
  */
 bool_t check_virt_ia32_arch_capabilities(tdcs_t* tdcs_p, ia32_arch_capabilities_t arch_cap);
 
+// Calculate the TDCS' IA32_SPEC_CTRL mask based on DDPD_U support
+_STATIC_INLINE_ ia32_spec_ctrl_t calculate_ia32_spec_ctrl_mask(const tdcs_t* tdcs_p)
+{
+    ia32_spec_ctrl_t mask;
+
+    // Set IA32_SPEC_CTRL_MASK to mask out DDPD_U if not supported
+    mask.raw = 0;
+    mask.ddpd_u = !tdcs_p->executions_ctl_fields.cpuid_flags.ddpd_supported;
+
+    return mask;
+}
 
 // Conditionally write the current VMCS' IA32_SPEC_CTRL shadow field.
 // The shadow is written only if IA32_SPEC_CTRL is virtualized, i.e., when the CPU supports DDPD_U

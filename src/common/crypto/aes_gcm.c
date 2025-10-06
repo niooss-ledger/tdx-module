@@ -24,7 +24,6 @@
  * @brief Crypto implementation for AES GCM library
  */
 
-
 #include "crypto/aes_gcm.h"
 #include "ippcp.h"
 #include "debug/tdx_debug.h"
@@ -42,8 +41,8 @@ static void clean_ctx(aes_gcm_ctx_t *ctx)
 aes_gcm_api_error aes_gcm_init(const key256_t *key, aes_gcm_ctx_t *ctx, const migs_iv_t *iv)
 {
     tdx_debug_assert(ctx);
-
-    get_local_data()->reset_avx_state = true;
+    
+    prepare_state_for_avx_usage();
 
     IppsAES_GCMState *pState = (IppsAES_GCMState*) &ctx->state;
 
@@ -76,7 +75,7 @@ aes_gcm_api_error aes_gcm_init(const key256_t *key, aes_gcm_ctx_t *ctx, const mi
         TDX_ERROR("failed with error code %d\n", status);
         goto EXIT;
     }
-    
+
     tdx_debug_assert(ippStsNoErr == AES_GCM_NO_ERROR);
 
 EXIT:
@@ -91,7 +90,7 @@ aes_gcm_api_error aes_gcm_refresh_context(aes_gcm_ctx_t *ctx)
 {
     tdx_debug_assert(ctx);
 
-    get_local_data()->reset_avx_state = true;
+    prepare_state_for_avx_usage();
 
     IppsAES_GCMState *pState = (IppsAES_GCMState*) &ctx->state;
 
@@ -117,7 +116,7 @@ aes_gcm_api_error aes_gcm_reset(aes_gcm_ctx_t *ctx, const migs_iv_t *iv)
 {
     tdx_debug_assert(ctx);
 
-    get_local_data()->reset_avx_state = true;
+    prepare_state_for_avx_usage();
 
     IppsAES_GCMState *pState = (IppsAES_GCMState*) &ctx->state;
 
@@ -145,8 +144,8 @@ EXIT:
 aes_gcm_api_error aes_gcm_process_aad(aes_gcm_ctx_t *ctx, const uint8_t *p_aad, int32_t size_aad)
 {
     tdx_debug_assert(ctx);
-
-    get_local_data()->reset_avx_state = true;
+    
+    prepare_state_for_avx_usage();
 
     IppsAES_GCMState *pState = (IppsAES_GCMState*) &ctx->state;
 
@@ -163,7 +162,7 @@ aes_gcm_api_error aes_gcm_encrypt(aes_gcm_ctx_t *ctx, const uint8_t *src, uint8_
 {
     tdx_debug_assert(ctx);
 
-    get_local_data()->reset_avx_state = true;
+    prepare_state_for_avx_usage();
 
     IppsAES_GCMState *pState = (IppsAES_GCMState*) &ctx->state;
 
@@ -180,7 +179,7 @@ aes_gcm_api_error aes_gcm_decrypt(aes_gcm_ctx_t *ctx, const uint8_t *src, uint8_
 {
     tdx_debug_assert(ctx);
 
-    get_local_data()->reset_avx_state = true;
+    prepare_state_for_avx_usage();
 
     IppsAES_GCMState *pState = (IppsAES_GCMState*) &ctx->state;
 
@@ -212,7 +211,7 @@ aes_gcm_api_error aes_gcm_finalize(aes_gcm_ctx_t *ctx, uint8_t *mac)
 {
     tdx_debug_assert(ctx);
 
-    get_local_data()->reset_avx_state = true;
+    prepare_state_for_avx_usage();
 
     IppsAES_GCMState *pState = (IppsAES_GCMState*) &ctx->state;
 
@@ -224,5 +223,4 @@ aes_gcm_api_error aes_gcm_finalize(aes_gcm_ctx_t *ctx, uint8_t *mac)
 
     return (aes_gcm_api_error) status;
 }
-
 

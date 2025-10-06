@@ -24,7 +24,7 @@
  *  Spreadsheet Format Version - '25'
  **/
 
-#include "auto_gen/tdr_tdcs_fields_lookup.h"
+#include "./tdr_tdcs_fields_lookup.h"
 
 
 const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {

@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -51,7 +51,7 @@ static void load_xmms_by_mask(tdvps_t* tdvps_ptr, uint16_t xmm_select)
     {
         if (xmm_select & (uint16_t)BIT(i))
         {
-            xmms[i] = tdvps_ptr->guest_extension_state.xbuf.legacy_region.xmm[i];
+            xmms[i] = tdvps_ptr->guest_extension_state.xbuff.legacy_region.xmm[i];
         }
     }
 
@@ -142,18 +142,18 @@ static void load_vmm_state_before_td_exit(tdx_module_local_t* local_data_ptr)
         {
             if ((global_data->fc_bitmap & BIT(i)) != 0)
             {
-                init_msr_opt(IA32_FIXED_CTR0_MSR_ADDR + i, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_fixed_ctr[i]);
+                init_msr_opt(IA32_FIXED_CTR0_MSR_ADDR + i, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_fixed_ctrx[i]);
             }
         }
 
         for (uint32_t i = 0; i < NUM_PMC; i++)
         {
-            init_msr_opt(IA32_A_PMC0_MSR_ADDR + i, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_a_pmc[i]);
+            init_msr_opt(IA32_A_PMC0_MSR_ADDR + i, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_a_pmcx[i]);
         }
 
         for (uint32_t i = 0; i < 2; i++)
         {
-            init_msr_opt(IA32_OFFCORE_RSPx_MSR_ADDR + i, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_offcore_rsp[i]);
+            init_msr_opt(IA32_OFFCORE_RSPx_MSR_ADDR + i, local_data_ptr->vp_ctx.tdvps->guest_msr_state.msr_offcore_rspx[i]);
         }
 
         ia32_wrmsr(IA32_PERF_GLOBAL_STATUS_RESET_MSR_ADDR, ia32_rdmsr(IA32_PERF_GLOBAL_STATUS_MSR_ADDR));
@@ -256,7 +256,8 @@ static void save_guest_td_state_before_td_exit(tdcs_t* tdcs_ptr, tdx_module_loca
     tdvps_ptr->guest_state.dr6 = ia32_store_dr6();
 
     tdvps_ptr->guest_msr_state.ia32_ds_area = ia32_rdmsr(IA32_DS_AREA_MSR_ADDR);
-    if (((ia32_xcr0_t)tdvps_ptr->management.xfam).lbr)
+
+    if (((ia32_xcr0_t)tdcs_ptr->executions_ctl_fields.xfam).lbr)
     {
         tdvps_ptr->guest_msr_state.ia32_lbr_depth = ia32_rdmsr(IA32_LBR_DEPTH_MSR_ADDR);
     }
@@ -269,28 +270,28 @@ static void save_guest_td_state_before_td_exit(tdcs_t* tdcs_ptr, tdx_module_loca
         {
             if ((global_data->fc_bitmap & BIT(i)) != 0)
             {
-                tdvps_ptr->guest_msr_state.ia32_fixed_ctr[i] = ia32_rdmsr(IA32_FIXED_CTR0_MSR_ADDR + i);
+                tdvps_ptr->guest_msr_state.ia32_fixed_ctrx[i] = ia32_rdmsr(IA32_FIXED_CTR0_MSR_ADDR + i);
             }
         }
 
         for (uint32_t i = 0; i < NUM_PMC; i++)
         {
             {
-                tdvps_ptr->guest_msr_state.ia32_a_pmc[i] = ia32_rdmsr(IA32_A_PMC0_MSR_ADDR + i);
-                
+                tdvps_ptr->guest_msr_state.ia32_a_pmcx[i] = ia32_rdmsr(IA32_A_PMC0_MSR_ADDR + i);
+
                 if (!tdcs_ptr->executions_ctl2_fields.event_filters_num)
                 {
                     /* IA32_PERFEVTSEL[i] values are only saved if event filtering is not enabled.
                        If event filtering is enabled, TDVPS always holds the up-to-date value of
                        each IA32_PERFEVTSEL[i]. */
-                    tdvps_ptr->guest_msr_state.ia32_perfevtsel[i] = ia32_rdmsr(IA32_PERFEVTSEL0_MSR_ADDR + i);
+                    tdvps_ptr->guest_msr_state.ia32_perfevtselx[i] = ia32_rdmsr(IA32_PERFEVTSEL0_MSR_ADDR + i);
                 }
             }
         }
 
         for (uint32_t i = 0; i < 2; i++)
         {
-            tdvps_ptr->guest_msr_state.ia32_offcore_rsp[i] = ia32_rdmsr(IA32_OFFCORE_RSPx_MSR_ADDR + i);
+            tdvps_ptr->guest_msr_state.msr_offcore_rspx[i] = ia32_rdmsr(IA32_OFFCORE_RSPx_MSR_ADDR + i);
         }
 
         tdvps_ptr->guest_msr_state.ia32_perf_global_status = ia32_rdmsr(IA32_PERF_GLOBAL_STATUS_MSR_ADDR);
@@ -299,12 +300,12 @@ static void save_guest_td_state_before_td_exit(tdcs_t* tdcs_ptr, tdx_module_loca
             tdvps_ptr->guest_msr_state.ia32_perf_metrics = ia32_rdmsr(IA32_PERF_METRICS_MSR_ADDR);
         }
         tdvps_ptr->guest_msr_state.ia32_pebs_enable = ia32_rdmsr(IA32_PEBS_ENABLE_MSR_ADDR);
-        tdvps_ptr->guest_msr_state.ia32_pebs_data_cfg = ia32_rdmsr(IA32_PEBS_DATA_CFG_MSR_ADDR);
-        tdvps_ptr->guest_msr_state.ia32_pebs_ld_lat = ia32_rdmsr(IA32_PEBS_LD_LAT_MSR_ADDR);
+        tdvps_ptr->guest_msr_state.msr_pebs_data_cfg = ia32_rdmsr(IA32_PEBS_DATA_CFG_MSR_ADDR);
+        tdvps_ptr->guest_msr_state.msr_pebs_ld_lat = ia32_rdmsr(IA32_PEBS_LD_LAT_MSR_ADDR);
         // MSR_PEBS_FRONTEND exists only in big cores
         if (global_data->native_model_info.core_type == CORE_TYPE_BIGCORE)
         {
-            tdvps_ptr->guest_msr_state.ia32_pebs_frontend = ia32_rdmsr(IA32_PEBS_FRONTEND_MSR_ADDR);
+            tdvps_ptr->guest_msr_state.msr_pebs_frontend = ia32_rdmsr(IA32_PEBS_FRONTEND_MSR_ADDR);
         }
     }
     if (tdcs_ptr->executions_ctl_fields.cpuid_flags.waitpkg_supported)
@@ -341,7 +342,7 @@ static void async_tdexit_internal(api_error_code_e tdexit_case,
 
     tdvps_t* tdvps_ptr = tdx_local_data_ptr->vp_ctx.tdvps;
     tdr_t* tdr_ptr = tdx_local_data_ptr->vp_ctx.tdr;
-    uint8_t vcpu_state = tdvps_ptr->management.state;
+    uint8_t vcpu_state = tdvps_ptr->management.vcpu_state;
     uint8_t last_td_exit = tdvps_ptr->management.last_td_exit;
     api_error_code_t error_code;
 
@@ -358,42 +359,33 @@ static void async_tdexit_internal(api_error_code_e tdexit_case,
 
     tdx_local_data_ptr->vp_ctx.bus_lock_preempted = false;
 
-    switch (tdexit_case)
+    if (error_code.fatal)
     {
-    case TDX_SUCCESS:
-    case TDX_CROSS_TD_FAULT:
-    case TDX_TD_EXIT_BEFORE_L2_ENTRY:
-    case TDX_TD_EXIT_ON_L2_TO_L1:
-    case TDX_TD_EXIT_ON_L2_VM_EXIT:
-        // Update the VCPU state for the next TDHVPENTER
-        vcpu_state = VCPU_READY;
-        last_td_exit = LAST_EXIT_ASYNC_FAULT;
-        break;
-
-    case TDX_CROSS_TD_TRAP:
-    case TDX_HOST_PRIORITY_BUSY_TIMEOUT:
-        // Update the VCPU state for the next TDH_VP_ENTER
-        vcpu_state = VCPU_READY;
-        last_td_exit = LAST_EXIT_ASYNC_TRAP;
-        break;
-
-    case TDX_NON_RECOVERABLE_VCPU:
-        // Mark the VCPU so it can't be re-entered
-        vcpu_state = VCPU_DISABLED;
-        break;
-
-        // Fatal cases
-    case TDX_NON_RECOVERABLE_TD:
-    case TDX_NON_RECOVERABLE_TD_WRONG_APIC_MODE:
-    case TDX_NON_RECOVERABLE_TD_NON_ACCESSIBLE:
-    case TDX_NON_RECOVERABLE_TD_CORRUPTED_MD:
         // VCPU state and last TD-exit doesn't change - we will pass to td_vmexit_to_vmm
         // the current value written in the TDVPS
         tdr_ptr->management_fields.fatal = true;
-        error_code.fatal = 1;
-        break;
-    default:
-        FATAL_ERROR();
+    }
+    else
+    {
+        if (error_code.non_recoverable)
+        {
+            // Mark the VCPU so it can't be re-entered
+            vcpu_state = VCPU_DISABLED;
+        }
+        else
+        {
+            // Update the VCPU state for the next TDH_VP_ENTER
+            if (error_code.host_recoverability_hint)
+            {
+                last_td_exit = LAST_EXIT_ASYNC_TRAP;
+            }
+            else
+            {
+                last_td_exit = LAST_EXIT_ASYNC_FAULT;
+            }
+
+            vcpu_state = VCPU_READY;
+        }
     }
 
     // Set TD exit information
@@ -433,7 +425,7 @@ static void async_tdexit_internal(api_error_code_e tdexit_case,
 
     td_vmexit_to_vmm(vcpu_state, last_td_exit, scrub_mask,
                      0, (tdexit_case == TDX_NON_RECOVERABLE_TD_NON_ACCESSIBLE),
-                     error_code.host_recoverability_hint);
+                     ((error_code.host_recoverability_hint == 1)));
 }
 
 void write_l2_enter_outputs(tdvps_t* tdvps_ptr, uint16_t vm_id)
@@ -498,14 +490,12 @@ void td_vmexit_to_vmm(uint8_t vcpu_state, uint8_t last_td_exit, uint64_t scrub_m
     // The TD is dead, no need so save its state.
     if (!is_td_dead)
     {
-        restore_td_xcr0_if_required(tdx_local_data_ptr);
-
         // 1.  Save any guest state that it has not saved as part of the common guest-side operation, e.g.,
         //     the extended state per TDCS.XFAM
         save_guest_td_state_before_td_exit(tdcs_ptr, tdx_local_data_ptr);
 
         // 2.  Set TDVPS.STATE to one of the VCPU_READY sub states, as an indication to the next TD entry.
-        tdvps_ptr->management.state = vcpu_state;
+        tdvps_ptr->management.vcpu_state = vcpu_state;
         tdvps_ptr->management.last_td_exit = last_td_exit;
         // At this point the VCPU state will no longer be accessed
 
@@ -564,7 +554,7 @@ void td_vmexit_to_vmm(uint8_t vcpu_state, uint8_t last_td_exit, uint64_t scrub_m
     tdx_vmm_post_dispatching();
 
     //unreachable Code. Panic
-    tdx_sanity_check(0, SCEC_TDEXIT_SOURCE, 0);
+    tdx_sanity_check(0, FATAL_ERROR_ID_282, 0);
 }
 
 static void td_l2_to_l1_exit_internal(api_error_code_e tdexit_case, vm_vmexit_exit_reason_t vm_exit_reason,
@@ -582,7 +572,7 @@ static void td_l2_to_l1_exit_internal(api_error_code_e tdexit_case, vm_vmexit_ex
     // If the TD is debuggable, the host VMM can request all L2->L1 exits to be converted to TD exits.
     if (tdvps_ptr->management.l2_debug_ctls[curr_vm].td_exit_on_l2_to_l1)
     {
-        tdx_sanity_check(ld_p->vp_ctx.tdcs->executions_ctl_fields.attributes.debug, SCEC_TDEXIT_SOURCE, 1);
+        tdx_sanity_check(ld_p->vp_ctx.tdcs->executions_ctl_fields.attributes.debug, FATAL_ERROR_ID_283, 1);
         async_tdexit_to_vmm(TDX_TD_EXIT_ON_L2_TO_L1, vm_exit_reason, vm_exit_qualification.raw, 0, 0, vm_exit_inter_info.raw);
     }
 
@@ -627,8 +617,10 @@ static void td_l2_to_l1_exit_internal(api_error_code_e tdexit_case, vm_vmexit_ex
     // Before VM entry, update the current VM's VMCS' Guest IA32_PERF_GLOBAL_CTRL
     conditionally_write_vmcs_ia32_perf_global_ctrl_msr(ld_p->vp_ctx.tdcs);
 
-    // If IA32_SPEC_CTRL is virtualized, write the VMCS' IA32_SPEC_CTRL shadow
-    conditionally_write_vmcs_ia32_spec_ctrl_shadow(ld_p->vp_ctx.tdcs, tdvps_ptr->guest_msr_state.ia32_spec_ctrl);
+    {
+        // If IA32_SPEC_CTRL is virtualized, write the VMCS' IA32_SPEC_CTRL shadow
+        conditionally_write_vmcs_ia32_spec_ctrl_shadow(ld_p->vp_ctx.tdcs, tdvps_ptr->guest_msr_state.ia32_spec_ctrl);
+    }
 
     // Update L1's host state fields before entry
     update_host_state_in_td_vmcs(ld_p, tdvps_ptr, tdvps_ptr->management.curr_vm);
@@ -648,31 +640,52 @@ static void td_l2_to_l1_exit_internal(api_error_code_e tdexit_case, vm_vmexit_ex
     }
 
     // Flow should never reach here
-    tdx_sanity_check(0, SCEC_TDEXIT_SOURCE, 2);
+    tdx_sanity_check(0, FATAL_ERROR_ID_284, 2);
 }
 
 void td_l2_to_l1_exit_with_exit_case(api_error_code_e tdexit_case, vm_vmexit_exit_reason_t vm_exit_reason,
                                      vmx_exit_qualification_t vm_exit_qualification, uint64_t extended_exit_qualification,
-                                     vmx_exit_inter_info_t vm_exit_inter_info)
+                                     vmx_exit_inter_info_t vm_exit_inter_info, bool_t emulate_termination)
 {
-    uint64_t inter_error, gla, gpa, idt_vectoring_info, idt_vectoring_err, instr_info, instr_length;
+    uint64_t inter_error = 0, gla = 0, gpa = 0, idt_vectoring_info = 0, idt_vectoring_err = 0, instr_info = 0, instr_length = 0;
 
-    ia32_vmread(VMX_VM_EXIT_EXCEPTION_ERRORCODE_ENCODE, &inter_error);
-    ia32_vmread(VMX_VM_EXIT_GUEST_LINEAR_ADDRESS_ENCODE, &gla);
-    ia32_vmread(VMX_GUEST_PHYSICAL_ADDRESS_INFO_FULL_ENCODE, &gpa);
-    ia32_vmread(VMX_VM_EXIT_IDT_VECTOR_FIELD_ENCODE, &idt_vectoring_info);
-    ia32_vmread(VMX_VM_EXIT_IDT_VECTOR_ERRORCODE_ENCODE, &idt_vectoring_err);
-    ia32_vmread(VMX_VM_EXIT_INSTRUCTION_INFO_ENCODE, &instr_info);
-    ia32_vmread(VMX_VM_EXIT_INSTRUCTION_LENGTH_ENCODE, &instr_length);
+    if (!emulate_termination)
+    {
+        ia32_vmread(VMX_VM_EXIT_EXCEPTION_ERRORCODE_ENCODE, &inter_error);
+        ia32_vmread(VMX_VM_EXIT_GUEST_LINEAR_ADDRESS_ENCODE, &gla);
+        ia32_vmread(VMX_GUEST_PHYSICAL_ADDRESS_INFO_FULL_ENCODE, &gpa);
+        ia32_vmread(VMX_VM_EXIT_IDT_VECTOR_FIELD_ENCODE, &idt_vectoring_info);
+        ia32_vmread(VMX_VM_EXIT_IDT_VECTOR_ERRORCODE_ENCODE, &idt_vectoring_err);
+        ia32_vmread(VMX_VM_EXIT_INSTRUCTION_INFO_ENCODE, &instr_info);
+        ia32_vmread(VMX_VM_EXIT_INSTRUCTION_LENGTH_ENCODE, &instr_length);
+    }
 
     td_l2_to_l1_exit_internal(tdexit_case, vm_exit_reason, vm_exit_qualification, extended_exit_qualification,
                               vm_exit_inter_info, (uint32_t)inter_error, gla, gpa, (uint32_t)idt_vectoring_info,
                               (uint32_t)idt_vectoring_err, (uint32_t)instr_info, (uint32_t)instr_length);
 }
 
-void td_l2_to_l1_exit(vm_vmexit_exit_reason_t vm_exit_reason, vmx_exit_qualification_t vm_exit_qualification,
-                      uint64_t extended_exit_qualification, vmx_exit_inter_info_t vm_exit_inter_info)
+void td_l2_to_l1_exit_with_error_code(api_error_code_e error_code, vm_vmexit_exit_reason_t vm_exit_reason, vmx_exit_qualification_t vm_exit_qualification,
+                                      uint64_t extended_exit_qualification, vmx_exit_inter_info_t vm_exit_inter_info, bool_t emulate_termination)
 {
-    td_l2_to_l1_exit_with_exit_case(TDX_SUCCESS, vm_exit_reason, vm_exit_qualification,
-                                    extended_exit_qualification, vm_exit_inter_info);
+    td_l2_to_l1_exit_with_exit_case(error_code, vm_exit_reason, vm_exit_qualification, extended_exit_qualification, vm_exit_inter_info, emulate_termination);
+}
+
+void td_l2_to_l1_exit(vm_vmexit_exit_reason_t vm_exit_reason, vmx_exit_qualification_t vm_exit_qualification,
+                      uint64_t extended_exit_qualification, vmx_exit_inter_info_t vm_exit_inter_info, bool_t emulate_termination)
+{
+    td_l2_to_l1_exit_with_error_code(TDX_SUCCESS, vm_exit_reason, vm_exit_qualification, extended_exit_qualification, vm_exit_inter_info, emulate_termination);
+}
+
+void resume_l1_and_emulate_termination(l2_failure_flow_e info)
+{
+    vm_vmexit_exit_reason_t vm_exit_reason = { .raw = 0 };
+    vm_exit_reason.vmenter_fail = 1;
+    vm_exit_reason.basic_reason = 0xFFFF;
+    vmx_exit_qualification_t exit_qual = { .raw = 0 };
+    vmx_exit_inter_info_t exit_inter_info = { .raw = 0 };
+    vmx_extended_exit_qualification_t extended_exit_qualification = { .raw = 0 };
+    extended_exit_qualification.type = VM_ENTRY_FAILURE;
+    extended_exit_qualification.info = (uint32_t)info;
+    td_l2_to_l1_exit_with_error_code(TDX_L2_VM_ENTRY_FAILED, vm_exit_reason, exit_qual, extended_exit_qualification.raw, exit_inter_info, true);
 }

@@ -25,9 +25,9 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include "auto_gen/op_state_lookup.h"
-#include "auto_gen/sept_state_lookup.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include OP_STATE_LOOKUP_HEADER
+#include SEPT_STATE_LOOKUP_HEADER
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "x86_defs/x86_defs.h"
 #include "accessors/ia32_accessors.h"
 #include "accessors/data_accessors.h"
@@ -93,11 +93,11 @@ static api_error_type handle_new_command(gpa_list_info_t gpa_list_info, tdcs_t* 
     if (aes_gcm_process_aad(&migsc_p->aes_gcm_context, (const uint8_t*)&mbmd->mem,
                             MBMD_SIZE_NO_MAC(mbmd->mem)) != AES_GCM_NO_ERROR)
     {
-        FATAL_ERROR();
+        fatal_error(FATAL_ERROR_ID_127, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
     }
     if (aes_gcm_finalize(&migsc_p->aes_gcm_context, mbmd->mem.mac) != AES_GCM_NO_ERROR)
     {
-        FATAL_ERROR();
+        fatal_error(FATAL_ERROR_ID_128, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
     }
 
     // Update the MBMD with values not included in the MAC calculation
@@ -258,7 +258,7 @@ static gpa_list_entry_status_t handle_export_by_order(tdcs_t* tdcs_p, gpa_list_e
 
 static gpa_list_entry_status_t handle_operation(gpa_list_entry_t gpa_list_entry, uint64_t* mig_count_increment,
                                                 ia32e_sept_t* sept_entry_copy, uint64_t* dirty_count_increment,
-                                                page_list_entry_t* mig_buff_list_entry)
+                                                volatile page_list_entry_t* mig_buff_list_entry)
 {
     if (gpa_list_entry.operation == GPA_ENTRY_OP_CANCEL)
     {
@@ -366,7 +366,7 @@ static api_error_type finish_entry_processing(uint64_t* entry_num, gpa_list_info
 api_error_type tdh_export_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr_pa,
                               uint64_t hpa_and_size_pa, uint64_t mig_buff_list_pa_val,
                               uint64_t migs_i_and_cmd_val, uint64_t  mac_list_0_pa, uint64_t  mac_list_1_pa)
-{   
+{
     // Local data for return values
     tdx_module_local_t* local_data_ptr = get_local_data();
 
@@ -406,7 +406,7 @@ api_error_type tdh_export_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
     // Migration Buffers
     pa_t                    mig_buff_list_pa;
     page_list_entry_t* mig_buff_list_p = NULL;
-    page_list_entry_t       mig_buff_list_entry;
+    volatile page_list_entry_t       mig_buff_list_entry;
     void* mig_buff_p = NULL;
 
     // MAC list
@@ -714,7 +714,7 @@ api_error_type tdh_export_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
         if (aes_gcm_process_aad(&migsc_p->aes_gcm_context, (const uint8_t*)&gpa_list_entry,
             sizeof(gpa_list_entry)) != AES_GCM_NO_ERROR)
         {
-            FATAL_ERROR();
+            fatal_error(FATAL_ERROR_ID_129, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
         }
 
 
@@ -737,7 +737,8 @@ api_error_type tdh_export_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
                 free_la(td_page_p);
                 td_page_p = NULL;
             }
-            td_page_p = map_pa_with_hkid(td_page_pa.raw_void, tdr_p->key_management_fields.hkid, TDX_RANGE_RO);
+            td_page_pa = set_hkid_to_pa(td_page_pa, tdr_p->key_management_fields.hkid);
+            td_page_p = map_pa(td_page_pa.raw_void, TDX_RANGE_RO);
 
             // Check the migration buffer HPA and map it
             pa_t mig_buff_list_entry_pa = { .raw = 0 };
@@ -754,7 +755,7 @@ api_error_type tdh_export_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
             if (aes_gcm_encrypt(&migsc_p->aes_gcm_context, (uint8_t*)td_page_p,
                                 (uint8_t*)mig_buff_p, _4KB) != AES_GCM_NO_ERROR)
             {
-                FATAL_ERROR();
+                fatal_error(FATAL_ERROR_ID_131, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
             }
             free_la(mig_buff_p);
 
@@ -767,7 +768,7 @@ api_error_type tdh_export_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
         if (aes_gcm_finalize(&migsc_p->aes_gcm_context,
             mac_list_p[(entry_num >> 8) & 1][entry_num & 0xFF]) != AES_GCM_NO_ERROR)
         {
-            FATAL_ERROR();
+            fatal_error(FATAL_ERROR_ID_132, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
         }
 
         // Write back the updated migration buffer list and GPA list entries to memory

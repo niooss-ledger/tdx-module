@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "x86_defs/x86_defs.h"
 #include "data_structures/td_control_structures.h"
 #include "memory_handlers/keyhole_manager.h"
@@ -68,6 +68,7 @@ static api_error_type is_sept_page_valid_for_merge(ia32e_paging_table_t* merged_
 
         // Read the copy after locking
         current_sept_copy = *current_sept;
+        current_sept_copy.raw = remove_hkid_from_pa((pa_t)current_sept_copy.raw).raw;
 
         sept_cleanup_if_pending(&current_sept_copy, leaf_entry_level);
 
@@ -131,6 +132,7 @@ static api_error_type is_l2_sept_page_valid_for_merge(ia32e_paging_table_t* merg
         ia32e_sept_t current_sept_copy;
 
         current_sept_copy = *current_sept;
+        current_sept_copy.raw = remove_hkid_from_pa((pa_t)current_sept_copy.raw).raw;
 
         IF_RARE (i == 0)
         {
@@ -279,6 +281,17 @@ api_error_type tdh_mem_page_promote(page_info_api_input_t gpa_page_info, uint64_
         goto EXIT;
     }
 
+/* 1308552267 - suppress check
+    //TDX_IO_SUPPORT
+    // Verify page mem_type is WB, fail otherwise
+    if (merged_sept_page_sept_entry_copy.fields_4k.mt != MT_WB)
+    {
+        TDX_ERROR("Page memory type is not WB.\n");
+        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID,OPERAND_ID_RCX);
+        goto EXIT;
+    }
+*/
+
     // Lock the SEPT entry in memory
     return_val = sept_lock_acquire_host(merged_sept_page_sept_entry_ptr[0]);
     if (TDX_SUCCESS != return_val)
@@ -306,7 +319,7 @@ api_error_type tdh_mem_page_promote(page_info_api_input_t gpa_page_info, uint64_
     merged_sept_page_pa[0].raw = merged_sept_page_sept_entry_copy.base << 12;
 
     if ((return_val = pamt_implicit_get_and_lock(merged_sept_page_pa[0], PT_4KB,
-                      TDX_LOCK_EXCLUSIVE, &merged_sept_page_pamt_entry_ptr[0])) != TDX_SUCCESS)
+                      TDX_LOCK_EXCLUSIVE, &merged_sept_page_pamt_entry_ptr[0], false)) != TDX_SUCCESS)
     {
         TDX_ERROR("Can't acquire lock on merged page pamt entry\n");
         return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
@@ -331,8 +344,12 @@ api_error_type tdh_mem_page_promote(page_info_api_input_t gpa_page_info, uint64_
         // Check TLB tracking
         if (!is_tlb_tracked(tdcs_ptr, merged_sept_page_pamt_entry_ptr[0]->bepoch))
         {
-            TDX_ERROR("Target splitted page TLB tracking not done\n");
-            return_val = api_error_with_operand_id(TDX_TLB_TRACKING_NOT_DONE, OPERAND_ID_RCX);
+            TDX_ERROR("TLB tracking not done\n");
+            return_val = TDX_TLB_TRACKING_NOT_DONE;
+        }
+        if (return_val != TDX_SUCCESS)
+        {
+            return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
             goto EXIT;
         }
     }
@@ -340,8 +357,7 @@ api_error_type tdh_mem_page_promote(page_info_api_input_t gpa_page_info, uint64_
     // Step #2
 
     // Map the Secure-EPT page before merging
-    merged_sept_page_ptr[0] = map_pa_with_hkid(merged_sept_page_pa[0].raw_void,
-                                            tdr_ptr->key_management_fields.hkid, TDX_RANGE_RW);
+    merged_sept_page_ptr[0] = map_pa(merged_sept_page_pa[0].raw_void, TDX_RANGE_RW);
 
     // Scan the Secure EPT page content and verify all 512 entries:
     //   - Are leaf SEPT_PRESENT entries(this also implies that the corresponding pages
@@ -377,7 +393,9 @@ api_error_type tdh_mem_page_promote(page_info_api_input_t gpa_page_info, uint64_
                                       &merged_sept_page_sept_entry_ptr[vm_id]);
             if ((return_val != TDX_SUCCESS))
             {
-                FATAL_ERROR(); // Should not happen since the large range is aliased
+                // Should not happen since the large range is aliased
+                extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_td_handle(target_tdr_pa, vm_id, l2_sept_parent_level_entry, page_gpa.raw, *merged_sept_page_sept_entry_ptr[vm_id]);
+                fatal_error(FATAL_ERROR_ID_8, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
             }
 
             // L2 SEPT entry was found
@@ -386,12 +404,13 @@ api_error_type tdh_mem_page_promote(page_info_api_input_t gpa_page_info, uint64_
             // The L2 SEPT entry must be a non-leaf entry since the L1 SEPT entry is a non-leaf
             tdx_sanity_check(!is_secure_ept_leaf_entry(&l2_merged_sept_page_sept_entry_copy) &&
                              !is_l2_sept_free(&l2_merged_sept_page_sept_entry_copy),
-                             SCEC_SEAMCALL_SOURCE(TDH_MEM_PAGE_PROMOTE_LEAF), 0);
+                             FATAL_ERROR_ID_285, 0);
 
             merged_sept_page_pa[vm_id].raw = merged_sept_page_sept_entry_ptr[vm_id]->base << 12;
+            merged_sept_page_pa[vm_id] = set_hkid_to_pa(merged_sept_page_pa[vm_id], tdr_ptr->key_management_fields.hkid);
 
             if ((return_val = pamt_implicit_get_and_lock(merged_sept_page_pa[vm_id], PT_4KB,
-                                TDX_LOCK_EXCLUSIVE, &merged_sept_page_pamt_entry_ptr[vm_id])) != TDX_SUCCESS)
+                                TDX_LOCK_EXCLUSIVE, &merged_sept_page_pamt_entry_ptr[vm_id], false)) != TDX_SUCCESS)
             {
                 TDX_ERROR("Can't acquire lock on L2 (%d) merged page pamt entry\n", vm_id);
                 return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
@@ -403,7 +422,7 @@ api_error_type tdh_mem_page_promote(page_info_api_input_t gpa_page_info, uint64_
             merged_sept_page_ptr[vm_id] = map_pa_with_hkid(merged_sept_page_pa[vm_id].raw_void,
                                                            tdr_ptr->key_management_fields.hkid,
                                                            TDX_RANGE_RW);
-            
+
             // Scan the L2 Secure EPT page content and verify all 512 entries match the conditions for promotion
             return_val = is_l2_sept_page_valid_for_merge(merged_sept_page_ptr[vm_id], l2_sept_parent_level_entry);
 
@@ -440,6 +459,8 @@ api_error_type tdh_mem_page_promote(page_info_api_input_t gpa_page_info, uint64_
     merged_page_pa.raw = leaf_ept_entry_to_hpa(merged_sept_page_ptr[0]->sept[0], 0,
                                           (ept_level_t)(merged_sept_parent_level_entry - 1));
 
+    merged_page_pa = set_hkid_to_pa(merged_page_pa, tdr_ptr->key_management_fields.hkid);
+
     // Merge PAMT range of the promoted page
     if ((return_val = pamt_promote(merged_page_pa, (page_size_t)merged_sept_parent_level_entry)) != TDX_SUCCESS)
     {
@@ -473,7 +494,7 @@ api_error_type tdh_mem_page_promote(page_info_api_input_t gpa_page_info, uint64_
             if ((version > 0) && (vm_id > 0))
             {
                 local_data_ptr->vmm_regs.gprs[GPR_LIST_R9_INDEX + (vm_id - 1)] =
-                        merged_sept_page_pa[vm_id].raw;
+                        remove_hkid_from_pa(merged_sept_page_pa[vm_id]).raw;;
             }
         }
         else // vm_id > 0 and sept entry is null
@@ -485,7 +506,7 @@ api_error_type tdh_mem_page_promote(page_info_api_input_t gpa_page_info, uint64_
         }
     }
 
-    local_data_ptr->vmm_regs.rcx = merged_sept_page_pa[0].raw;
+    local_data_ptr->vmm_regs.rcx = remove_hkid_from_pa(merged_sept_page_pa[0]).raw;
 
 EXIT:
 

@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -36,6 +36,7 @@ bool_t pamt_get_block(pa_t pa, pamt_block_t* pamt_block)
     tdmr_entry_t* covering_tdmr = NULL;
     tdx_module_global_t* global_data_ptr = get_global_data();
 
+    pa = remove_hkid_from_pa(pa);
     uint64_t pa_addr = get_addr_from_pa(pa);
 
     // Assuming that TDMR table is sorted by base (ascending)
@@ -62,7 +63,7 @@ bool_t pamt_get_block(pa_t pa, pamt_block_t* pamt_block)
     offset_pa.raw = pa_addr - covering_tdmr->base;
     uint32_t pamt_block_num = (uint32_t)offset_pa.page_1g_num;
 
-    tdx_sanity_check(pamt_block_num < covering_tdmr->num_of_pamt_blocks, SCEC_PAMT_MANAGER_SOURCE, 0);
+    tdx_sanity_check(pamt_block_num < covering_tdmr->num_of_pamt_blocks, FATAL_ERROR_ID_213, 0);
 
     if (pa_addr >= (covering_tdmr->last_initialized & ~(_1GB - 1)))
     {
@@ -123,8 +124,7 @@ _STATIC_INLINE_ void pamt_4kb_init(pamt_block_t* pamt_block, uint64_t num_4k_ent
     uint32_t pamt_pages = (uint32_t)(num_4k_entries / pamt_entries_in_page);
 
     pamt_entry_t* pamt_entry_start = pamt_block->pamt_4kb_p;
-    tdx_sanity_check(((uint64_t)pamt_entry_start % TDX_PAGE_SIZE_IN_BYTES) == 0,
-            SCEC_PAMT_MANAGER_SOURCE, 11);
+    tdx_sanity_check(((uint64_t)pamt_entry_start % TDX_PAGE_SIZE_IN_BYTES) == 0, FATAL_ERROR_ID_214, 11);
     for (uint32_t i = 0; i < pamt_pages; i++)
     {
         pamt_entry = map_pa_with_global_hkid(
@@ -311,7 +311,7 @@ void pamt_unwalk(pa_t pa, pamt_block_t pamt_block, pamt_entry_t* pamt_entry_p,
             break;
 
         default:
-            tdx_sanity_check(0, SCEC_PAMT_MANAGER_SOURCE, 2);
+            tdx_sanity_check(0, FATAL_ERROR_ID_215, 2);
     }
 
     free_la(pamt_1gb);
@@ -332,12 +332,13 @@ api_error_code_e pamt_promote(pa_t pa, page_size_t new_leaf_size)
     pamt_block_t pamt_block;
     api_error_code_e retval = UNINITIALIZE_ERROR;
 
-    tdx_sanity_check((new_leaf_size == PT_2MB) || (new_leaf_size == PT_1GB), SCEC_PAMT_MANAGER_SOURCE, 3);
+    tdx_sanity_check((new_leaf_size == PT_2MB) || (new_leaf_size == PT_1GB), FATAL_ERROR_ID_216, 3);
 
     // Get PAMT block of the merge page address (should never fail)
     if (!pamt_get_block(pa, &pamt_block))
     {
-        FATAL_ERROR();
+        extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_page_hpa(pa.raw, (uint8_t)new_leaf_size);
+        fatal_error(FATAL_ERROR_ID_168, FATAL_INFO_FORMAT_PAGE_HPA_INFO, &extended_fatal_info);
     }
 
     if (new_leaf_size == PT_2MB)
@@ -351,7 +352,7 @@ api_error_code_e pamt_promote(pa_t pa, page_size_t new_leaf_size)
         pamt_entry_children_pa = &pamt_block.pamt_2mb_p[pa.pamt_2m.idx];
     }
 
-    tdx_sanity_check(promoted_pamt_entry->pt == PT_NDA, SCEC_PAMT_MANAGER_SOURCE, 4);
+    tdx_sanity_check(promoted_pamt_entry->pt == PT_NDA, FATAL_ERROR_ID_217, 4);
 
     // Acquire exclusive lock on the promoted entry
     if ((retval = acquire_sharex_lock_hp_ex(&promoted_pamt_entry->entry_lock, false)) != TDX_SUCCESS)
@@ -366,8 +367,7 @@ api_error_code_e pamt_promote(pa_t pa, page_size_t new_leaf_size)
     uint32_t pamt_entries_in_page = TDX_PAGE_SIZE_IN_BYTES / sizeof(pamt_entry_t);
     uint32_t pamt_pages = PAMT_CHILD_ENTRIES / pamt_entries_in_page;
 
-    tdx_sanity_check(((uint64_t)pamt_entry_children_pa % TDX_PAGE_SIZE_IN_BYTES) == 0,
-            SCEC_PAMT_MANAGER_SOURCE, 5);
+    tdx_sanity_check(((uint64_t)pamt_entry_children_pa % TDX_PAGE_SIZE_IN_BYTES) == 0, FATAL_ERROR_ID_218, 5);
 
     for (uint32_t i = 0; i < pamt_pages; i++)
     {
@@ -385,8 +385,8 @@ api_error_code_e pamt_promote(pa_t pa, page_size_t new_leaf_size)
             }
 
             tdx_sanity_check((promoted_pamt_entry->pt == pamt_entry_children_la[j].pt) &&
-                       (promoted_pamt_entry->owner == pamt_entry_children_la[j].owner),
-                       SCEC_PAMT_MANAGER_SOURCE, 6);
+                             (promoted_pamt_entry->owner == pamt_entry_children_la[j].owner),
+                             FATAL_ERROR_ID_219, 6);
 
             pamt_entry_children_la[j].pt = PT_NDA;
         }
@@ -413,12 +413,13 @@ api_error_code_e pamt_demote(pa_t pa, page_size_t leaf_size)
     pamt_block_t pamt_block;
     api_error_code_e retval = UNINITIALIZE_ERROR;
 
-    tdx_sanity_check((leaf_size == PT_2MB) || (leaf_size == PT_1GB), SCEC_PAMT_MANAGER_SOURCE, 7);
+    tdx_sanity_check((leaf_size == PT_2MB) || (leaf_size == PT_1GB), FATAL_ERROR_ID_220, 7);
 
     // Get PAMT block (should never fail)
     if (!pamt_get_block(pa, &pamt_block))
     {
-        FATAL_ERROR();
+        extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_page_hpa(pa.raw, (uint8_t)leaf_size);
+        fatal_error(FATAL_ERROR_ID_169, FATAL_INFO_FORMAT_PAGE_HPA_INFO, &extended_fatal_info);
     }
 
     if (leaf_size == PT_2MB)
@@ -432,7 +433,7 @@ api_error_code_e pamt_demote(pa_t pa, page_size_t leaf_size)
         pamt_entry_children_pa = &pamt_block.pamt_2mb_p[pa.pamt_2m.idx];
     }
 
-    tdx_sanity_check(demoted_pamt_entry->pt == PT_REG, SCEC_PAMT_MANAGER_SOURCE, 8);
+    tdx_sanity_check(demoted_pamt_entry->pt == PT_REG, FATAL_ERROR_ID_221, 8);
 
     // Acquire exclusive lock on the demoted entry
     if ((retval = acquire_sharex_lock_hp_ex(&demoted_pamt_entry->entry_lock, false)) != TDX_SUCCESS)
@@ -447,8 +448,7 @@ api_error_code_e pamt_demote(pa_t pa, page_size_t leaf_size)
     uint32_t pamt_entries_in_page = TDX_PAGE_SIZE_IN_BYTES / sizeof(pamt_entry_t);
     uint32_t pamt_pages = PAMT_CHILD_ENTRIES / pamt_entries_in_page;
 
-    tdx_sanity_check(((uint64_t)pamt_entry_children_pa % TDX_PAGE_SIZE_IN_BYTES) == 0,
-            SCEC_PAMT_MANAGER_SOURCE, 9);
+    tdx_sanity_check(((uint64_t)pamt_entry_children_pa % TDX_PAGE_SIZE_IN_BYTES) == 0, FATAL_ERROR_ID_222, 9);
 
     for (uint32_t i = 0; i < pamt_pages; i++)
     {
@@ -487,7 +487,9 @@ pamt_entry_t* pamt_implicit_get(pa_t pa, page_size_t leaf_size)
 
     if (!pamt_get_block(pa, &pamt_block))
     {
-        FATAL_ERROR(); // PAMT block not found or not initialized
+        // PAMT block not found or not initialized
+        extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_page_hpa(pa.raw, (uint8_t)leaf_size);
+        fatal_error(FATAL_ERROR_ID_170, FATAL_INFO_FORMAT_PAGE_HPA_INFO, &extended_fatal_info);
     }
 
     pamt_entry_t* pamt_entry_p = NULL;
@@ -504,22 +506,25 @@ pamt_entry_t* pamt_implicit_get(pa_t pa, page_size_t leaf_size)
             pamt_entry_p = map_pa_with_global_hkid(&pamt_block.pamt_4kb_p[pa.pamt_4k.idx], TDX_RANGE_RW);
             break;
         default:
-            FATAL_ERROR();
+        {
+            extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_page_hpa(pa.raw, (uint8_t)leaf_size);
+            fatal_error(FATAL_ERROR_ID_171, FATAL_INFO_FORMAT_PAGE_HPA_INFO, &extended_fatal_info);
             break;
+        }
     }
 
-    tdx_sanity_check((pamt_entry_p->pt != PT_NDA) && (pamt_entry_p->pt != PT_RSVD), SCEC_PAMT_MANAGER_SOURCE, 10);
+    tdx_sanity_check((pamt_entry_p->pt != PT_NDA) && (pamt_entry_p->pt != PT_RSVD), FATAL_ERROR_ID_223, 10);
 
     return pamt_entry_p;
 }
 
 api_error_code_e pamt_implicit_get_and_lock(pa_t pa, page_size_t leaf_size, lock_type_t leaf_lock_type,
-                                            pamt_entry_t** pamt_entry)
+                                            pamt_entry_t** pamt_entry, bool_t is_guest)
 {
-    api_error_code_e errc;
+    api_error_code_e errc = UNINITIALIZE_ERROR;
     pamt_entry_t* tmp_pamt_entry = pamt_implicit_get(pa, leaf_size);
 
-    if ((errc = acquire_sharex_lock_hp(&tmp_pamt_entry->entry_lock, leaf_lock_type, false)) != TDX_SUCCESS)
+    if ((errc = acquire_sharex_lock_hp(&tmp_pamt_entry->entry_lock, leaf_lock_type, is_guest)) != TDX_SUCCESS)
     {
         free_la(tmp_pamt_entry);
         *pamt_entry = NULL;
@@ -544,8 +549,7 @@ bool_t pamt_is_2mb_range_free(pa_t hpa, pamt_block_t* pamt_block)
     uint32_t pamt_entries_in_page = TDX_PAGE_SIZE_IN_BYTES / sizeof(pamt_entry_t);
     uint32_t pamt_pages = PAMT_CHILD_ENTRIES / pamt_entries_in_page;
 
-    tdx_sanity_check(((uint64_t)pamt_entry_children_pa % TDX_PAGE_SIZE_IN_BYTES) == 0,
-                     SCEC_HELPERS_SOURCE, 3);
+    tdx_sanity_check(((uint64_t)pamt_entry_children_pa % TDX_PAGE_SIZE_IN_BYTES) == 0, FATAL_ERROR_ID_224, 3);
 
     for (uint32_t i = 0; i < pamt_pages; i++)
     {

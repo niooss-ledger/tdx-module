@@ -42,17 +42,11 @@
 #define SRF_NATIVE_FMS                  0xA06F0
 #define SRF_LATEST_STEPPING             0x3
 
-#define GNR_SP_NATIVE_FMS               0xA06D0
-#define GNR_SP_LATEST_STEPPING          0x0
-
-#define GNR_D_NATIVE_FMS                0xA06E0
-#define GNR_D_LATEST_STEPPING           0x0
 
 #define CWF_NATIVE_FMS                  0xD06D0
-#define CWF_LATEST_STEPPING             0x0
+#define CWF_LATEST_STEPPING             0x1
 
-
-#define TOTAL_KNOWN_FMS                 6
+#define TOTAL_KNOWN_FMS                 4
 
 extern const fms_info_t allowed_fms[TOTAL_KNOWN_FMS];
 extern const fms_info_t disallowed_fms[TOTAL_KNOWN_FMS];

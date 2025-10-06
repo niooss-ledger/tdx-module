@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "x86_defs/x86_defs.h"
 #include "data_structures/td_control_structures.h"
 #include "memory_handlers/keyhole_manager.h"
@@ -182,6 +182,17 @@ api_error_type tdh_mem_page_demote(page_info_api_input_t gpa_page_info, td_handl
         goto EXIT;
     }
 
+/* 1308552267 - suppress check
+    //TDX_IO_SUPPORT
+    // Verify page mem_type is WB, fail otherwise
+    if (split_page_sept_entry_copy.fields_4k.mt != MT_WB)
+    {
+        TDX_ERROR("Page memory type is not WB.\n");
+        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID,OPERAND_ID_RCX);
+        goto EXIT;
+    }
+*/
+
     // Lock the SEPT entry in memory
     return_val = sept_lock_acquire_host(split_page_sept_entry_ptr);
     if (TDX_SUCCESS != return_val)
@@ -229,8 +240,12 @@ api_error_type tdh_mem_page_demote(page_info_api_input_t gpa_page_info, td_handl
         // Check TLB tracking
         if (!is_tlb_tracked(tdcs_ptr, split_page_pamt_entry_ptr->bepoch))
         {
-            TDX_ERROR("Target splitted page TLB tracking not done\n");
-            return_val = api_error_with_operand_id(TDX_TLB_TRACKING_NOT_DONE, OPERAND_ID_RCX);
+            TDX_ERROR("TLB tracking not done\n");
+            return_val = TDX_TLB_TRACKING_NOT_DONE;
+        }
+        if (return_val != TDX_SUCCESS)
+        {
+            return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
             goto EXIT;
         }
     }
@@ -401,7 +416,9 @@ api_error_type tdh_mem_page_demote(page_info_api_input_t gpa_page_info, td_handl
     //  ALL_CHECKS_PASSED:  The function is guaranteed to succeed
     //---------------------------------------------------------------
 
-    sept_set_mapped_non_leaf(split_page_sept_entry_ptr, sept_page_pa[0], true); // Keep locked
+    sept_set_mapped_non_leaf_given_hpa_with_hkid(split_page_sept_entry_ptr,
+                                                 set_hkid_to_pa(sept_page_pa[0], tdr_ptr->key_management_fields.hkid),
+                                                 true); // Keep locked
 
     // Update the new L1 Secure EPT page PAMT entry
     sept_page_pamt_entry_ptr[0]->owner = tdr_pa.page_4k_num;
@@ -416,7 +433,9 @@ api_error_type tdh_mem_page_demote(page_info_api_input_t gpa_page_info, td_handl
             (!target_tdr_and_flags.l2_sept_add_mode || sept_state_is_aliased(split_page_sept_entry_copy, vm_id)))
         {
             // Make the current L2 Secure EPT entry a non-leaf entry pointing the new Secure EPT page.
-            sept_l2_set_mapped_non_leaf(l2_sept_entry_ptr[vm_id], sept_page_pa[vm_id]);
+            sept_l2_set_mapped_non_leaf_given_hpa_and_hkid(l2_sept_entry_ptr[vm_id],
+                                                           sept_page_pa[vm_id],
+                                                           tdr_ptr->key_management_fields.hkid);
 
             // Set the aliased flag in the L1 non-leaf SEPT entry (this is done as a locked operation)
             sept_set_aliased(split_page_sept_entry_ptr, (uint16_t)vm_id);

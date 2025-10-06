@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -34,7 +34,7 @@
 #include "x86_defs/vmcs_defs.h"
 #include "data_structures/tdx_local_data.h"
 #include "tdx_td_api_handlers.h"
-#include "auto_gen/tdx_error_codes_defs.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
 #include "vmm_dispatcher/tdx_vmm_dispatcher.h"
 #include "helpers/helpers.h"
 #include "memory_handlers/sept_manager.h"
@@ -70,7 +70,7 @@ void td_l2_ept_violation_exit(vm_vmexit_exit_reason_t vm_exit_reason, vmx_exit_q
     if (are_gpa_bits_above_virt_maxpa_set(gpa.raw, gpaw, tdcs_ptr->executions_ctl_fields.virt_maxpa) &&
         exit_qualification.ept_violation.gla_valid)
     {
-        td_l2_to_l1_exit(vm_exit_reason, exit_qualification, 0, exit_inter_info);
+        td_l2_to_l1_exit(vm_exit_reason, exit_qualification, 0, exit_inter_info, false);
     }
 
     bool_t shared_bit = get_gpa_shared_bit(gpa.raw, gpaw);
@@ -91,7 +91,7 @@ void td_l2_ept_violation_exit(vm_vmexit_exit_reason_t vm_exit_reason, vmx_exit_q
                 free_la(l1_sept_entry_ptr);
             }
             // In each of the above cases, L1 VMM should handle the EPT violation
-            td_l2_to_l1_exit(vm_exit_reason, exit_qualification, 0, exit_inter_info);
+            td_l2_to_l1_exit(vm_exit_reason, exit_qualification, 0, exit_inter_info, false);
         }
         else if (sept_state_is_any_pending_and_guest_acceptable(l1_sept_entry_copy))
         {
@@ -104,7 +104,7 @@ void td_l2_ept_violation_exit(vm_vmexit_exit_reason_t vm_exit_reason, vmx_exit_q
             eeq.type = L2_ENTER_EEQ_PEND_EPT_VIOLATION;
 
             // In each of the above cases, L1 VMM should handle the EPT violation
-            td_l2_to_l1_exit(vm_exit_reason, exit_qualification, eeq.raw, exit_inter_info);
+            td_l2_to_l1_exit(vm_exit_reason, exit_qualification, eeq.raw, exit_inter_info, false);
         }
 
         /* At this point we're going to do a TD exit.

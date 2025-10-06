@@ -25,8 +25,8 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include "auto_gen/tdx_error_codes_defs.h"
-#include "auto_gen/op_state_lookup.h"
+#include TDX_ERROR_CODES_DEFS_HEADER
+#include OP_STATE_LOOKUP_HEADER
 #include "helpers/migration.h"
 #include "helpers/helpers.h"
 #include "x86_defs/x86_defs.h"
@@ -40,19 +40,34 @@ static api_error_type handle_command_by_type(migs_index_and_cmd_t migs_i_and_cmd
 {
     if (migs_i_and_cmd.command == MIGS_INDEX_COMMAND_NEW)
     {
+
+
         /*
          * Start the import session.
          */
 
          /*
-         * Check that a valid migration key has been set by the Migration TD.
-         * If this is not the first migration session, then the migration key must have been
+         * Check that a valid migration decryption key has been set by the Migration TD.
+         * If this is not the first migration session, then the migration decryption key must have been
          * set after the previous migration session has started.
          * Concurrency protected by locking the OP_STATE.
          */
         if (!tdcs_p->migration_fields.mig_dec_key_set)
         {
             return TDX_MIGRATION_DECRYPTION_KEY_NOT_SET;
+        }
+
+        /*
+        * Do some sanity checks on the migration decryption key set by the Migration TD.
+        * Should be different than the keys used in the previous session and different than
+        * the encryption key.  In addition, the value of 0 is not permitted.
+        */
+        if (tdx_memcmp_to_zero(&tdcs_p->migration_fields.mig_dec_key, sizeof(key256_t)) ||
+            tdx_memcmp_safe(&tdcs_p->migration_fields.mig_dec_key, &tdcs_p->migration_fields.mig_dec_working_key, sizeof(key256_t)) ||
+            tdx_memcmp_safe(&tdcs_p->migration_fields.mig_dec_key, &tdcs_p->migration_fields.mig_enc_working_key, sizeof(key256_t)) ||
+            tdx_memcmp_safe(&tdcs_p->migration_fields.mig_dec_key, &tdcs_p->migration_fields.mig_enc_key, sizeof(key256_t)))
+        {
+            return TDX_INVALID_MIGRATION_DECRYPTION_KEY;
         }
 
         /* Initialize the migration context
@@ -69,6 +84,7 @@ static api_error_type handle_command_by_type(migs_index_and_cmd_t migs_i_and_cmd
         tdcs_p->migration_fields.mig_enc_key = tmp_end_key;
 
         basic_memset_to_zero(&tmp_end_key, sizeof(tmp_end_key));
+
 
         tdcs_p->migration_fields.mig_dec_working_key = tdcs_p->migration_fields.mig_dec_key;
         tdcs_p->migration_fields.mig_dec_key_set = false;
@@ -151,12 +167,12 @@ static api_error_type handle_command_by_type(migs_index_and_cmd_t migs_i_and_cmd
         migsc_p->mbmd.header.iv_counter = 0; // Not included in the MAC and not required anymore
         if (aes_gcm_reset(&migsc_p->aes_gcm_context, iv) != AES_GCM_NO_ERROR)
         {
-            FATAL_ERROR();
+            fatal_error(FATAL_ERROR_ID_148, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
         }
         if (aes_gcm_process_aad(&migsc_p->aes_gcm_context, (uint8_t*)&migsc_p->mbmd.immutable_td_state,
                                 MBMD_SIZE_NO_MAC(migsc_p->mbmd.immutable_td_state)) != AES_GCM_NO_ERROR)
         {
-            FATAL_ERROR();
+            fatal_error(FATAL_ERROR_ID_149, FATAL_INFO_FORMAT_BASIC_INFO, NULL);;
         }
 
         *page_list_i = 0;
@@ -234,11 +250,11 @@ api_error_type tdh_import_state_immutable(uint64_t target_tdr_pa, uint64_t hpa_a
     // Page List
     page_list_info_t     page_list_info;
     uint32_t             page_list_i;
-    pa_t                 page_list_pa;
+    pa_t            page_list_pa;
     hpa_and_last_t* page_list_p = NULL;
 
     // Single Metadata List Page
-    pa_t                 md_list_pa;
+    volatile pa_t                 md_list_pa;
     md_list_header_t* md_list_hdr_p = NULL;
     bool_t               sys_imported;
 
@@ -410,7 +426,7 @@ api_error_type tdh_import_state_immutable(uint64_t target_tdr_pa, uint64_t hpa_a
         // Decrypt the metadata list into a temporary buffer
         if (aes_gcm_decrypt(&migsc_p->aes_gcm_context, (uint8_t*)md_list_hdr_p, (uint8_t*)&md_list, _4KB) != AES_GCM_NO_ERROR)
         {
-            FATAL_ERROR();
+            fatal_error(FATAL_ERROR_ID_150, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
         }
 
         // Do a sanity check on the list buffer size
@@ -509,7 +525,7 @@ api_error_type tdh_import_state_immutable(uint64_t target_tdr_pa, uint64_t hpa_a
     uint8_t   mac[MAC256_LEN];
     if (aes_gcm_finalize(&migsc_p->aes_gcm_context, mac) != AES_GCM_NO_ERROR)
     {
-        FATAL_ERROR();
+        fatal_error(FATAL_ERROR_ID_151, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
     }
     if (!tdx_memcmp_safe(mac, migsc_p->mbmd.immutable_td_state.mac, MAC256_LEN))
     {

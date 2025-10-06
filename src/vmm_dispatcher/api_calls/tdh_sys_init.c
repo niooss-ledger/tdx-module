@@ -141,8 +141,6 @@ _STATIC_INLINE_ bool_t check_allowed1_vmx_ctls(uint64_t* dest,
     return true;
 }
 
-
-
 _STATIC_INLINE_ bool_t is_smrr_mask_valid_for_tdx(smrr_base_t smrr_base, smrr_mask_t smrr_mask)
 {
     // Create a bit mask from the first LSB which is 1 in the mask, until the uppermost bit 31
@@ -319,12 +317,13 @@ _STATIC_INLINE_ api_error_type check_cpuid_configurations(tdx_module_global_t* g
 
     bool_t perfmon_ext_leaf_checked = false;
     bool_t perfmon_ext_leaf_supported = false;
+    cpuid_23_0_eax_t leaf_eax = { .raw = 0 };
 
     global_data_ptr->xfd_faulting_mask = 0; // Updated later per CPUID leaf 0xD
     global_data_ptr->x2apic_core_id_shift_count = 0;  // Updated later per CPUID leaf 0x1F
 
+    ia32_misc_enable_t misc_enable = {.raw = ia32_rdmsr(IA32_MISC_ENABLES_MSR_ADDR)};
     // Boot NT4 bit should not be set
-    ia32_misc_enable_t misc_enable = { .raw = ia32_rdmsr(IA32_MISC_ENABLES_MSR_ADDR) };
     if (misc_enable.limit_cpuid_maxval)
     {
     	return TDX_LIMIT_CPUID_MAXVAL_SET;
@@ -365,6 +364,23 @@ _STATIC_INLINE_ api_error_type check_cpuid_configurations(tdx_module_global_t* g
 
         cpuid_config.leaf_subleaf = cpuid_lookup[i].leaf_subleaf;
 
+        if (!is_not_gnr_a0_stepping())
+        {
+            if (cpuid_config.leaf_subleaf.leaf == CPUID_EXT_FEATURES_LEAF && cpuid_config.leaf_subleaf.subleaf == 2)
+            {
+                ia32_cpuid(cpuid_config.leaf_subleaf.leaf, cpuid_config.leaf_subleaf.subleaf,
+                           &cpuid_config.values.eax, &cpuid_config.values.ebx,
+                           &cpuid_config.values.ecx, &cpuid_config.values.edx);
+
+                global_data_ptr->cpuid_values[i] = cpuid_config;
+
+                cpuid_07_02_edx_t cpuid_07_02_edx;
+                cpuid_07_02_edx.raw = cpuid_config.values.edx;
+                global_data_ptr->ddpd_supported = cpuid_07_02_edx.ddpd;
+
+                continue;
+            }
+        }
 
         if ((cpuid_config.leaf_subleaf.leaf <= last_base_leaf) ||
             ((cpuid_config.leaf_subleaf.leaf >= CPUID_FIRST_EXTENDED_LEAF) &&
@@ -381,6 +397,11 @@ _STATIC_INLINE_ api_error_type check_cpuid_configurations(tdx_module_global_t* g
             cpuid_config.values.high = 0;
         }
 
+        if (cpuid_config.leaf_subleaf.leaf == 0x6 &&
+            (!is_not_gnr_a0_stepping()))
+        {
+            continue;
+        }
 
         if (!(((cpuid_config.values.low & cpuid_lookup[i].verify_mask.low)
                 == cpuid_lookup[i].verify_value.low)
@@ -506,26 +527,28 @@ _STATIC_INLINE_ api_error_type check_cpuid_configurations(tdx_module_global_t* g
                 return TDX_INCORRECT_CPUID_VALUE;
             }
 
+
             // Read and check actual number of fixed-function counters
             global_data_ptr->num_fixed_ctrs = cpuid_0a_edx.num_fcs;
-            if (global_data_ptr->num_fixed_ctrs > MAX_FIXED_CTR)
+
+            // Per Intel SDM, Vol. 3, 19.2.5.2:
+            // FxCtr[i]_is_supported := ECX[i] || (EDX[4:0] > i)
+            // So, set all bitmap bits per EDX[4:0] and OR with the bitmap in ECX.
+            global_data_ptr->fc_bitmap = (uint32_t)((BIT(cpuid_0a_edx.num_fcs) - 1) | cpuid_0a_ecx.raw);
+
+            if ((BIT(MAX_FIXED_CTR) - 1) < global_data_ptr->fc_bitmap)
             {
                 tdx_local_data_ptr->vmm_regs.rcx = cpuid_config.leaf_subleaf.raw;
                 tdx_local_data_ptr->vmm_regs.rdx = CPUID_PERFMON_EDX_MASK_LOW;
-                tdx_local_data_ptr->vmm_regs.r8  = CPUID_PERFMON_EDX_MASK_HIGH;
                 tdx_local_data_ptr->vmm_regs.r9  = CPUID_PERFMON_EDX_EXPECTED_LOW;
-                tdx_local_data_ptr->vmm_regs.r10 = CPUID_PERFMON_EDX_EXPECTED_HIGH;
+                tdx_local_data_ptr->vmm_regs.r8 = CPUID_PERFMON_ECX_EDX_MASK_HIGH;
+                tdx_local_data_ptr->vmm_regs.r10 = CPUID_PERFMON_ECX_EDX_EXPECTED_HIGH;
 
                 TDX_ERROR("Failed CPUID_PERFMON_LEAF (0xA) check, num_fixed_ctrs %d is higher than supported",
                         cpuid_0a_edx.num_fcs);
 
                 return TDX_INCORRECT_CPUID_VALUE;
             }
-
-            // Per Intel SDM, Vol. 3, 19.2.5.2:
-            // FxCtr[i]_is_supported := ECX[i] || (EDX[4:0] > i)
-            // So, set all bitmap bits per EDX[4:0] and OR with the bitmap in ECX.
-            global_data_ptr->fc_bitmap = (uint32_t)((BIT(cpuid_0a_edx.num_fcs) - 1) | cpuid_0a_ecx.raw);
 
         }
 
@@ -723,9 +746,45 @@ _STATIC_INLINE_ api_error_type check_cpuid_configurations(tdx_module_global_t* g
 
             prev_level_type = ((cpuid_topology_level_t)cpuid_config.values.ecx).level_type;
         }
-        else if (cpuid_config.leaf_subleaf.leaf == 0x23)
+        else if (cpuid_config.leaf_subleaf.leaf == 0x23) // Extended Perfmon leaf
         {
             tdx_sanity_check(perfmon_ext_leaf_checked == true, FATAL_ERROR_ID_298, 9);
+
+            if (perfmon_ext_leaf_supported)
+            {
+                if (cpuid_config.leaf_subleaf.subleaf == 0)
+                {
+                    leaf_eax.raw = cpuid_config.values.eax;
+                }
+                else
+                {
+                    if ((leaf_eax.raw & (BIT(cpuid_config.leaf_subleaf.subleaf))) == 0)
+                    {
+                        // The CPU doesn't support this sub-leaf of 0x23
+                        if (cpuid_config.values.low != 0 ||
+                            cpuid_config.values.high != 0)
+                        {
+                            tdx_module_local_t *tdx_local_data_ptr = get_local_data();
+                            tdx_local_data_ptr->vmm_regs.rcx = cpuid_config.leaf_subleaf.raw;
+                            tdx_local_data_ptr->vmm_regs.rdx = (uint64_t)-1; // mask low
+                            tdx_local_data_ptr->vmm_regs.r8 = (uint64_t)-1;  // mask high
+                            tdx_local_data_ptr->vmm_regs.r9 = 0x0;           // expected low
+                            tdx_local_data_ptr->vmm_regs.r10 = 0x0;          // expected high
+                            return TDX_INCORRECT_CPUID_VALUE;
+                        }
+                    }
+                    else // Sub-leaf is supported by the CPU
+                    {
+
+                    }
+                }
+            }
+            else
+            {
+                // The CPU doesn't support leaf 0x23, set the sampled values to 0
+                cpuid_config.values.low = 0;
+                cpuid_config.values.high = 0;
+            }
         }
         else if (cpuid_config.leaf_subleaf.leaf == CPUID_GET_MAX_PA_LEAF)
         {
@@ -849,13 +908,17 @@ _STATIC_INLINE_ api_error_type check_msrs(tdx_module_global_t* tdx_global_data_p
         return api_error_with_operand_id(TDX_INCORRECT_MSR_VALUE, IA32_ARCH_CAPABILITIES_MSR_ADDR);
     }
 
-    // Sanity Check of IA32_XAPIC_DISABLE_STATUS
-    msr_values_ptr->ia32_xapic_disable_status.raw = ia32_rdmsr(IA32_XAPIC_DISABLE_STATUS_MSR_ADDR);
-    if ((msr_values_ptr->ia32_xapic_disable_status.legacy_xapic_disabled != 1) ||
-        (msr_values_ptr->ia32_xapic_disable_status.reserved != 0))
-    {
-        return api_error_with_operand_id(TDX_INCORRECT_MSR_VALUE, IA32_XAPIC_DISABLE_STATUS_MSR_ADDR);
-    }
+
+        if (is_not_gnr_a0_stepping())
+        {
+            // Sanity Check of IA32_XAPIC_DISABLE_STATUS
+            msr_values_ptr->ia32_xapic_disable_status.raw = ia32_rdmsr(IA32_XAPIC_DISABLE_STATUS_MSR_ADDR);
+            if ((msr_values_ptr->ia32_xapic_disable_status.legacy_xapic_disabled != 1) ||
+                (msr_values_ptr->ia32_xapic_disable_status.reserved != 0))
+            {
+                return api_error_with_operand_id(TDX_INCORRECT_MSR_VALUE, IA32_XAPIC_DISABLE_STATUS_MSR_ADDR);
+            }
+        }
 
     if (msr_values_ptr->ia32_arch_capabilities.tsx_ctrl)
     {
@@ -938,6 +1001,10 @@ _STATIC_INLINE_ api_error_type check_l2_vmx_msrs(tdx_module_global_t* tdx_global
     // however this bit is only set if the CPU supports it. Therefore don't check it.
     procbased_ctls3_variable.virt_ia32_spec_ctrl = 0;
 
+    if (!is_not_gnr_a0_stepping())
+    {
+        procbased_ctls3_variable.raw &= (uint64_t)~0x80;
+    }
 
     if (!check_allowed1_vmx_ctls(
         &l2_vmcs_values_ptr->procbased_ctls3,
@@ -955,8 +1022,9 @@ _STATIC_INLINE_ api_error_type check_l2_vmx_msrs(tdx_module_global_t* tdx_global
         return api_error_with_operand_id(TDX_INCORRECT_MSR_VALUE, IA32_VMX_TRUE_EXIT_CTLS_MSR_ADDR);
     }
 
-    if (!check_allowed_vmx_ctls(&l2_vmcs_values_ptr->entry_ctls, msr_values_ptr->ia32_vmx_true_entry_ctls,
-            ENTRY_CTLS_L2_INIT, ENTRY_CTLS_L2_VARIABLE, ENTRY_CTLS_L2_UNKNOWN))
+    vmx_vm_entry_ctls_t l2_variable_mask = {.raw = ENTRY_CTLS_L2_VARIABLE};
+
+    if (!check_allowed_vmx_ctls(&l2_vmcs_values_ptr->entry_ctls, msr_values_ptr->ia32_vmx_true_entry_ctls, ENTRY_CTLS_L2_INIT, l2_variable_mask.raw, ENTRY_CTLS_L2_UNKNOWN))
     {
         return api_error_with_operand_id(TDX_INCORRECT_MSR_VALUE, IA32_VMX_TRUE_ENTRY_CTLS_MSR_ADDR);
     }
@@ -1052,6 +1120,10 @@ _STATIC_INLINE_ api_error_type check_vmx_msrs(tdx_module_global_t* tdx_global_da
     // however this bit is only set if the CPU supports it. Therefore don't check it.
     procbased_ctls3_variable.virt_ia32_spec_ctrl = 0;
 
+    if (!is_not_gnr_a0_stepping())
+    {
+        procbased_ctls3_variable.raw &= (uint64_t)~0x80;
+    }
 
     if (!check_allowed1_vmx_ctls(
         &td_vmcs_values_ptr->procbased_ctls3,
@@ -1072,8 +1144,10 @@ _STATIC_INLINE_ api_error_type check_vmx_msrs(tdx_module_global_t* tdx_global_da
     }
 
     msr_values_ptr->ia32_vmx_true_entry_ctls.raw = ia32_rdmsr(IA32_VMX_TRUE_ENTRY_CTLS_MSR_ADDR);
-    if (!check_allowed_vmx_ctls(&td_vmcs_values_ptr->entry_ctls, msr_values_ptr->ia32_vmx_true_entry_ctls,
-            ENTRY_CTLS_INIT, ENTRY_CTLS_VARIABLE, ENTRY_CTLS_UNKNOWN))
+
+    vmx_vm_entry_ctls_t variable_mask = {.raw = ENTRY_CTLS_VARIABLE};
+
+    if (!check_allowed_vmx_ctls(&td_vmcs_values_ptr->entry_ctls, msr_values_ptr->ia32_vmx_true_entry_ctls, ENTRY_CTLS_INIT, variable_mask.raw, ENTRY_CTLS_UNKNOWN))
     {
         return api_error_with_operand_id(TDX_INCORRECT_MSR_VALUE, IA32_VMX_TRUE_ENTRY_CTLS_MSR_ADDR);
     }
@@ -1216,7 +1290,6 @@ _STATIC_INLINE_ void tdx_init_global_data(tdx_module_global_t* tdx_global_data_p
     tdx_global_data_ptr->xbuf.xsave_header.xstate_bv = 0;
     tdx_global_data_ptr->xbuf.xsave_header.xcomp_bv = BIT(63);
     basic_memset_to_zero(&tdx_global_data_ptr->xbuf.xsave_header.reserved, sizeof(tdx_global_data_ptr->xbuf.xsave_header.reserved));
-
 
     // VMCS host fields
     save_vmcs_non_lp_host_fields(&tdx_global_data_ptr->seam_vmcs_host_values);

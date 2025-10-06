@@ -171,10 +171,9 @@ api_error_type tdh_mem_sept_rd(page_info_api_input_t gpa_page_info, uint64_t tar
                     fatal_error(FATAL_ERROR_ID_14, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
                 }
 
-                // Get the L2 attributes. L2 SEPT entry does not hold a BLOCKEDW indication
-                // of its own, so provide it based on the L1 state.
-                gpa_attr.attr_arr[vm_id] = l2_sept_get_gpa_attr(l2_sept_entry_ptr,
-                        sept_state_is_any_blockedw(sept_entry_copy));
+                // Get the L2 attributes.  L2 SEPT entry does not hold BLOCKEDW or PENDING indications
+                // of its own, so provide them based on the L1 state.
+                gpa_attr.attr_arr[vm_id] = l2_sept_get_gpa_attr(l2_sept_entry_ptr, sept_state_is_any_blockedw(sept_entry_copy), sept_state_is_any_pending(sept_entry_copy));
 
                 free_la(l2_sept_entry_ptr);
             }

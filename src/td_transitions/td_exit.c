@@ -138,17 +138,24 @@ static void load_vmm_state_before_td_exit(tdx_module_local_t* local_data_ptr)
     // Perfmon State
     if (local_data_ptr->vp_ctx.attributes.perfmon)
     {
-        for (uint8_t i = 0; i < global_data->num_fixed_ctrs; i++)
+        init_msr_opt(IA32_FIXED_CTR_CTRL_MSR_ADDR, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_fixed_ctr_ctrl);
         {
-            if ((global_data->fc_bitmap & BIT(i)) != 0)
+            for (uint8_t i = 0; i < MAX_FIXED_CTR; i++)
             {
-                init_msr_opt(IA32_FIXED_CTR0_MSR_ADDR + i, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_fixed_ctrx[i]);
+                if ((global_data->fc_bitmap & BIT(i)) != 0)
+                {
+                    init_msr_opt(IA32_PMC_FX0_CTR_MSR_ADDR + i, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_pmc_fx_ctrx[i]);
+                }
             }
-        }
 
-        for (uint32_t i = 0; i < NUM_PMC; i++)
-        {
-            init_msr_opt(IA32_A_PMC0_MSR_ADDR + i, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_a_pmcx[i]);
+            for (uint32_t i = 0; i < NUM_PMC; i++)
+            {
+                {
+                    init_msr_opt(IA32_PMC_GP0_CTR_MSR_ADDR + i, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_pmc_gp_ctrx[i]);
+                    init_msr_opt(IA32_PERFEVTSEL0_MSR_ADDR + i, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_pmc_gp_cfg_ax[i]);
+
+                }
+            }
         }
 
         for (uint32_t i = 0; i < 2; i++)
@@ -161,6 +168,19 @@ static void load_vmm_state_before_td_exit(tdx_module_local_t* local_data_ptr)
         {
             init_msr_opt(IA32_PERF_METRICS_MSR_ADDR, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_perf_metrics);
         }
+
+        // Legacy PEBS MSRs
+        if (!global_data->plt_common_config.ia32_misc_enable.pebs_unavailable)
+        {
+            init_msr_opt(IA32_PEBS_ENABLE_MSR_ADDR, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_pebs_enable);
+            init_msr_opt(IA32_PEBS_DATA_CFG_MSR_ADDR, local_data_ptr->vp_ctx.tdvps->guest_msr_state.msr_pebs_data_cfg);
+            init_msr_opt(IA32_PEBS_LD_LAT_MSR_ADDR, local_data_ptr->vp_ctx.tdvps->guest_msr_state.msr_pebs_ld_lat);
+            // MSR_PEBS_FRONTEND exists only in big cores
+            if (global_data->native_model_info.core_type == CORE_TYPE_BIGCORE)
+            {
+                init_msr_opt(IA32_PEBS_FRONTEND_MSR_ADDR, local_data_ptr->vp_ctx.tdvps->guest_msr_state.msr_pebs_frontend);
+            }
+        }
     }
     else
     {
@@ -170,15 +190,17 @@ static void load_vmm_state_before_td_exit(tdx_module_local_t* local_data_ptr)
         }
 
         // restore VMM's FC0 value
-        ia32_wrmsr(IA32_FIXED_CTR0_MSR_ADDR, local_data_ptr->vmm_ia32_fixed_ctr0);
+        ia32_wrmsr(IA32_PMC_FX0_CTR_MSR_ADDR, local_data_ptr->vmm_ia32_fixed_ctr0);
 
         if (0 != local_data_ptr->vmm_ia32_perf_global_status)
         {
             ia32_wrmsr(IA32_PERF_GLOBAL_STATUS_SET_MSR_ADDR, local_data_ptr->vmm_ia32_perf_global_status);
         }
     }
-
-    init_msr_opt(IA32_UARCH_MISC_CTL_MSR_ADDR, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_uarch_misc_ctl);
+    if (is_not_gnr_a0_stepping())
+    {
+        init_msr_opt(IA32_UARCH_MISC_CTL_MSR_ADDR, local_data_ptr->vp_ctx.tdvps->guest_msr_state.ia32_uarch_misc_ctl);
+    }
 
     /*
      * Initialize the following MSRs:
@@ -265,26 +287,31 @@ static void save_guest_td_state_before_td_exit(tdcs_t* tdcs_ptr, tdx_module_loca
     // Perfmon State
     if (tdcs_ptr->executions_ctl_fields.attributes.perfmon)
     {
+        // Save fixed Perfmon counters control register
         tdvps_ptr->guest_msr_state.ia32_fixed_ctr_ctrl = ia32_rdmsr(IA32_FIXED_CTR_CTRL_MSR_ADDR);
-        for (uint8_t i = 0; i < global_data->num_fixed_ctrs; i++)
-        {
-            if ((global_data->fc_bitmap & BIT(i)) != 0)
-            {
-                tdvps_ptr->guest_msr_state.ia32_fixed_ctrx[i] = ia32_rdmsr(IA32_FIXED_CTR0_MSR_ADDR + i);
-            }
-        }
 
-        for (uint32_t i = 0; i < NUM_PMC; i++)
         {
+            for (uint8_t i = 0; i < MAX_FIXED_CTR; i++)
             {
-                tdvps_ptr->guest_msr_state.ia32_a_pmcx[i] = ia32_rdmsr(IA32_A_PMC0_MSR_ADDR + i);
-
-                if (!tdcs_ptr->executions_ctl2_fields.event_filters_num)
+                if ((global_data->fc_bitmap & BIT(i)) != 0)
                 {
-                    /* IA32_PERFEVTSEL[i] values are only saved if event filtering is not enabled.
-                       If event filtering is enabled, TDVPS always holds the up-to-date value of
-                       each IA32_PERFEVTSEL[i]. */
-                    tdvps_ptr->guest_msr_state.ia32_perfevtselx[i] = ia32_rdmsr(IA32_PERFEVTSEL0_MSR_ADDR + i);
+                    tdvps_ptr->guest_msr_state.ia32_pmc_fx_ctrx[i] = ia32_rdmsr(IA32_PMC_FX0_CTR_MSR_ADDR + i);
+
+                }
+            }
+
+            for (uint32_t i = 0; i < NUM_PMC; i++)
+            {
+                {
+                    tdvps_ptr->guest_msr_state.ia32_pmc_gp_ctrx[i] = ia32_rdmsr(IA32_PMC_GP0_CTR_MSR_ADDR + i);
+
+                    if (!tdcs_ptr->executions_ctl2_fields.event_filters_num)
+                    {
+                        /* IA32_PERFEVTSEL[i] values are only saved if event filtering is not enabled.
+                           If event filtering is enabled, TDVPS always holds the up-to-date value of
+                           each IA32_PERFEVTSEL[i]. */
+                        tdvps_ptr->guest_msr_state.ia32_pmc_gp_cfg_ax[i] = ia32_rdmsr(IA32_PERFEVTSEL0_MSR_ADDR + i);
+                    }
                 }
             }
         }
@@ -299,13 +326,18 @@ static void save_guest_td_state_before_td_exit(tdcs_t* tdcs_ptr, tdx_module_loca
         {
             tdvps_ptr->guest_msr_state.ia32_perf_metrics = ia32_rdmsr(IA32_PERF_METRICS_MSR_ADDR);
         }
-        tdvps_ptr->guest_msr_state.ia32_pebs_enable = ia32_rdmsr(IA32_PEBS_ENABLE_MSR_ADDR);
-        tdvps_ptr->guest_msr_state.msr_pebs_data_cfg = ia32_rdmsr(IA32_PEBS_DATA_CFG_MSR_ADDR);
-        tdvps_ptr->guest_msr_state.msr_pebs_ld_lat = ia32_rdmsr(IA32_PEBS_LD_LAT_MSR_ADDR);
-        // MSR_PEBS_FRONTEND exists only in big cores
-        if (global_data->native_model_info.core_type == CORE_TYPE_BIGCORE)
+
+        // Legacy PEBS MSRs
+        if (!global_data->plt_common_config.ia32_misc_enable.pebs_unavailable)
         {
-            tdvps_ptr->guest_msr_state.msr_pebs_frontend = ia32_rdmsr(IA32_PEBS_FRONTEND_MSR_ADDR);
+            tdvps_ptr->guest_msr_state.ia32_pebs_enable = ia32_rdmsr(IA32_PEBS_ENABLE_MSR_ADDR);
+            tdvps_ptr->guest_msr_state.msr_pebs_data_cfg = ia32_rdmsr(IA32_PEBS_DATA_CFG_MSR_ADDR);
+            tdvps_ptr->guest_msr_state.msr_pebs_ld_lat = ia32_rdmsr(IA32_PEBS_LD_LAT_MSR_ADDR);
+            // MSR_PEBS_FRONTEND exists only in big cores
+            if (global_data->native_model_info.core_type == CORE_TYPE_BIGCORE)
+            {
+                tdvps_ptr->guest_msr_state.msr_pebs_frontend = ia32_rdmsr(IA32_PEBS_FRONTEND_MSR_ADDR);
+            }
         }
     }
     if (tdcs_ptr->executions_ctl_fields.cpuid_flags.waitpkg_supported)
@@ -318,7 +350,10 @@ static void save_guest_td_state_before_td_exit(tdcs_t* tdcs_ptr, tdx_module_loca
         tdvps_ptr->guest_msr_state.ia32_tsx_ctrl = ia32_rdmsr(IA32_TSX_CTRL_MSR_ADDR);
     }
 
-    tdvps_ptr->guest_msr_state.ia32_uarch_misc_ctl = ia32_rdmsr(IA32_UARCH_MISC_CTL_MSR_ADDR);
+    if (is_not_gnr_a0_stepping())
+    {
+        tdvps_ptr->guest_msr_state.ia32_uarch_misc_ctl = ia32_rdmsr(IA32_UARCH_MISC_CTL_MSR_ADDR);
+    }
 
     // Save the following MSRs:
     // IA32_STAR, IA32_LSTAR,
@@ -617,6 +652,7 @@ static void td_l2_to_l1_exit_internal(api_error_code_e tdexit_case, vm_vmexit_ex
     // Before VM entry, update the current VM's VMCS' Guest IA32_PERF_GLOBAL_CTRL
     conditionally_write_vmcs_ia32_perf_global_ctrl_msr(ld_p->vp_ctx.tdcs);
 
+    if (is_not_gnr_a0_stepping())
     {
         // If IA32_SPEC_CTRL is virtualized, write the VMCS' IA32_SPEC_CTRL shadow
         conditionally_write_vmcs_ia32_spec_ctrl_shadow(ld_p->vp_ctx.tdcs, tdvps_ptr->guest_msr_state.ia32_spec_ctrl);

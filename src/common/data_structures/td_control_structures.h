@@ -66,24 +66,25 @@ tdx_static_assert(sizeof(td_lifecycle_state_t) == 4, td_lifecycle_state_t);
 /**
  * @brief Indices of TDCS pages
  */
+
 typedef enum
 {
     MSR_BITMAPS_PAGE_INDEX = 2,
     SEPT_ROOT_PAGE_INDEX   = 3,
     ZERO_PAGE_INDEX        = 4,
     MIGSC_LINKS_PAGE_INDEX = 5,
-    L2_SEPT_ROOT_PAGE_BASE_INDEX = 6,  // First L2 SEPT Root page
-    L2_SEPT_ROOT_PAGE_BASE_INC   = 1,  // How much the base index is incremented for each VM
+    L2_SEPT_ROOT_PAGE_BASE_INDEX = 6,   // First L2 SEPT Root page
+    L2_SEPT_ROOT_PAGE_BASE_INC   = 1,   // How much the base index is incremented for each VM
 
     L2_SEPT_ROOT_1_PAGE_INDEX    = 6,
     L2_SEPT_ROOT_2_PAGE_INDEX    = 7,
     L2_SEPT_ROOT_3_PAGE_INDEX    = 8,
 
-    TDCS_PAGES_PER_L2_VM         = 1,  // Additional TDCS pages per L2 VM
+    TDCS_PAGES_PER_L2_VM         = 1,   // Additional TDCS pages per L2 VM
 
     MAX_NUM_TDCS_PAGES           = 9,  // Maximum total number of TDCS pages
 
-    MIN_NUM_TDCS_PAGES           = 6,  // Minimum total number of TDCS pages
+    MIN_NUM_TDCS_PAGES           = 6,   // Minimum total number of TDCS pages
 
     MAX_MAPPED_TDCS_PAGES  = MAX_NUM_TDCS_PAGES
 } tdcs_page_index_t;
@@ -156,7 +157,6 @@ typedef struct tdr_td_preserving_fields_s
 } tdr_td_preserving_fields_t;
 tdx_static_assert(sizeof(tdr_td_preserving_fields_t) == 64, tdr_td_preserving_fields_t);
 
-
 #define SIZE_OF_IO_FIELDS        16
 
 #define TDX_SIZE_OF_TDR_STRUCTS (sizeof(tdr_td_management_fields_t) + \
@@ -228,6 +228,8 @@ tdx_static_assert(sizeof(tdcs_management_fields_t) == 128, tdcs_management_field
 
 #define TDX_ATTRIBUTES_MIGRATABLE_SUPPORT  BIT(29)
 
+#define TDX_ATTRIBUTES_PMT_PROF   0
+
 #define TDX_ATTRIBUTES_PKS_SUPPORT          BIT(30)
 #define TDX_ATTRIBUTES_DEBUG_SUPPORT        BIT(0)
 #define TDX_ATTRIBUTES_ICSSD_SUPPORT        BIT(16)
@@ -240,7 +242,7 @@ tdx_static_assert(sizeof(tdcs_management_fields_t) == 128, tdcs_management_field
 #define TDX_ATTRIBUTES_FIXED0  (TDX_ATTRIBUTES_DEBUG_SUPPORT | TDX_ATTRIBUTES_MIGRATABLE_SUPPORT | \
                                 TDX_ATTRIBUTES_PKS_SUPPORT | TDX_ATTRIBUTES_PERFMON_SUPPORT | \
                                 TDX_ATTRIBUTES_SEPT_VE_DIS_SUPPORT | TDX_ATTRIBUTES_TPA_SUPPORT | \
-                                TDX_ATTRIBUTES_LASS_SUPPORT | TDX_ATTRIBUTES_ICSSD_SUPPORT)
+                                TDX_ATTRIBUTES_LASS_SUPPORT | TDX_ATTRIBUTES_ICSSD_SUPPORT | TDX_ATTRIBUTES_PMT_PROF)
 #define TDX_ATTRIBUTES_FIXED1 0x0
 
 // gpaw, flexible_pending_ve, no_rbp_mode, maxpa_virt, maxgpa_virt
@@ -689,21 +691,21 @@ tdx_static_assert(sizeof(tdcs_service_td_fields_t) == 512, tdcs_service_td_field
  *
  * @brief Holds TDCSs service td fields
  */
-typedef struct tdcs_execution_control2_field_s
+typedef struct PACKED tdcs_execution_control2_field_s
 {
     uint32_t                     cpuid_last_base_leaf;
     uint32_t                     cpuid_last_ext_leaf;
     uint64_t                     cpuid_fixed0_bitmap;
     cpuid_config_return_values_t cpuid4_native_values[NUM_CPUID4_NATIVE];
     bool_t                       cpuid4_native_valid[NUM_CPUID4_NATIVE];
+    uint8_t                      reserved0[4];
     feature_paravirt_ctls_t      feature_paravirt_ctls;
     uint64_t                     filtered_events_count[MAX_VMS];
     uint16_t                     event_filters_num;
 
-    uint8_t                      reserved[382];
+    uint8_t                      reserved1[382];
 } tdcs_execution_control2_field_t;
 tdx_static_assert(sizeof(tdcs_execution_control2_field_t) == 512, tdcs_execution_control2_field_t);
-
 
 #if (MAX_POSSIBLE_CPUID_LOOKUP < MAX_NUM_CPUID_LOOKUP)
 #error "Invalid number of MAX_POSSIBLE_CPUID_LOOKUP"
@@ -755,7 +757,6 @@ typedef struct ALIGN(TDX_PAGE_SIZE_IN_BYTES) tdcs_s
 
     uint8_t                                reserved_io[256];
 
-
     /**
      * TDCX 5th page - MSR Bitmaps
      */
@@ -791,7 +792,7 @@ typedef struct ALIGN(TDX_PAGE_SIZE_IN_BYTES) tdcs_s
     uint8_t l2_sept_root_2[TDX_PAGE_SIZE_IN_BYTES];
     uint8_t l2_sept_root_3[TDX_PAGE_SIZE_IN_BYTES];
 } tdcs_t;
-tdx_static_assert(sizeof(tdcs_t) == TDX_PAGE_SIZE_IN_BYTES*MAX_NUM_TDCS_PAGES, tdcs_t);
+tdx_static_assert(sizeof(tdcs_t) == TDX_PAGE_SIZE_IN_BYTES * MAX_NUM_TDCS_PAGES, tdcs_t);
 
 _STATIC_INLINE_ bool_t is_required_tdcs_allocated(tdr_t *tdr_p, uint16_t num_l2_vms)
 {

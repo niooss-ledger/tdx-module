@@ -138,7 +138,7 @@ static api_error_type handle_new_command(gpa_list_info_t gpa_list_info, tdcs_t* 
 }
 
 static api_error_type handle_resumed_command(gpa_list_info_t gpa_list_info, tdcs_t* tdcs_p, migsc_t* migsc_p, uint16_t migs_i,
-                                             pa_t mig_buff_list_pa, pa_t* mac_list_pa, pa_t new_page_list_pa)
+                                             pa_t mig_buff_list_pa, pa_t* mac_list_pa, pa_t new_page_list_pa, pa_t l2_attr_list_pa)
 {
     tdx_module_local_t* local_data_ptr = get_local_data();
 
@@ -161,11 +161,12 @@ static api_error_type handle_resumed_command(gpa_list_info_t gpa_list_info, tdcs
     migsc_p->interrupted_state.valid = false;
 
     // Check that the same function is resumed with the same parameters
-    if ((migsc_p->interrupted_state.func.raw != local_data_ptr->vmm_regs.rax) ||
-        (migsc_p->interrupted_state.gpa_list_info.raw != gpa_list_info.raw) ||
+    if ((migsc_p->interrupted_state.func.raw != local_data_ptr->vmm_regs.rax)     ||
+        (migsc_p->interrupted_state.gpa_list_info.raw != gpa_list_info.raw)       ||
         (migsc_p->interrupted_state.mig_buff_list_pa.raw != mig_buff_list_pa.raw) ||
-        (migsc_p->interrupted_state.mac_list_pa[0].raw != mac_list_pa[0].raw) ||
-        (migsc_p->interrupted_state.mac_list_pa[1].raw != mac_list_pa[1].raw) ||
+        (migsc_p->interrupted_state.mac_list_pa[0].raw != mac_list_pa[0].raw)     ||
+        (migsc_p->interrupted_state.mac_list_pa[1].raw != mac_list_pa[1].raw)     ||
+        (migsc_p->interrupted_state.l2_attr_list_pa.raw != l2_attr_list_pa.raw)   ||
         (migsc_p->interrupted_state.new_page_list_pa.raw != new_page_list_pa.raw) ||
         (migsc_p->mbmd.mem.header.mig_epoch != tdcs_p->migration_fields.mig_epoch))   // This condition is a defense-in-depth, shouldn't happen
     {
@@ -178,7 +179,7 @@ static api_error_type handle_resumed_command(gpa_list_info_t gpa_list_info, tdcs
 
 static api_error_type check_mbmd(migs_index_and_cmd_t migs_i_and_cmd, gpa_list_info_t gpa_list_info, tdcs_t* tdcs_p,
                                  migsc_t* migsc_p, uint16_t migs_i, mbmd_t* mbmd, uint8_t* mac, uint8_t mac_size,
-                                 pa_t mig_buff_list_pa, pa_t* mac_list_pa, pa_t new_page_list_pa)
+                                 pa_t mig_buff_list_pa, pa_t* mac_list_pa, pa_t new_page_list_pa, pa_t l2_attr_list_pa)
 {
     api_error_type return_val = TDX_SUCCESS;
 
@@ -188,8 +189,8 @@ static api_error_type check_mbmd(migs_index_and_cmd_t migs_i_and_cmd, gpa_list_i
     }
     else // migs_i_and_cmd.command == MIGS_INDEX_COMMAND_RESUME
     {
-        return_val = handle_resumed_command(gpa_list_info, tdcs_p, migsc_p, migs_i,
-            mig_buff_list_pa, mac_list_pa, new_page_list_pa);
+        return_val = handle_resumed_command(gpa_list_info, tdcs_p, migsc_p, migs_i, mig_buff_list_pa,
+                                            mac_list_pa, new_page_list_pa, l2_attr_list_pa);
     }
 
     return return_val;
@@ -363,7 +364,7 @@ static api_error_type handle_rare_errors(gpa_list_entry_status_t err_status, gpa
 
 static api_error_type finish_entry_processing(uint64_t* entry_num, gpa_list_info_t gpa_list_info,
                                               migsc_t* migsc_p, pa_t mig_buff_list_pa, pa_t* mac_list_pa,
-                                              pa_t new_page_list_pa, tdcs_t* tdcs_p, uint32_t problem_ops_count)
+                                              pa_t new_page_list_pa, tdcs_t* tdcs_p, uint32_t problem_ops_count, pa_t l2_attr_list_pa)
 {
     api_error_type return_val = TDX_SUCCESS;
 
@@ -385,6 +386,7 @@ static api_error_type finish_entry_processing(uint64_t* entry_num, gpa_list_info
             migsc_p->interrupted_state.mig_buff_list_pa.raw = mig_buff_list_pa.raw;
             migsc_p->interrupted_state.mac_list_pa[0].raw = mac_list_pa[0].raw;
             migsc_p->interrupted_state.mac_list_pa[1].raw = mac_list_pa[1].raw;
+            migsc_p->interrupted_state.l2_attr_list_pa.raw = l2_attr_list_pa.raw;
             migsc_p->interrupted_state.new_page_list_pa.raw = new_page_list_pa.raw;
             migsc_p->mbmd.mem.header.mig_epoch = tdcs_p->migration_fields.mig_epoch;
 
@@ -483,6 +485,10 @@ api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
 
     gpa_list_error_type_t gpa_list_error_type = GPA_LIST_ERROR_TYPE_SUCCESS;
 
+    pa_t                    l2_attr_list_pa;
+    gpa_attr_t*             l2_attr_list_p = NULL;
+    gpa_attr_t              l2_attr_list_entry;
+    ia32e_sept_t*           l2_septe_p[MAX_VMS] = { 0 }; // First index is not used
 
     // Input register operands
     tdr_pa.raw = target_tdr_pa;
@@ -493,6 +499,7 @@ api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
     mac_list_pa[1].raw = mac_list_1_pa;
     new_page_list_pa.raw = new_page_list_pa_val;
 
+    l2_attr_list_pa.raw = local_data_ptr->vmm_regs.r14;
 
     // Check, lock and map the owner TDR page
     return_val = check_lock_and_map_explicit_tdr(tdr_pa,
@@ -587,6 +594,20 @@ api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
         goto EXIT;
     }
 
+    if (gpa_list_info.format == GPA_LIST_FORMAT_GPA_AND_ATTR)
+    {
+        if ((return_val = shared_hpa_check_with_pwr_2_alignment(l2_attr_list_pa, TDX_PAGE_SIZE_IN_BYTES)) != TDX_SUCCESS)
+        {
+            return_val = api_error_with_operand_id(return_val, OPERAND_ID_R14);
+            goto EXIT;
+        }
+
+        l2_attr_list_p = map_pa(l2_attr_list_pa.raw_void, TDX_RANGE_RO);
+    }
+    else
+    {
+        l2_attr_list_pa.raw = NULL_PA;
+    }
 
     /* Check that the migration buffers list physical address is canonical, shared,
        and aligned to 4KB, and map it. */
@@ -661,9 +682,9 @@ api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
     mbmd_p = (mbmd_t*)map_pa(mbmd_hpa_and_size_pa.raw_void, TDX_RANGE_RO);
     copy_mbmd(&mbmd, mbmd_p);
 
-    if (TDX_SUCCESS != (return_val = check_mbmd(migs_i_and_cmd, gpa_list_info, tdcs_p,
-        migsc_p, migs_i, &mbmd, mac, sizeof(mac),
-        mig_buff_list_pa, mac_list_pa, new_page_list_pa)))
+    if (TDX_SUCCESS != (return_val = check_mbmd(migs_i_and_cmd, gpa_list_info, tdcs_p, migsc_p,
+                                                migs_i, &mbmd, mac, sizeof(mac), mig_buff_list_pa,
+                                                mac_list_pa, new_page_list_pa, l2_attr_list_pa)))
     {
         goto EXIT;
     }
@@ -682,6 +703,7 @@ api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
     {
         gpa_list_entry_status_t err_status = GPA_ENTRY_STATUS_SUCCESS;
         gpa_list_entry = gpa_list_p[entry_num];
+        l2_attr_list_entry.raw = 0;
         mig_buff_list_entry = mig_buff_list_p[entry_num];
         if (new_page_list_p)
         {
@@ -703,6 +725,15 @@ api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
             fatal_error(FATAL_ERROR_ID_48, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
         }
 
+        if (l2_attr_list_p)
+        {
+            // If an L2 attributes list has been provided, decrypt L2 attributes list entry
+            if (aes_gcm_decrypt(&migsc_p->aes_gcm_context, (uint8_t*)&l2_attr_list_p[entry_num],
+                               (uint8_t*)&l2_attr_list_entry, sizeof(l2_attr_list_entry)) != AES_GCM_NO_ERROR)
+            {
+                fatal_error(FATAL_ERROR_ID_307, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
+            }
+        }
 
         if (gpa_list_entry.operation == GPA_ENTRY_OP_NOP)
         {
@@ -826,6 +857,56 @@ api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
                 err_status = GPA_ENTRY_STATUS_DISALLOWED_IMPORT_OVER_REMOVED; break;
             }
 
+            bool_t is_termination_required = false;
+            // Get the SEPT entry for each L2 page alias.
+            // In the in-order phase, if not found we abort the import since we must not lose any imported bundle.
+            // In the out-of-order phase we just skip the current list entry.
+            for (uint16_t vm_id = 1; vm_id <= tdcs_p->management_fields.num_l2_vms; vm_id++)
+            {
+                if (l2_attr_list_entry.attr_arr[vm_id].valid)
+                {
+                    // Sanity check on the GPA list entry
+                    if (!gpa_list_entry_is_aliased(gpa_list_entry, vm_id))
+                    {
+                        gpa_list_error_type = GPA_LIST_ERROR_TYPE_LIST_ABORT;
+                        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_GPA_LIST_ENTRY);
+                        err_status = GPA_ENTRY_STATUS_GPA_LIST_ENTRY_INVALID;
+                        is_termination_required = true;
+                        break;
+                    }
+                    
+                    // Sanity check on the attributes
+                    if (!is_gpa_attr_legal(l2_attr_list_entry.attr_arr[vm_id]))
+                    {
+                        gpa_list_error_type = GPA_LIST_ERROR_TYPE_LIST_ABORT;
+                        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_GPA_LIST_ENTRY);
+                        err_status = GPA_ENTRY_STATUS_ATTR_LIST_ENTRY_INVALID;
+                        is_termination_required = true;
+                        break;
+                    }
+
+                    // Walk the L2 SEPT to locate the entry
+                    return_val = l2_sept_walk(tdr_p, tdcs_p, vm_id, page_gpa, &sept_entry_level,
+                                              &l2_septe_p[vm_id]);
+
+                    if (return_val != TDX_SUCCESS)
+                    {
+                        gpa_list_error_type = GPA_LIST_ERROR_TYPE_LIST_ABORT_IN_ORDER;
+                        return_val = api_error_with_l2_details(TDX_L2_SEPT_WALK_FAILED, vm_id, (uint16_t)sept_entry_level);
+                        err_status = GPA_ENTRY_STATUS_L2_SEPT_WALK_FAILED;
+                        is_termination_required = true;
+                        break;
+                    }
+
+                    // The entry should be free
+                    tdx_debug_assert(is_l2_sept_free(l2_septe_p[vm_id]));
+                }
+            }
+
+            if (is_termination_required)
+            {
+                break;
+            }
 
             uint8_t* buff_4k_p = buff_4k;
             page_list_entry_t new_page_list_entry_tmp = {.raw = new_page_list_entry.raw};
@@ -912,6 +993,20 @@ api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
 
             sept_entry_ptr->raw = sept_entry_copy.raw;
 
+            for (uint16_t vm_id = 1; vm_id <= tdcs_p->management_fields.num_l2_vms; vm_id++)
+            {
+                if (l2_attr_list_entry.attr_arr[vm_id].valid)
+                {
+                    // Attributes were checked for validity above
+                    sept_l2_set_leaf_given_hpa_with_hkid(l2_septe_p[vm_id], l2_attr_list_entry.attr_arr[vm_id], set_hkid_to_pa(td_page_pa, tdr_p->key_management_fields.hkid), gpa_list_entry.pending);
+
+                    // Set the alias indication in the L1 SEPT entry
+                    sept_set_aliased(&sept_entry_copy, vm_id);
+
+                    free_la((void*)l2_septe_p[vm_id]);
+                    l2_septe_p[vm_id] = NULL;
+                }
+            }
 
             sept_unblock(&sept_entry_copy);
             sept_lock_release_local(&sept_entry_copy);
@@ -1010,6 +1105,103 @@ api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
                 td_page_pa,
                 state_encoding);
 
+            bool_t is_termination_required = false;
+            // Go over all possible L2 aliases and update them
+            for (uint16_t vm_id = 1; vm_id <= tdcs_p->management_fields.num_l2_vms; vm_id++)
+            {
+                /*  We can have 4 cases:
+                            1.  There is no existing alias and the re-import indicated that no alias is needed: in this case we don't need to do anything
+                            2.  There is an existing alias, but the re-import indicated that no alias is needed:
+                                In this case we need to clear the alias indication and set the L2 SEPT entry as L2_FREE
+                            3.  There is no existing alias and the re-import indicated that an alias is needed:
+                                In this case we need to create a new L2 alias and set the L2 SEPT entry based on the L2 attributes list entry
+                            4.  There is an existing alias and the re-import indicated that an alias is needed:
+                                In this case we need to update the L2 SEPT entry based on the L2 attributes list entry
+                        */
+                // Only update existing and/or new L2 aliases
+                if (sept_state_is_aliased(sept_entry_copy, vm_id) || l2_attr_list_entry.attr_arr[vm_id].valid)
+                {
+                    // Sanity check on the GPA list entry
+                    if (l2_attr_list_entry.attr_arr[vm_id].valid &&
+                            !gpa_list_entry_is_aliased(gpa_list_entry, vm_id))
+                    {
+                        gpa_list_error_type = GPA_LIST_ERROR_TYPE_LIST_ABORT;
+                        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_GPA_LIST_ENTRY);
+                        err_status = GPA_ENTRY_STATUS_GPA_LIST_ENTRY_INVALID;
+                        is_termination_required = true;
+                        break;
+                    }
+                    
+                    // Sanity check on the attributes
+                    if (!is_gpa_attr_legal(l2_attr_list_entry.attr_arr[vm_id]))
+                    {
+                        gpa_list_error_type = GPA_LIST_ERROR_TYPE_LIST_ABORT;
+                        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_GPA_LIST_ENTRY);
+                        err_status = GPA_ENTRY_STATUS_ATTR_LIST_ENTRY_INVALID;
+                        is_termination_required = true;
+                        break;
+                    }
+
+                    // Walk the L2 SEPT to locate the entry
+                    return_val = l2_sept_walk(tdr_p, tdcs_p, vm_id, page_gpa, &sept_entry_level,
+                                              &l2_septe_p[vm_id]);
+
+                    if (return_val != TDX_SUCCESS)
+                    {
+                        /* L2 SEPT entry not found.  This means that an L2 SEPT entry page containing the entry was not found.
+                                   This is OK if no L2 alias needs to be created.  Otherwise the host VMM was expected to add the L2 SEPT
+                                   entry page before calling TDH.IMPORT.MEM.  In this case we abort the import (we are in the in-order phase). */
+                        if (l2_attr_list_entry.attr_arr[vm_id].valid)
+                        {
+                            // Cases 3 or 4: import indicates that an alias is needed
+                            gpa_list_error_type = GPA_LIST_ERROR_TYPE_LIST_ABORT;
+                            return_val = api_error_with_l2_details(TDX_L2_SEPT_WALK_FAILED, vm_id, (uint16_t)sept_entry_level);
+                            err_status = GPA_ENTRY_STATUS_L2_SEPT_WALK_FAILED;
+                            is_termination_required = true;
+                            break;
+                        }
+
+                        // The L1 alias bit can not be set if L2 SEPT entry doesn't exist
+                        extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_eptp(
+                            tdcs_p->executions_ctl_fields.eptp.raw, (uint8_t)sept_entry_level, page_gpa.raw, sept_entry_copy);
+                        fatal_error(FATAL_ERROR_ID_50, FATAL_INFO_FORMAT_SEPT_EPTP_INFO, &extended_fatal_info);
+                    }
+                    else
+                    {
+                        // L2 SEPT entry found
+
+                        // Can't be non-leaf, page size is 4KB
+                        tdx_debug_assert(is_secure_ept_leaf_entry(l2_septe_p[vm_id]));
+
+                        if (l2_attr_list_entry.attr_arr[vm_id].valid)
+                        {
+                            // Cases 3 or 4: import indicates that an alias is needed
+                            // Update the L2 SEPT entry based on the L2 attributes list entry.
+                            // The L2 SEPT entry is L2_BLOCKED if the imported page is PENDING.
+                            sept_l2_set_leaf_given_hpa_with_hkid(l2_septe_p[vm_id], l2_attr_list_entry.attr_arr[vm_id], set_hkid_to_pa(td_page_pa, tdr_p->key_management_fields.hkid), gpa_list_entry.pending);
+
+                            // Set the alias indication in the L1 SEPT entry (note: could have been already aliased or not)
+                            sept_set_aliased(&sept_entry_copy, vm_id);
+                        }
+                        else
+                        {
+                            // Case 2: There is an alias, but import indicates that no alias is needed
+                            l2_septe_p[vm_id]->raw = SEPT_STATE_L2_FREE_MASK;
+
+                            // Clear the alias indication in the L1 SEPT entry
+                            sept_clear_aliased(&sept_entry_copy, vm_id);
+                        }
+                    }
+                    
+                    free_la((void*)l2_septe_p[vm_id]);
+                    l2_septe_p[vm_id] = NULL;
+                }
+            }
+
+            if (is_termination_required)
+            {
+                break;
+            }
 
             // Update the PAMT entry
             td_page_pamt_entry_p->bepoch.mig_epoch = tdcs_p->migration_fields.mig_epoch;
@@ -1033,7 +1225,7 @@ api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
             // Calculate the MAC and compare with the MAC list entry
             if (aes_gcm_finalize(&migsc_p->aes_gcm_context, mac) != AES_GCM_NO_ERROR)
             {
-                fatal_error(FATAL_ERROR_ID_56, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
+                fatal_error(FATAL_ERROR_ID_159, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
             }
 
             if (TDX_SUCCESS != compare_macs_and_update_error_statuses(mac, sizeof(mac), page_mac,
@@ -1076,6 +1268,28 @@ api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
                 break;
             }
 
+            // Go over all existing L2 aliases and free them
+            for (uint16_t vm_id = 1; vm_id <= tdcs_p->management_fields.num_l2_vms; vm_id++)
+            {
+                if (sept_state_is_aliased(sept_entry_copy, vm_id))
+                {
+                    // Walk the L2 SEPT to locate the entry
+                    return_val = l2_sept_walk(tdr_p, tdcs_p, vm_id, page_gpa, &sept_entry_level,
+                                              &l2_septe_p[vm_id]);
+
+                    if (return_val != TDX_SUCCESS)
+                    {
+                        // Should always succeed
+                        extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_td_handle(target_tdr_pa, vm_id, sept_entry_level, page_gpa.raw, *l2_septe_p[vm_id]);
+                        fatal_error(FATAL_ERROR_ID_28, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
+                    }
+
+                    l2_septe_p[vm_id]->raw = SEPT_STATE_L2_FREE_MASK;
+                    
+                    free_la((void*)l2_septe_p[vm_id]);
+                    l2_septe_p[vm_id] = NULL;
+                }
+            }
 
             // Update the SEPT entry in memory to the REMOVED state and record the migration epoch
             set_remove_and_release_locks_for_import(&sept_entry_copy, tdcs_p);
@@ -1103,6 +1317,15 @@ api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
 
     FINALIZE_ENTRY:
         // finilize processing current entry and prepare for the next one
+
+        for (uint16_t vm_id = 1; vm_id < MAX_VMS; vm_id++)
+        {
+            if (l2_septe_p[vm_id] != NULL)
+            {
+                free_la(l2_septe_p[vm_id]);
+                l2_septe_p[vm_id] = NULL;
+            }
+        }
 
         if (mig_buff_mapped)
         {
@@ -1166,7 +1389,7 @@ api_error_type tdh_import_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
         --------------------------------------*/
         if (TDX_INTERRUPTED_RESUMABLE == (return_val = finish_entry_processing(&entry_num, gpa_list_info, migsc_p,
                                                                                mig_buff_list_pa, mac_list_pa,
-                                                                               new_page_list_pa, tdcs_p, problem_ops_count)))
+                                                                               new_page_list_pa, tdcs_p, problem_ops_count, l2_attr_list_pa)))
         {
             break;
         }
@@ -1236,6 +1459,18 @@ EXIT:
         free_la(sept_entry_ptr);
     }
 
+    if (l2_attr_list_p)
+    {
+        free_la(l2_attr_list_p);
+    }
+
+    for (uint16_t vm_id = 1; vm_id < MAX_VMS; vm_id++)
+    {
+        if (l2_septe_p[vm_id] != NULL)
+        {
+            free_la(l2_septe_p[vm_id]);
+        }
+    }
 
     if (gpa_list_p != NULL)
     {

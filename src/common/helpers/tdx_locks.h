@@ -505,13 +505,6 @@ _STATIC_INLINE_ api_error_code_e promote_sharex_lock_hp(sharex_hp_lock_t * lock_
     }
 }
 
-_STATIC_INLINE_ api_error_code_e acquire_bit_lock(uint32_t* mem_ptr, uint32_t bit_idx)
-{
-    bool_t retval;
-    retval = _lock_bts_32b(mem_ptr, bit_idx);
-    return retval ? TDX_OPERAND_BUSY : TDX_SUCCESS;
-}
-
 _STATIC_INLINE_ void release_bit_lock(uint32_t* mem_ptr, uint32_t bit_idx)
 {
     tdx_debug_assert(mem_ptr != NULL);

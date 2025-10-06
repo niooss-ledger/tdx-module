@@ -113,7 +113,6 @@ api_error_type tdh_mng_vpflushdone(uint64_t target_tdr_pa)
             return_val = TDX_FLUSHVP_NOT_DONE;
             goto EXIT;
         }
-
     }
 
     // ALL_CHECKS_PASSED:  The function is guaranteed to succeed

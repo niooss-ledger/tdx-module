@@ -347,6 +347,7 @@ api_error_type tdh_mem_page_promote(page_info_api_input_t gpa_page_info, uint64_
             TDX_ERROR("TLB tracking not done\n");
             return_val = TDX_TLB_TRACKING_NOT_DONE;
         }
+
         if (return_val != TDX_SUCCESS)
         {
             return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
@@ -357,7 +358,7 @@ api_error_type tdh_mem_page_promote(page_info_api_input_t gpa_page_info, uint64_
     // Step #2
 
     // Map the Secure-EPT page before merging
-    merged_sept_page_ptr[0] = map_pa(merged_sept_page_pa[0].raw_void, TDX_RANGE_RW);
+    merged_sept_page_ptr[0] = map_pa_with_hkid(merged_sept_page_pa[0].raw_void, tdr_ptr->key_management_fields.hkid, TDX_RANGE_RW);
 
     // Scan the Secure EPT page content and verify all 512 entries:
     //   - Are leaf SEPT_PRESENT entries(this also implies that the corresponding pages
@@ -459,10 +460,11 @@ api_error_type tdh_mem_page_promote(page_info_api_input_t gpa_page_info, uint64_
     merged_page_pa.raw = leaf_ept_entry_to_hpa(merged_sept_page_ptr[0]->sept[0], 0,
                                           (ept_level_t)(merged_sept_parent_level_entry - 1));
 
+    uint64_t removed_pages_pa[DEFAULT_NUM_PAMT_PAGES];
     merged_page_pa = set_hkid_to_pa(merged_page_pa, tdr_ptr->key_management_fields.hkid);
 
     // Merge PAMT range of the promoted page
-    if ((return_val = pamt_promote(merged_page_pa, (page_size_t)merged_sept_parent_level_entry)) != TDX_SUCCESS)
+    if ((return_val = pamt_promote(merged_page_pa, (page_size_t)merged_sept_parent_level_entry, removed_pages_pa)) != TDX_SUCCESS)
     {
         TDX_ERROR("Couldn't not merge the destined page in PAMT\n");
         return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);

@@ -66,11 +66,16 @@ _STATIC_INLINE_ api_error_type check_msrs(tdx_module_global_t* tdx_global_data_p
         return api_error_with_operand_id(TDX_INCONSISTENT_MSR, IA32_MISC_PACKAGE_CTLS_MSR_ADDR);
     }
 
-    if (ia32_rdmsr(IA32_XAPIC_DISABLE_STATUS_MSR_ADDR) !=
-            tdx_global_data_ptr->plt_common_config.ia32_xapic_disable_status.raw)
-    {
-        return api_error_with_operand_id(TDX_INCONSISTENT_MSR, IA32_XAPIC_DISABLE_STATUS_MSR_ADDR);
-    }
+
+        if (is_not_gnr_a0_stepping())
+        {
+            if (ia32_rdmsr(IA32_XAPIC_DISABLE_STATUS_MSR_ADDR) !=
+                tdx_global_data_ptr->plt_common_config.ia32_xapic_disable_status.raw)
+            {
+                return api_error_with_operand_id(TDX_INCONSISTENT_MSR, IA32_XAPIC_DISABLE_STATUS_MSR_ADDR);
+            }
+        }
+
 
     return TDX_SUCCESS;
 }
@@ -181,6 +186,11 @@ _STATIC_INLINE_ api_error_type compare_cpuid_configuration(tdx_module_global_t* 
         tmp_cpuid_config.leaf_subleaf =
                 cpuid_lookup[i].leaf_subleaf;
 
+        if (tmp_cpuid_config.leaf_subleaf.leaf == 0x6 &&
+            (!is_not_gnr_a0_stepping()))
+        {
+            continue;
+        }
 
         /**
          * We may support base leaf numbers higher than the CPU supports; for such leaf numbers
@@ -235,6 +245,7 @@ _STATIC_INLINE_ api_error_type compare_cpuid_configuration(tdx_module_global_t* 
             }
         }
     }
+
 
     // Compare IA32_TSC_ADJUST to the value sampled on TDHSYSINIT
     if (ia32_rdmsr(IA32_TSC_ADJ_MSR_ADDR) != tdx_global_data_ptr->plt_common_config.ia32_tsc_adjust)
@@ -475,7 +486,6 @@ _STATIC_INLINE_ void tdx_local_init(tdx_module_local_t* tdx_local_data_ptr,
     tdx_local_data_ptr->guest_rcx_on_td_entry = 0;
 }
 
-
 api_error_type tdh_sys_lp_init(void)
 {
 
@@ -518,14 +528,6 @@ api_error_type tdh_sys_lp_init(void)
 
     // Explicit LP-scope state initialization
     tdx_local_data_ptr->vp_ctx.last_tdvpr_pa.raw = NULL_PA;
-    uint32_t lfsr_value = LFSR_INIT_VALUE;
-    if (!lfsr_init_seed (&lfsr_value))
-    {
-        TDX_ERROR("LFSR initialization failed\n");
-        retval = TDX_RND_NO_ENTROPY;
-        goto EXIT;
-    }
-    tdx_local_data_ptr->single_step_def_state.lfsr_value = lfsr_value;
 
     /* Do a global EPT flush.  This is required to guarantee security in case of
        a TDX-SEAM module update. */
@@ -560,7 +562,6 @@ api_error_type tdh_sys_lp_init(void)
      * Calc LPID from local_data_ptr
      */
     tdx_local_data_ptr->lp_info.lp_id = (uint32_t)get_current_thread_num(get_sysinfo_table(), tdx_local_data_ptr);
-
 
     tdx_local_init(tdx_local_data_ptr, tdx_global_data_ptr);
 

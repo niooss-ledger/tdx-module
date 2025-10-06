@@ -226,6 +226,7 @@ static api_error_type read_and_set_cpuid_configurations(uint64_t target_tdr_pa,
     td_param_attributes_t attributes;
     ia32_xcr0_t xfam;
     api_error_type return_val = UNINITIALIZE_ERROR;
+    cpuid_23_0_eax_t tmp_cpuid_23_eax_val = { .raw = 0 };
 
     attributes.raw = tdcs_ptr->executions_ctl_fields.attributes.raw;
     xfam.raw = tdcs_ptr->executions_ctl_fields.xfam;
@@ -295,7 +296,7 @@ static api_error_type read_and_set_cpuid_configurations(uint64_t target_tdr_pa,
 
                 final_tdcs_values.eax = cpuid_01_eax.raw;
             }
-            if (tdcs_ptr->executions_ctl_fields.attributes.migratable)
+            else if (tdcs_ptr->executions_ctl_fields.attributes.migratable)
             {
                 if (!check_fms_config(cpuid_01_eax))
                 {
@@ -421,17 +422,21 @@ static api_error_type read_and_set_cpuid_configurations(uint64_t target_tdr_pa,
                cpuid_07_02_edx.raw = final_tdcs_values.edx;
                tdcs_ptr->executions_ctl_fields.cpuid_flags.ddpd_supported = cpuid_07_02_edx.ddpd;
 
-               // The TD will never be configured with DDPD support if the CPU doesn't support DDPD
-               tdx_debug_assert(!tdcs_ptr->executions_ctl_fields.cpuid_flags.ddpd_supported ||
-                                global_data_ptr->ddpd_supported);
+               if (is_not_gnr_a0_stepping())
+               {
 
-               // IA32_SPEC_CTRL virtualization is required in the following case:
-               //  - The TD is configured without DDPD support, and
-               //  - The CPU supports DDPD
-               // Because in this case we enable DDPD without the TD knowing about this.
-               tdx_debug_assert(tdcs_ptr->executions_ctl_fields.cpuid_flags.ddpd_supported ||
-                                !global_data_ptr->ddpd_supported ||
-                                global_data_ptr->plt_common_config.ia32_vmx_procbased_ctls3.virt_ia32_spec_ctrl);
+                   // The TD will never be configured with DDPD support if the CPU doesn't support DDPD
+                   tdx_debug_assert(!tdcs_ptr->executions_ctl_fields.cpuid_flags.ddpd_supported ||
+                                    global_data_ptr->ddpd_supported);
+
+                   // IA32_SPEC_CTRL virtualization is required in the following case:
+                   //  - The TD is configured without DDPD support, and
+                   //  - The CPU supports DDPD
+                   // Because in this case we enable DDPD without the TD knowing about this.
+                   tdx_debug_assert(tdcs_ptr->executions_ctl_fields.cpuid_flags.ddpd_supported ||
+                                    !global_data_ptr->ddpd_supported ||
+                                    global_data_ptr->plt_common_config.ia32_vmx_procbased_ctls3.virt_ia32_spec_ctrl);
+               }
            }
            else
            {
@@ -546,6 +551,22 @@ static api_error_type read_and_set_cpuid_configurations(uint64_t target_tdr_pa,
             {
                 final_tdcs_values.low = 0;
                 final_tdcs_values.high = 0;
+            }
+            else
+            {
+                if (cpuid_leaf_subleaf.subleaf == 0)
+                {
+                    tmp_cpuid_23_eax_val.raw = final_tdcs_values.eax;
+                    tdcs_ptr->executions_ctl_fields.perfmon_ext_subleaves_bitmap = final_tdcs_values.eax;
+                }
+                else
+                {
+                    if ((tmp_cpuid_23_eax_val.raw & BIT(cpuid_leaf_subleaf.subleaf)) == 0)
+                    {
+                        final_tdcs_values.low = 0;
+                        final_tdcs_values.high = 0;
+                    }
+                }
             }
         }
         else if (cpuid_leaf_subleaf.leaf == 0x80000008)
@@ -802,24 +823,26 @@ api_error_type tdh_mng_init(uint64_t target_tdr_pa, uint64_t target_td_params_pa
     }
 
     // Check and initialize the virtual IA32_ARCH_CAPABILITIES MSR
-    if (!init_virt_ia32_arch_capabilities(tdcs_ptr, td_params_ptr->msr_config_ctls.ia32_arch_cap,
-                                          td_params_ptr->ia32_arch_capabilities_config))
+    if (is_not_gnr_a0_stepping())
     {
-        TDX_ERROR("Incorrect IA32_ARCH_CAPABILITIES configuration\n");
-        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_IA32_ARCH_CAPABILITIES_CONFIG);
-        goto EXIT;
+        // Check and initialize the virtual IA32_ARCH_CAPABILITIES MSR
+        if (!init_virt_ia32_arch_capabilities(tdcs_ptr, td_params_ptr->msr_config_ctls.ia32_arch_cap,
+                                              td_params_ptr->ia32_arch_capabilities_config))
+        {
+            TDX_ERROR("Incorrect IA32_ARCH_CAPABILITIES configuration\n");
+            return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_IA32_ARCH_CAPABILITIES_CONFIG);
+            goto EXIT;
+        }
     }
 
-
-    if (!td_immutable_state_cross_check(tdcs_ptr))
+    return_val = td_immutable_state_cross_check(tdcs_ptr, false);
+    if (TDX_SUCCESS != return_val)
     {
         TDX_ERROR("td_immutable_state_cross_check failed\n");
-        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RDX);
         goto EXIT;
     }
 
     // ALL_CHECKS_PASSED:  The function is guaranteed to succeed
-
     /**
      *  Build the MSR bitmaps
      */
@@ -828,16 +851,15 @@ api_error_type tdh_mng_init(uint64_t target_tdr_pa, uint64_t target_td_params_pa
     // Initialize the virtual MSR values
     init_virt_ia32_vmx_msrs(tdcs_ptr);
 
-    /**
-     *  Initialize the TD Measurement Fields
-     */
-
      // preserve VMM's XCR0 state
     local_data_ptr->vmm_xcr0_state = ia32_xgetbv(0);
     ia32_xsetbv(0, TDX_MODULE_XCR0_WITH_AVX);
 
     store_ymms_in_buffer(ymms);
 
+    /**
+     *  Initialize the TD Measurement Fields
+     */
     if ((sha_error_code = sha384_init(&(tdcs_ptr->measurement_fields.td_sha_ctx))) != 0)
     {
         // Unexpected error - Fatal Error

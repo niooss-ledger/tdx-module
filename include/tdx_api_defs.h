@@ -84,10 +84,8 @@ typedef enum seamcall_leaf_opcode_e
     TDH_VP_WR_LEAF                   = 43,
     TDH_SYS_LP_SHUTDOWN_LEAF         = 44,
     TDH_SYS_CONFIG_LEAF              = 45,
-
     TDH_SYS_SHUTDOWN_LEAF            = 52,
     TDH_SYS_UPDATE_LEAF              = 53,
-
     TDH_SERVTD_BIND_LEAF             = 48,
     TDH_SERVTD_PREBIND_LEAF          = 49,
     TDH_EXPORT_ABORT_LEAF            = 64,
@@ -109,13 +107,9 @@ typedef enum seamcall_leaf_opcode_e
     TDH_IMPORT_STATE_TD_LEAF         = 86,
     TDH_IMPORT_STATE_VP_LEAF         = 87,
     TDH_MIG_STREAM_CREATE_LEAF       = 96
-
-
 #ifdef DEBUGFEATURE_TDX_DBG_TRACE
     ,TDDEBUGCONFIG_LEAF = 0xFE
 #endif // DEBUGFEATURE_TDX_DBG_TRACE
-
-
 } seamcall_leaf_opcode_t;
 
 /**< Enum for TDCALL leaves opcodes */
@@ -134,17 +128,14 @@ typedef enum tdcall_leaf_opcode_e
     TDG_VP_WR_LEAF               = 10,
     TDG_SYS_RD_LEAF              = 11,
     TDG_SYS_RDALL_LEAF           = 12,
-
     TDG_SERVTD_RD_LEAF           = 18,
     TDG_SERVTD_WR_LEAF           = 20,
-
     TDG_MR_VERIFYREPORT_LEAF     = 22,
     TDG_MEM_PAGE_ATTR_RD_LEAF    = 23,
     TDG_MEM_PAGE_ATTR_WR_LEAF    = 24,
     TDG_VP_ENTER_LEAF            = 25,
     TDG_VP_INVEPT_LEAF           = 26,
     TDG_VP_INVVPID_LEAF          = 27
-
 } tdcall_leaf_opcode_t;
 
 typedef union tdx_leaf_and_version_u
@@ -195,6 +186,23 @@ typedef union hkid_api_input_s {
 } hkid_api_input_t;
 tdx_static_assert(sizeof(hkid_api_input_t) == 8, hkid_api_input_t);
 
+/**
+ * @struct sys_config_options_t
+ *
+ * @brief SYS.CONFIG input for HKID info and dynamic PAMT config
+ */
+typedef union sys_config_options_s {
+    struct
+    {
+        uint64_t
+            hkid          : 16,  /**< HKID */
+            dynamic_pamt  : 1,   /**< Enable dynamic PAMT mode */
+            reserved      : 47;  /**< Must be 0 */
+    };
+    uint64_t raw;
+} sys_config_options_t;
+tdx_static_assert(sizeof(sys_config_options_t) == 8, sys_config_options_t);
+
 
 #define PAMT_4K 0
 #define PAMT_2M 1
@@ -210,7 +218,9 @@ typedef union page_size_api_input_s {
     {
         uint64_t
             level         : 3,  /**< Level PAMT_4K=0, PAMT_2M=1, PAMT_1G=2 */
-            reserved      : 61; /**< Must be 0 */
+            reserved1     : 9,  /**< Must be 0 */
+            hpa           : 40,
+            reserved2     : 12;
     };
     uint64_t raw;
 } page_size_api_input_t;
@@ -306,7 +316,7 @@ typedef union md_field_id_u
             uint32_t reserved_2             : 1;    // Bit 55
             uint32_t class_code             : 6;    // Bits 61:56
             uint32_t reserved_3             : 1;    // Bit 62
-            uint32_t non_arch               : 1;    // Bit 63
+            uint32_t ignored                : 1;    // Bit 63
         };
     };
     uint64_t raw;
@@ -366,7 +376,9 @@ typedef union td_param_attributes_s {
     {
         uint64_t debug           : 1;   // Bit 0
         uint64_t reserved_tud    : 3;   // Bits 3:1
-        uint64_t reserved_tup    : 12;  // Bits 15:4
+        uint64_t reserved_tup    : 2;   // Bits 5:4
+        uint64_t pmt_prof        : 1;   // Bits 6
+        uint64_t reserved_tup2   : 9;   // Bits 15:7
         uint64_t icssd           : 1;   // Bit 16
         uint64_t reserved_p      : 6;   // Bits 22:17
         uint64_t reserved_n      : 4;   // Bits 26:23
@@ -1021,7 +1033,8 @@ tdx_static_assert(sizeof(vcpu_and_flags_t) == 8, vcpu_and_flags_t);
 typedef enum gpa_list_format_e
 {
     GPA_LIST_FORMAT_GPA_ONLY     = 0,
-    GPA_LIST_FORMAT_MAX          = 0
+    GPA_LIST_FORMAT_GPA_AND_ATTR = 1,
+    GPA_LIST_FORMAT_MAX          = 1
 } gpa_list_info_format_t;
 
 typedef union gpa_list_info_u
@@ -1090,7 +1103,8 @@ typedef enum gpa_list_entry_status_e
     GPA_ENTRY_STATUS_TD_PAGE_BUSY_HOST_PRIORITY     = 12,
     GPA_ENTRY_STATUS_L2_SEPT_WALK_FAILED            = 13,
     GPA_ENTRY_STATUS_ATTR_LIST_ENTRY_INVALID        = 14,
-    GPA_ENTRY_STATUS_GPA_LIST_ENTRY_INVALID         = 15
+    GPA_ENTRY_STATUS_GPA_LIST_ENTRY_INVALID         = 15,
+    GPA_ENTRY_STATUS_INVALID_MIGRATION_BUFFER_HPA   = 16
 } gpa_list_entry_status_t;
 
 
@@ -1131,7 +1145,8 @@ typedef union tdx_features_enum0_u
         uint64_t enhanced_event_filtering    :  1;    // Bit 31
         uint64_t tdx_connect_partitioning    :  1;    // Bit 32
         uint64_t maxgpa_virt                 :  1;    // Bit 33
-        uint64_t reserved_5                  :  3;    // Bits 36:34
+        uint64_t reserved_5                  :  2;    // Bits 35:34
+        uint64_t dynamic_pamt                :  1;    // Bit 36
         uint64_t fatal_diagnostics           :  1;    // Bit 37
         uint64_t reserved_6                  : 26;    // Bits 63:38
     };
@@ -1356,6 +1371,5 @@ typedef union exit_reason_and_ve_category_u
 tdx_static_assert(sizeof(exit_reason_and_ve_category_t) == 8, exit_reason_and_ve_category_t);
 
 #pragma pack(pop)
-
 
 #endif // __TDX_API_DEFS_H_INCLUDED__

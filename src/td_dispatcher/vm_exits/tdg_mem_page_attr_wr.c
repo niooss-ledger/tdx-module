@@ -94,10 +94,9 @@ static api_error_type get_all_l2_sept_entries(tdr_t *tdr_ptr, tdcs_t *tdcs_ptr, 
                 fatal_error(FATAL_ERROR_ID_3, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
             }
 
-            // Get the L2 attributes.  L2 SEPT entry does not hold a BLOCKEDW indication
-            // of its own, so provide it based on the L1 state.
-            single_vm_curr_gpa_attr = l2_sept_get_gpa_attr(l2_septe_ptr[vm_id],
-                                         sept_state_is_any_blockedw(l1_sept_entry_copy));
+            // Get the L2 attributes.  L2 SEPT entry does not hold BLOCKEDW or PENDING indications
+            // of its own, so provide them based on the L1 state.
+            single_vm_curr_gpa_attr = l2_sept_get_gpa_attr(l2_septe_ptr[vm_id], sept_state_is_any_blockedw(l1_sept_entry_copy), sept_state_is_any_pending(l1_sept_entry_copy));
 
             // Prepare the updated attributes
             new_gpa_attr->attr_arr[vm_id].raw = single_vm_curr_gpa_attr.raw & ~attr_mask.attr_arr[vm_id].raw;
@@ -106,7 +105,7 @@ static api_error_type get_all_l2_sept_entries(tdr_t *tdr_ptr, tdcs_t *tdcs_ptr, 
             if (is_gpa_attr_present(new_gpa_attr->attr_arr[vm_id]))
             {
                 // Check if the updated L2 attributes are legal
-                if (!is_gpa_attr_legal(new_gpa_attr->attr_arr[vm_id], is_ept_pt_mmio(&l1_sept_entry_copy)))
+                if (!is_gpa_attr_legal(new_gpa_attr->attr_arr[vm_id]))
                 {
                     // Don't abort yet.  Continue to loop on all VMs to collect the current attributes
                     attribute_status = TDX_PAGE_ATTR_INVALID;
@@ -118,7 +117,7 @@ static api_error_type get_all_l2_sept_entries(tdr_t *tdr_ptr, tdcs_t *tdcs_ptr, 
         else if (is_gpa_attr_present(single_vm_masked_gpa_attr))
         {
             // Check if the updated L2 attributes are legal
-            if (!is_gpa_attr_legal(single_vm_masked_gpa_attr, is_ept_pt_mmio(&l1_sept_entry_copy)))
+            if (!is_gpa_attr_legal(single_vm_masked_gpa_attr))
             {
                 // Don't abort yet.  Continue to loop on all VMs to collect the current attributes
                 attribute_status = TDX_PAGE_ATTR_INVALID;
@@ -341,9 +340,9 @@ api_error_type tdg_mem_page_attr_wr(
             // Create the L2 page alias
             // The L2 SEPT entry is created as L2_BLOCKED if the page is pending
             sept_l2_set_leaf_given_hpa_with_hkid(l2_septe_ptr[vm_id], new_gpa_attr.attr_arr[vm_id],
-                                                 set_hkid_to_pa(sept_get_pa(&page_sept_entry_copy), tdr_ptr->key_management_fields.hkid),
+                                                 set_hkid_to_pa(sept_get_pa(&page_sept_entry_copy),
+                                                 tdr_ptr->key_management_fields.hkid),
                                                  sept_state_is_any_pending(page_sept_entry_copy));
-
             sept_set_aliased(page_sept_entry_ptr, vm_id);
         }
 

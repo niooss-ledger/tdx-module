@@ -122,6 +122,7 @@ static bool_t md_sys_get_elements(md_field_id_t field_id, const md_lookup_t* ent
                 tdx_features_0.raw = 0;
                 tdx_features_0.td_migration = 1;
                 tdx_features_0.service_td = 1;
+                tdx_features_0.partitioned_td_migration = 1;
                 tdx_features_0.td_preserving = 1;
                 tdx_features_0.tdg_vp_rdwr = 1;
                 tdx_features_0.relaxed_mem_mng_concurrency = 1;
@@ -130,7 +131,10 @@ static bool_t md_sys_get_elements(md_field_id_t field_id, const md_lookup_t* ent
                 tdx_features_0.td_partitioning = 1;
                 tdx_features_0.td_entry_enhancements = 1;
                 tdx_features_0.host_priority_locks = 1;
-                tdx_features_0.config_ia32_arch_cap = 1;
+                if (is_not_gnr_a0_stepping())
+                {
+                    tdx_features_0.config_ia32_arch_cap = 1;
+                }
                 tdx_features_0.no_rbp_mod = 1;
                 tdx_features_0.pending_ept_violation_v2 = 1;
                 tdx_features_0.l2_tlb_invd_opt = 1;

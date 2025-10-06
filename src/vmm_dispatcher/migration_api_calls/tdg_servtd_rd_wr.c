@@ -39,12 +39,12 @@
 
 _STATIC_INLINE_ bool_t is_operand_busy_error_code(api_error_type error)
 {
-    if (HIGH_32BITS(error) == HIGH_32BITS(TDX_OPERAND_BUSY))
-    {
-        return true;
-    }
+    return (HIGH_32BITS(error) == HIGH_32BITS(TDX_OPERAND_BUSY));
+}
 
-    return false;
+_STATIC_INLINE_ bool_t is_operand_busy_host_priority_error_code(api_error_type error)
+{
+    return (HIGH_32BITS(error) == HIGH_32BITS(TDX_OPERAND_BUSY_HOST_PRIORITY));
 }
 
 static api_error_type tdg_servtd_rd_wr(servtd_binding_handle_t binding_handle, md_field_id_t field_id,
@@ -109,6 +109,11 @@ static api_error_type tdg_servtd_rd_wr(servtd_binding_handle_t binding_handle, m
     if (return_val != TDX_SUCCESS)
     {
         if (is_operand_busy_error_code(return_val))
+        {
+            TDX_ERROR("Failed to check/lock/map a Target TDR - error = %llx\n", return_val);
+            goto EXIT;
+        }
+        else if (is_operand_busy_host_priority_error_code(return_val))
         {
             TDX_ERROR("Failed to check/lock/map a Target TDR - error = %llx\n", return_val);
             goto EXIT;
@@ -238,7 +243,7 @@ static api_error_type tdg_servtd_rd_wr(servtd_binding_handle_t binding_handle, m
      if (write)
      {
          return_val = md_write_element(MD_CTX_TD, field_id, access_type, access_qual,
-                                       md_ctx, wr_value, wr_request_mask, &rd_value);
+                                       md_ctx, wr_value, wr_request_mask, &rd_value, true);
      }
      else
      {

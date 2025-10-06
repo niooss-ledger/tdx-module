@@ -86,7 +86,6 @@ api_error_type tdh_sys_update(void)
 
     complete_cpuid_handling(global_data);
 
-
     // Clean handoff data
     handoff_data_hdr->valid = false;
     handoff_data_hdr->size  = 0;

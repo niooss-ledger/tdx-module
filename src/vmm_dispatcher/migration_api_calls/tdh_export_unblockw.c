@@ -205,6 +205,29 @@ api_error_type tdh_export_unblockw(uint64_t page_pa, uint64_t target_tdr_pa)
         }
     }
 
+    if (sept_state_is_guest_accessible_leaf(new_septe))
+    {
+        // Block any L2 aliases for writing
+        for (uint16_t vm_id = 1; vm_id <= tdcs_p->management_fields.num_l2_vms; vm_id++)
+        {
+            if (sept_state_is_aliased(new_septe, vm_id))
+            {
+                ia32e_sept_t* l2_septe_ptr = NULL;
+                // Walk the L2 SEPT to locate the entry
+                return_val = l2_sept_walk(tdr_p, tdcs_p, vm_id, page_gpa, &page_level_entry,
+                                          &l2_septe_ptr);
+
+                if (return_val != TDX_SUCCESS)
+                {
+                    extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_td_handle(target_tdr_pa, vm_id, page_level_entry, page_gpa.raw, *l2_septe_ptr);
+                    fatal_error(FATAL_ERROR_ID_7, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
+                }
+
+                sept_l2_unblockw(l2_septe_ptr);
+                free_la(l2_septe_ptr);
+            }
+        }
+    }
 
     atomic_mem_write_64b(&page_sept_entry_ptr->raw, new_septe.raw);
 

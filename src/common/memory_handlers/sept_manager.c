@@ -508,20 +508,18 @@ void sept_set_mapped_non_leaf_given_hpa_with_hkid(ia32e_sept_t * ept_entry, pa_t
  *            false      true            L2_BLOCKED
  *            true       false           L2_MMIO_MAPPED
  *            true       true            L2_MMIO_BLOCKED
- *          - State is set to L2_MAPPED or L2_BLOCKED based on the is_l2_blocked flag.
- *          - If is_l2_blocked is 1, then R, W, Xs and Xu are set to 0, and the values
- *            specified by in the provided attributes are saved in TDRR, TDWR, TDXS and TDXU.
- *            Else, TDRD, TDWR, TDXS and TDXU are set to their proper values:  TDRD, TDXS and TDXU are
- *            part of MT (see above) and TDWR is set to 0.
+ *          - If is_l2_blocked is 1, then R, W, Xs, Xu and PWA are set to 0, and the values
+ *            specified in the provided attributes are saved in TDRR, TDWR, TDXS, TDXU and TDPWA.
+ *            Else, TDRD, TDWR, TDXS, TDXU and TDPWA are set to their proper values:  TDRD, TDXS and TDXU are
+ *            part of MT (see above) and the TDWR and TDPWA bits are set to 0.
+ *          - If is_mmio is set, bits Xs, Xu, VGP, PWA, SSS must be 0
  *
  * @param l2_sept_entry_ptr
  * @param gpa_attr_single_vm
  * @param pa
  * @param is_l2_blocked
  */
-void sept_l2_set_leaf_given_hpa_with_hkid(ia32e_sept_t* l2_sept_entry_ptr, gpa_attr_single_vm_t gpa_attr_single_vm,
-                                          pa_t pa, bool_t is_l2_blocked
-)
+void sept_l2_set_leaf_given_hpa_with_hkid(ia32e_sept_t* l2_sept_entry_ptr, gpa_attr_single_vm_t gpa_attr_single_vm, pa_t pa, bool_t is_l2_blocked)
 {
     ia32e_sept_t tmp_sept = *l2_sept_entry_ptr;
     tmp_sept.l2_encoding.r = gpa_attr_single_vm.r;
@@ -537,9 +535,8 @@ void sept_l2_set_leaf_given_hpa_with_hkid(ia32e_sept_t* l2_sept_entry_ptr, gpa_a
     tmp_sept.l2_encoding.mt1_tdxs = 1;
     tmp_sept.l2_encoding.mt2_tdxu = 1;
     tmp_sept.l2_encoding.ipat_tdmem = 1;
-
     tmp_sept.l2_encoding.tdwr = 0;
-
+    tmp_sept.l2_encoding.tdpwa = 0;
 
     if (is_l2_blocked)
     {
@@ -551,19 +548,19 @@ void sept_l2_set_leaf_given_hpa_with_hkid(ia32e_sept_t* l2_sept_entry_ptr, gpa_a
         tmp_sept.l2_encoding.x = 0;
         tmp_sept.l2_encoding.mt2_tdxu = gpa_attr_single_vm.xu;
         tmp_sept.l2_encoding.xu = 0;
+        tmp_sept.l2_encoding.tdpwa = gpa_attr_single_vm.pwa;
+        tmp_sept.l2_encoding.pwa = 0;
     }
 
     sept_state_mask_t sept_state_mask;
 
+    if (is_l2_blocked)
     {
-        if (is_l2_blocked)
-        {
-            sept_state_mask = SEPT_STATE_L2_BLOCKED_MASK; 
-        }
-        else // !is_l2_blocked
-        {
-            sept_state_mask = SEPT_STATE_L2_MAPPED_MASK;
-        }
+        sept_state_mask = SEPT_STATE_L2_BLOCKED_MASK;
+    }
+    else // !is_l2_blocked
+    {
+        sept_state_mask = SEPT_STATE_L2_MAPPED_MASK;
     }
 
     sept_l2_update_state(&tmp_sept, sept_state_mask);

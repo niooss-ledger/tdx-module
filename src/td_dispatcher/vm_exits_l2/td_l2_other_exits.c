@@ -171,6 +171,7 @@ void td_l2_exception_or_nmi_exit(vm_vmexit_exit_reason_t vm_exit_reason,
 {
     if (vm_exit_inter_info.interruption_type == VMEXIT_INTER_INFO_TYPE_NMI)
     {
+
         // This exit was due to an NMI
         async_tdexit_to_vmm(TDX_SUCCESS, vm_exit_reason,
                             vm_exit_qualification.raw, 0, 0, vm_exit_inter_info.raw);

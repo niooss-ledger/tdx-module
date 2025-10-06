@@ -246,7 +246,8 @@ api_error_type tdh_mem_wr(uint64_t aligned_page_pa, uint64_t target_tdr_pa, uint
  * @return Success or Error type
  */
 api_error_type tdh_mem_page_demote(page_info_api_input_t page_info,
-                              td_handle_and_flags_t target_tdr_and_flags);
+                              td_handle_and_flags_t target_tdr_and_flags,
+                              uint64_t pamt_hpa0, uint64_t pamt_hpa1);
 
 
 /**
@@ -468,7 +469,7 @@ api_error_type tdh_mem_sept_remove(page_info_api_input_t sept_page_info, uint64_
  */
 api_error_type tdh_sys_config(uint64_t tdmr_info_array_pa,
                              uint64_t num_of_tdmr_entries,
-                             hkid_api_input_t global_private_hkid);
+                             sys_config_options_t sysconfig_options);
 
 
 /**

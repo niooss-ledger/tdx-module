@@ -576,7 +576,7 @@ const md_lookup_t td_vmcs_lookup[MAX_NUM_TD_VMCS_LOOKUP] = {
    .export_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .import_mask = (18446744073709551615ULL & 0xFFFFFFFFFFFFFFFFULL),
    .mig_export = MIG_ME, .mig_import = MIG_ME,
    .special_rd_handling = false,
-   .special_wr_handling = false 
+   .special_wr_handling = true 
  },
  {
    // IA32_PERF_GLOBAL_CTRL // 50

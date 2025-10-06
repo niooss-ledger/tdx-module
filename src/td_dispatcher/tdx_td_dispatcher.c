@@ -41,7 +41,6 @@
 #include "td_transitions/td_exit_stepping.h"
 #include "x86_defs/x86_defs.h"
 
-
 void tdx_failed_vmentry(void)
 {
 #ifdef DEBUGFEATURE_TDX_DBG_TRACE
@@ -247,8 +246,6 @@ void td_call(tdx_module_local_t* tdx_local_data_ptr, bool_t* interrupt_occurred)
 
     tdx_leaf_and_version_t leaf_opcode;
     leaf_opcode.raw = tdx_local_data_ptr->td_regs.rax;
-
-
 
     if ((leaf_opcode.reserved0 != 0) || (leaf_opcode.reserved1 != 0))
     {
@@ -460,7 +457,7 @@ EXIT:
 
         if (!tdx_local_data_ptr->vp_ctx.tdcs->executions_ctl_fields.attributes.perfmon)
         {
-            ia32_wrmsr(IA32_FIXED_CTR0_MSR_ADDR, ia32_rdmsr(IA32_FIXED_CTR0_MSR_ADDR) + 2);
+            ia32_wrmsr(IA32_PMC_FX0_CTR_MSR_ADDR, ia32_rdmsr(IA32_PMC_FX0_CTR_MSR_ADDR) + 2);
         }
     }
 }
@@ -696,6 +693,11 @@ stepping_filter_e tdx_td_l1_l2_dispatcher_common_prologue(tdx_module_local_t* lo
     ------------------------------*/
     stepping_filter_e vmexit_stepping_result = vmexit_stepping_filter(*vm_exit_reason, *vm_exit_qualification, *vm_exit_inter_info,
                                                                       (bool_t)local_data->vp_ctx.tdcs->executions_ctl_fields.attributes.perfmon);
+    if (vmexit_stepping_result == FILTER_FAIL_TDEXIT_RDRAND)
+    {
+        fatal_error(FATAL_ERROR_ID_178, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
+    }
+    
     // if stepping cannot be done safely, kill the TD and exit
     if (vmexit_stepping_result == FILTER_FAIL_TDEXIT_WRONG_APIC_MODE)
     {

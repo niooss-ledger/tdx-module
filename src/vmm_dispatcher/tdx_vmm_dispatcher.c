@@ -37,9 +37,6 @@
 #include "helpers/helpers.h"
 #include "metadata_handlers/metadata_generic.h"
 
-
-
-
 _STATIC_INLINE_ void mark_lp_as_busy(void)
 {
     get_local_data()->lp_is_busy = true;
@@ -66,7 +63,6 @@ void tdx_vmm_dispatcher(void)
     // Get leaf code from RAX in local data (saved on entry)
     tdx_leaf_and_version_t leaf_opcode;
     leaf_opcode.raw = local_data->vmm_regs.rax;
-
 
     ia32_core_capabilities_t core_capabilities;
 
@@ -131,7 +127,6 @@ void tdx_vmm_dispatcher(void)
         local_data->vmm_regs.rax = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RAX);
         goto EXIT;
     }
-
 
     // Only a few functions have multiple versions
     if (leaf_opcode.version > 0)
@@ -316,7 +311,8 @@ void tdx_vmm_dispatcher(void)
 
         td_handle_and_flags_t target_tdr_and_flags = { .raw = local_data->vmm_regs.rdx };
 
-        local_data->vmm_regs.rax = tdh_mem_page_demote(page_info, target_tdr_and_flags);
+        local_data->vmm_regs.rax = tdh_mem_page_demote(page_info, target_tdr_and_flags,
+                                                       local_data->vmm_regs.r12, local_data->vmm_regs.r13);
         break;
     }
     case TDH_VP_ENTER_LEAF:
@@ -405,12 +401,12 @@ void tdx_vmm_dispatcher(void)
     }
     case TDH_SYS_CONFIG_LEAF:
     {
-        hkid_api_input_t global_private_hkid;
-        global_private_hkid.raw = local_data->vmm_regs.r8;
+        sys_config_options_t sysconfig_options;
+        sysconfig_options.raw = local_data->vmm_regs.r8;
 
         local_data->vmm_regs.rax = tdh_sys_config(local_data->vmm_regs.rcx,
                                                  local_data->vmm_regs.rdx,
-                                                 global_private_hkid);
+                                                 sysconfig_options);
         break;
     }
     case TDH_SYS_KEY_CONFIG_LEAF:
@@ -500,7 +496,6 @@ void tdx_vmm_dispatcher(void)
                                              local_data->vmm_regs.r9);
         break;
     }
-
     case TDH_SERVTD_BIND_LEAF:
         {
             servtd_attributes_t servtd_attr = {.raw = local_data->vmm_regs.r10};
@@ -690,9 +685,6 @@ void tdx_vmm_dispatcher(void)
                                             local_data->vmm_regs.r13);
         break;
     }
-
-
-
     default:
     {
         TDX_ERROR("tdx_vmm_dispatcher - TDX_OPERAND_INVALID - invalid leaf = %d\n", leaf_opcode);

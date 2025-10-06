@@ -240,6 +240,31 @@ static void restore_guest_td_state_before_td_entry(tdcs_t* tdcs_ptr, tdvps_t* td
     // Save MSR (NON_FAULTING_MSR_ADDR) value before the first usage of safe_wrmsr
     local_data_ptr->non_faulting_msr_value = ia32_rdmsr(NON_FAULTING_MSR_ADDR);
 
+    // Save VMM MSR's that are supposed to be restored on TD-exits, before calling any safe_wrmsr
+    // safe_wrmsr may fail, and invoke TD-exit flow
+
+    uint64_t perf_global_status_mask = (BIT(32) | BIT(59));
+
+    if (!tdcs_ptr->executions_ctl_fields.attributes.perfmon)
+    {
+        // save VMM's Fixed Counter Controls (FCC) MSR
+        local_data_ptr->vmm_ia32_fixed_ctr_ctrl = ia32_rdmsr(IA32_FIXED_CTR_CTRL_MSR_ADDR);
+        // save VMM's FC0 value
+        local_data_ptr->vmm_ia32_fixed_ctr0 = ia32_rdmsr(IA32_PMC_FX0_CTR_MSR_ADDR);
+        // save VMM's Perf Global Status (PGS) counter freezing and FC0
+        local_data_ptr->vmm_ia32_perf_global_status = ia32_rdmsr(IA32_PERF_GLOBAL_STATUS_MSR_ADDR) & perf_global_status_mask;
+    }
+
+    ia32_tsx_ctrl_t tsx_ctrl = { .raw = 0 };
+
+    if (!tdcs_ptr->executions_ctl_fields.cpuid_flags.tsx_supported &&
+            global_data->plt_common_config.ia32_arch_capabilities.tsx_ctrl)
+    {
+        // Read the host VMM value of IA32_TSX_CTRL
+        tsx_ctrl.raw = ia32_rdmsr(IA32_TSX_CTRL_MSR_ADDR);
+        local_data_ptr->vmm_non_extended_state.ia32_tsx_ctrl = tsx_ctrl.raw; // Will be used on TD exit
+    }
+
     // CR2 state restoration
     ia32_load_cr2(tdvps_ptr->guest_state.cr2);
 
@@ -265,35 +290,42 @@ static void restore_guest_td_state_before_td_entry(tdcs_t* tdcs_ptr, tdvps_t* td
     if (tdcs_ptr->executions_ctl_fields.attributes.perfmon)
     {
         safe_wrmsr(IA32_FIXED_CTR_CTRL_MSR_ADDR, tdvps_ptr->guest_msr_state.ia32_fixed_ctr_ctrl);
-        for (uint8_t i = 0; i < global_data->num_fixed_ctrs; i++)
         {
-            if ((global_data->fc_bitmap & BIT(i)) != 0)
-            {
-                safe_wrmsr(IA32_FIXED_CTR0_MSR_ADDR + i, tdvps_ptr->guest_msr_state.ia32_fixed_ctrx[i]);
-            }
-        }
+            // The CPU does not support the new Perfmon MSR range.  Use the legacy range.
+            // --------------------------------------------------------------------------
 
-        for (uint32_t i = 0; i < NUM_PMC; i++)
-        {
-            {
-                safe_wrmsr(IA32_A_PMC0_MSR_ADDR + i, tdvps_ptr->guest_msr_state.ia32_a_pmcx[i]);
+            /* Restore fixed function Perfmon counters
+             */
 
-                ia32_perfevtsel_t perfevtsel_value = { .raw = tdvps_ptr->guest_msr_state.ia32_perfevtselx[i] };
-                if (perfevtsel_value.forbidden) // if forbidden
+            for (uint8_t i = 0; i < MAX_FIXED_CTR; i++)
+            {
+                if ((global_data->fc_bitmap & BIT(i)) != 0)
                 {
-                    /* The Perfmon event has been filtered out.  Write the value but clear the ENABLE bit (22) to 0.
-                       This ensures that the IA32_PERF_GLOBAL_INUSE MSR returns the in-use status bit for this
-                       counter as if it is being used, since the bit is set if and only if IA32_PERFEVTSELx
-                       EVENT_SELECT bits (7:0) are not 0. */
-                    perfevtsel_value.forbidden = 0;
-                    perfevtsel_value.en = 0;
+                    safe_wrmsr(IA32_PMC_FX0_CTR_MSR_ADDR + i, tdvps_ptr->guest_msr_state.ia32_pmc_fx_ctrx[i]);
                 }
+            }
 
-                safe_wrmsr(IA32_PERFEVTSEL0_MSR_ADDR + i, perfevtsel_value.raw);
+            for (uint32_t i = 0; i < NUM_PMC; i++)
+            {
+                {
+                    safe_wrmsr(IA32_PMC_GP0_CTR_MSR_ADDR + i, tdvps_ptr->guest_msr_state.ia32_pmc_gp_ctrx[i]);
 
+                    ia32_perfevtsel_t perfevtsel_value = {.raw = tdvps_ptr->guest_msr_state.ia32_pmc_gp_cfg_ax[i]};
+                    if (perfevtsel_value.forbidden) // if forbidden
+                    {
+                        /* The Perfmon event has been filtered out.  Write the value but clear the ENABLE bit (22) to 0.
+                           This ensures that the IA32_PERF_GLOBAL_INUSE MSR returns the in-use status bit for this
+                           counter as if it is being used, since the bit is set if and only if IA32_PERFEVTSELx
+                           EVENT_SELECT bits (7:0) are not 0. */
+                        perfevtsel_value.forbidden = 0;
+                        perfevtsel_value.en = 0;
+                    }
+
+                    safe_wrmsr(IA32_PERFEVTSEL0_MSR_ADDR + i, perfevtsel_value.raw);
+
+                }
             }
         }
-
         for (uint32_t i = 0; i < 2; i++)
         {
             safe_wrmsr(IA32_OFFCORE_RSPx_MSR_ADDR + i, tdvps_ptr->guest_msr_state.msr_offcore_rspx[i]);
@@ -301,23 +333,26 @@ static void restore_guest_td_state_before_td_entry(tdcs_t* tdcs_ptr, tdvps_t* td
 
         ia32_perf_global_status_write(ia32_rdmsr(IA32_PERF_GLOBAL_STATUS_MSR_ADDR),
                 tdvps_ptr->guest_msr_state.ia32_perf_global_status);
-        safe_wrmsr(IA32_PEBS_ENABLE_MSR_ADDR, tdvps_ptr->guest_msr_state.ia32_pebs_enable);
         if (global_data->plt_common_config.ia32_perf_capabilities.perf_metrics_available)
         {
             safe_wrmsr(IA32_PERF_METRICS_MSR_ADDR, tdvps_ptr->guest_msr_state.ia32_perf_metrics);
         }
-        safe_wrmsr(IA32_PEBS_DATA_CFG_MSR_ADDR, tdvps_ptr->guest_msr_state.msr_pebs_data_cfg);
-        safe_wrmsr(IA32_PEBS_LD_LAT_MSR_ADDR, tdvps_ptr->guest_msr_state.msr_pebs_ld_lat);
-        // MSR_PEBS_FRONTEND exists only in big cores
-        if (global_data->native_model_info.core_type == CORE_TYPE_BIGCORE)
+
+        // Legacy PEBS MSRs
+        if (!global_data->plt_common_config.ia32_misc_enable.pebs_unavailable)
         {
-            safe_wrmsr(IA32_PEBS_FRONTEND_MSR_ADDR, tdvps_ptr->guest_msr_state.msr_pebs_frontend);
+            safe_wrmsr(IA32_PEBS_ENABLE_MSR_ADDR, tdvps_ptr->guest_msr_state.ia32_pebs_enable);
+            safe_wrmsr(IA32_PEBS_DATA_CFG_MSR_ADDR, tdvps_ptr->guest_msr_state.msr_pebs_data_cfg);
+            safe_wrmsr(IA32_PEBS_LD_LAT_MSR_ADDR, tdvps_ptr->guest_msr_state.msr_pebs_ld_lat);
+            // MSR_PEBS_FRONTEND exists only in big cores
+            if (global_data->native_model_info.core_type == CORE_TYPE_BIGCORE)
+            {
+                safe_wrmsr(IA32_PEBS_FRONTEND_MSR_ADDR, tdvps_ptr->guest_msr_state.msr_pebs_frontend);
+            }
         }
     }
     else
     {
-        // save VMM's Fixed Counter Controls (FCC) MSR
-        local_data_ptr->vmm_ia32_fixed_ctr_ctrl = ia32_rdmsr(IA32_FIXED_CTR_CTRL_MSR_ADDR);
         local_data_ptr->ia32_fixed_ctr_ctrl_value =((local_data_ptr->vmm_ia32_fixed_ctr_ctrl & ~TDX_MODULE_IA32_ENABLE_CTR0_CTRL)
                                                     | TDX_MODULE_IA32_FIXED_CTR_CTRL)
                                                     & TDX_MODULE_IA32_CTR_0_1_2_MASK;
@@ -328,18 +363,11 @@ static void restore_guest_td_state_before_td_entry(tdcs_t* tdcs_ptr, tdvps_t* td
             safe_wrmsr(IA32_FIXED_CTR_CTRL_MSR_ADDR, local_data_ptr->ia32_fixed_ctr_ctrl_value);
         }
 
-        // save VMM's FC0 value
-        local_data_ptr->vmm_ia32_fixed_ctr0 = ia32_rdmsr(IA32_FIXED_CTR0_MSR_ADDR);
-
         if (0x0 != local_data_ptr->vmm_ia32_fixed_ctr0)
         {
             // clear FC0
-            safe_wrmsr(IA32_FIXED_CTR0_MSR_ADDR, 0x0);
+            safe_wrmsr(IA32_PMC_FX0_CTR_MSR_ADDR, 0x0);
         }
-
-        uint64_t perf_global_status_mask = (BIT(32) | BIT(59));
-        // save VMM's Perf Global Status (PGS) counter freezing and FC0
-        local_data_ptr->vmm_ia32_perf_global_status = ia32_rdmsr(IA32_PERF_GLOBAL_STATUS_MSR_ADDR) & perf_global_status_mask;
 
         if (0x0 != local_data_ptr->vmm_ia32_perf_global_status)
         {
@@ -361,10 +389,6 @@ static void restore_guest_td_state_before_td_entry(tdcs_t* tdcs_ptr, tdvps_t* td
     }
     else if (get_global_data()->plt_common_config.ia32_arch_capabilities.tsx_ctrl)
     {
-        // Read the host VMM value of IA32_TSX_CTRL
-        ia32_tsx_ctrl_t tsx_ctrl = { .raw = ia32_rdmsr(IA32_TSX_CTRL_MSR_ADDR) };
-        local_data_ptr->vmm_non_extended_state.ia32_tsx_ctrl = tsx_ctrl.raw; // Will be used on TD exit
-
         // Optimize by disabling TSX only if not disabled by the host VMM
         if (!tsx_ctrl.rtm_disable || tsx_ctrl.rsvd)
         {
@@ -372,7 +396,10 @@ static void restore_guest_td_state_before_td_entry(tdcs_t* tdcs_ptr, tdvps_t* td
         }
     }
 
-    safe_wrmsr(IA32_UARCH_MISC_CTL_MSR_ADDR, tdvps_ptr->guest_msr_state.ia32_uarch_misc_ctl);
+    if (is_not_gnr_a0_stepping())
+    {
+        safe_wrmsr(IA32_UARCH_MISC_CTL_MSR_ADDR, tdvps_ptr->guest_msr_state.ia32_uarch_misc_ctl);
+    }
 
     // Unconditionally restore the following MSRs from TDVP:
     // IA32_STAR, IA32_SPEC_CTRL, IA32_LSTAR, IA32_FMASK, IA32_KERNEL_GS_BASE, IA32_TSC_AUX
@@ -745,6 +772,7 @@ api_error_type tdh_vp_enter(uint64_t vcpu_handle_and_flags)
         set_l2_exit_host_routing(tdvps_ptr);
     }
 
+
     // We read TSC below.  Compare IA32_TSC_ADJUST to the value sampled on TDHSYSINIT
     // to make sure the host VMM doesn't play any trick on us.
     IF_RARE (ia32_rdmsr(IA32_TSC_ADJ_MSR_ADDR) != global_data_ptr->plt_common_config.ia32_tsc_adjust)
@@ -964,8 +992,11 @@ api_error_type tdh_vp_enter(uint64_t vcpu_handle_and_flags)
         release_sharex_lock_ex(&tdcs_ptr->executions_ctl_fields.secure_ept_lock);
     }
 
+    if (is_not_gnr_a0_stepping())
+    {
     // If IA32_SPEC_CTRL is virtualized, write the VMCS' IA32_SPEC_CTRL shadow
     conditionally_write_vmcs_ia32_spec_ctrl_shadow(tdcs_ptr, tdvps_ptr->guest_msr_state.ia32_spec_ctrl);
+    }
 
     // Restore other Guest state (GPRs, DRs, MSRs) in TDVPS
     restore_guest_td_state_before_td_entry(tdcs_ptr, tdvps_ptr);

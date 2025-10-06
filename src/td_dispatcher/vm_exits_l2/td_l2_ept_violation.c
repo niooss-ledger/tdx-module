@@ -82,18 +82,38 @@ void td_l2_ept_violation_exit(vm_vmexit_exit_reason_t vm_exit_reason, vmx_exit_q
                                             tdr_ptr->key_management_fields.hkid,
                                             &l1_sept_entry_level, &l1_sept_entry_copy, false);
         
-        // L1 leaf SEPT entry found - Check if the EPT violation needs to be handled by the L1 VMM
-        if (// Was the page fully accessible to the TD (as a whole)?
-            sept_state_is_guest_accessible_leaf(l1_sept_entry_copy))
+        if (exit_qualification.ept_violation.data_read | exit_qualification.ept_violation.insn_fetch)
         {
-            if (l1_sept_entry_ptr != NULL)
+            /* Missed operation was either Read or Execute.  In this case, if the page is accessible for
+               read by L1 (including if it's blocked-for-writing) then the EPT violation was due to L2
+               permissions.  Let L1 handle this. */
+            if (sept_state_is_guest_accessible_leaf(l1_sept_entry_copy))
             {
-                free_la(l1_sept_entry_ptr);
+                if (l1_sept_entry_ptr != NULL)
+                {
+                    free_la(l1_sept_entry_ptr);
+                }
+
+                td_l2_to_l1_exit(vm_exit_reason, exit_qualification, 0, exit_inter_info, false);
             }
-            // In each of the above cases, L1 VMM should handle the EPT violation
-            td_l2_to_l1_exit(vm_exit_reason, exit_qualification, 0, exit_inter_info, false);
         }
-        else if (sept_state_is_any_pending_and_guest_acceptable(l1_sept_entry_copy))
+        else
+        {
+            /* Missed operation was Write.  In this case, if the page is accessible for write
+               by L1 then the EPT violation was due to L2 permissions.  Let L1 handle this. */
+            if (sept_state_is_guest_fully_accessible_leaf(l1_sept_entry_copy))
+            {
+                if (l1_sept_entry_ptr != NULL)
+                {
+                    free_la(l1_sept_entry_ptr);
+                }
+
+                // The page is fully accessible to the TD (as a whole), L1 VMM should handle the EPT violation
+                td_l2_to_l1_exit(vm_exit_reason, exit_qualification, 0, exit_inter_info, false);
+            }
+        }
+        
+        if (sept_state_is_any_pending_and_guest_acceptable(l1_sept_entry_copy))
         {
             if (l1_sept_entry_ptr != NULL)
             {

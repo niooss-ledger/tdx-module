@@ -247,54 +247,6 @@ _STATIC_INLINE_ bool_t ia32_is_timeout_expired(uint64_t endtime)
     return (int64_t)(endtime - ia32_rdtsc()) < 0;
 }
 
-_STATIC_INLINE_ uint64_t get_tsc_ratio(void)
-{
-    uint32_t eax, ebx, ecx, edx;
-    ia32_cpuid(CPUID_TSC_ATTRIBUTES_LEAF, 0,
-               &eax, &ebx,
-               &ecx, &edx);
-
-    tdx_sanity_check(eax != 0, FATAL_ERROR_ID_62, 0);
-    uint64_t ratio = ((ebx / eax) * ecx);
-
-    if (ratio == 0)
-    {
-        ia32_cpuid(PROCESSOR_FREQUENCY_INFORMATION_LEAF, 0,
-                   &eax, &ebx,
-                   &ecx, &edx);
-        ratio = eax;
-    }
-
-    // Convert from megahertz to herz
-    return (ratio / 1000000);
-}
-
-/**
- * @brief Busy wait for the input uSeconds
- *
- * @param usec - Microseconds to wait
- * @param tsc_ratio - Optional input
- */
-_STATIC_INLINE_ void busy_wait_usec(
-    const uint32_t usec,
-    uint64_t tsc_ratio_optional)
-{
-    IF_RARE (tsc_ratio_optional == 0)
-    {
-        tsc_ratio_optional = get_tsc_ratio();
-    }
-
-    const uint64_t timeout_end = ia32_set_timeout(usec * tsc_ratio_optional);
-
-    while (true)
-    {
-        if (ia32_is_timeout_expired(timeout_end))
-        {
-            return;
-        }
-    }
-}
-
 /**
  * Extended State operations
  */
@@ -602,7 +554,7 @@ _STATIC_INLINE_ bool_t _lock_bts_64b(volatile uint64_t* mem, uint64_t bit)
 {
     bool_t result;
 
-    _ASM_VOLATILE_ ("lock; bts %2, %0; adc %1,%1" : "=m" ( *mem ) , "=b"(result) : "a"(bit) , "b"(0) : "cc" , "memory");
+    _ASM_VOLATILE_ ("lock; btsq %2, %0; adc %1,%1" : "=m" ( *mem ) , "=b"(result) : "a"(bit) , "b"(0) : "cc" , "memory");
     return result;
 }
 
@@ -610,7 +562,7 @@ _STATIC_INLINE_ bool_t _lock_btr_64b(volatile uint64_t* mem, uint64_t bit)
 {
     bool_t result;
 
-    _ASM_VOLATILE_ ("lock; btr %2, %0; adc %1,%1" : "=m" ( *mem ) , "=b"(result) : "a"(bit) , "b"(0) : "cc" , "memory");
+    _ASM_VOLATILE_ ("lock; btrq %2, %0; adc %1,%1" : "=m" ( *mem ) , "=b"(result) : "a"(bit) , "b"(0) : "cc" , "memory");
     return result;
 }
 
@@ -622,6 +574,17 @@ _STATIC_INLINE_ bool_t bit_scan_forward64(uint64_t mask, uint64_t* lsb_position)
                         :"cc");
 
     return (mask != 0);
+}
+
+_STATIC_INLINE_ uint32_t bit_scan_forward32(uint32_t mask)
+{
+    uint32_t lsb_position;
+    _ASM_VOLATILE_ ("bsfl %1, %0 \n"
+                        :"=r"(lsb_position)
+                        :"r"(mask)
+                        :"cc");
+
+    return lsb_position;
 }
 
 _STATIC_INLINE_ bool_t bit_scan_reverse32(uint32_t value, uint32_t* msb_position)
@@ -822,6 +785,26 @@ _STATIC_INLINE_ void load_ymms_from_buffer(const uint256_t ymms[16])
 _STATIC_INLINE_ void atomic_mem_write_64b(uint64_t* mem, uint64_t val)
 {
     _ASM_VOLATILE_ ("movq %0, (%1)" : : "r" (val), "r" (mem) : "memory");
+}
+
+/**
+ * @brief This instruction is only supported starting from PTL
+ *
+ * @param msr_table - Linear address of a table of MSR addresses (8 bytes per address).
+ * @param msr_table_size - Number of elements in msr_table.
+ * @param data_table - Linear address of a table into which MSR data is stored (8 bytes per MSR).
+ * @param msr_bitmap - 64-bit bitmask of valid bits for the MSRs. Bit 0 is the valid bit for entry 0 in each table, etc.
+ */
+_STATIC_INLINE_ void rdmsr_list(const uint64_t* msr_table, uint8_t msr_table_size, uint64_t* data_table, uint64_t msr_bitmap)
+{
+    for (uint32_t i = 0; i < msr_table_size; i++)
+    {
+        tdx_sanity_check(i < 32, FATAL_ERROR_ID_275, 0);
+        if ((msr_bitmap & BIT(i)) != 0)
+        {
+            data_table[i] = ia32_rdmsr(msr_table[i]);
+        }
+    }
 }
 
 #endif /* SRC_COMMON_ACCESSORS_IA32_ACCESSORS_H_ */

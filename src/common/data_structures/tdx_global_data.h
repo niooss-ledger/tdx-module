@@ -164,7 +164,7 @@ typedef struct ALIGN(TDMR_ENTRY_ALIGNMENT) PACKED tdmr_entry_s
 
     uint64_t pamt_1g_base; /**< Base address of the PAMT_1G range */
     uint64_t pamt_2m_base; /**< Base address of the PAMT_2M range */
-    uint64_t pamt_4k_base; /**< Base address of the PAMT_4K range */
+    uint64_t pamt_4k_base; /**< Base address of the PAMT_4K range, or PAMT bitmap for dynamic PAMT */
 
     uint32_t num_of_pamt_blocks; /**< number of PAMT blocks in this TDMR region */
     uint32_t num_of_rsvd_areas;
@@ -357,6 +357,9 @@ typedef struct tdx_module_global_s
     uint8_t          num_fixed_ctrs;
     uint32_t         fc_bitmap;
 
+
+    bool_t is_arch_pebs_supported;
+
     // ATTRIBUTES fixed bits masks
     uint64_t     attributes_fixed0;   // Bit value of 0 means ATTRIBUTES bit must be 0
     uint64_t     attributes_fixed1;   // Bit value of 1 means ATTRIBUTES bit must be 1
@@ -390,6 +393,11 @@ typedef struct tdx_module_global_s
     debug_control_t debug_control;
     debug_message_t trace_buffer[TRACE_BUFFER_SIZE];
 #endif // DEBUGFEATURE_TDX_DBG_TRACE
+
+    // TODO: remove define once WA is removed
+    bool_t is_a0_wa_invoked;
+    bool_t is_gnr_a0_cpuid;
+    bool_t is_gnr_d_cpuid;
 } tdx_module_global_t;
 tdx_static_assert(offsetof(tdx_module_global_t, global_lock) % 2 == 0, global_lock);
 

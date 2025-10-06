@@ -197,8 +197,11 @@ api_error_type tdg_vp_enter(uint64_t flags, uint64_t reg_list_gpa)
 
     free_la(guest_state_p);
 
-    // If IA32_SPEC_CTRL is virtualized, write the VMCS' IA32_SPEC_CTRL shadow
-    conditionally_write_vmcs_ia32_spec_ctrl_shadow(tdcs_p, tdvps_p->guest_msr_state.ia32_spec_ctrl);
+    if (is_not_gnr_a0_stepping())
+    {
+        // If IA32_SPEC_CTRL is virtualized, write the VMCS' IA32_SPEC_CTRL shadow
+        conditionally_write_vmcs_ia32_spec_ctrl_shadow(tdcs_p, tdvps_p->guest_msr_state.ia32_spec_ctrl);
+    }
 
     // Restore the guest GPRs and enter the guest TD
     if (tdvps_p->management.vm_launched[vm_id] == true)

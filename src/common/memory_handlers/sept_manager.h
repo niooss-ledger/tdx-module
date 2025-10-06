@@ -363,7 +363,6 @@ _STATIC_INLINE_ bool_t sept_state_is_any_pending(ia32e_sept_t ept_entry)
     return sept_special_flags_lookup[idx].any_pending;
 }
 
-
 _STATIC_INLINE_ bool_t sept_state_is_any_pending_and_guest_acceptable(const ia32e_sept_t ept_entry)
 {
     uint64_t idx = SEPT_CONVERT_TO_ENCODING(ept_entry);
@@ -390,6 +389,13 @@ _STATIC_INLINE_ bool_t sept_state_is_guest_accessible_leaf(ia32e_sept_t ept_entr
     uint64_t idx = SEPT_CONVERT_TO_ENCODING(ept_entry);
     tdx_debug_assert(idx < MAX_SEPT_STATE_ENC);
     return sept_special_flags_lookup[idx].guest_accessible_leaf;
+}
+
+_STATIC_INLINE_ bool_t sept_state_is_guest_fully_accessible_leaf(ia32e_sept_t ept_entry)
+{
+    uint64_t idx = SEPT_CONVERT_TO_ENCODING(ept_entry);
+    tdx_debug_assert(idx < MAX_SEPT_STATE_ENC);
+    return sept_special_flags_lookup[idx].guest_fully_accessible_leaf;
 }
 
 _STATIC_INLINE_ bool_t septe_state_encoding_is_seamcall_allowed(uint64_t septe_state_enc, seamcall_leaf_opcode_t leaf_number)
@@ -549,17 +555,19 @@ _STATIC_INLINE_ void l2_sept_update_gpa_attr(
 /**
  * @brief
  * Get the architectural GPA attributes of the L2 SEPT entry.
- *  - If the entry is free, return only SVE.  Return VALID as 0.
- *  - Else if the entry is a leaf, return all attributes.  Return VALID as 1.
- *    - If the entry is a blocked leaf, return saved W bit (if is_blockedw) or saved RWXsXu bits (if !is_blockedw)
- *  - Else (non-leaf), return R, W, Xs, Xuand pwa as all-1 (even if they are 0 since the entry is blocked).  Return VALID as 1.
+ * See the SEPT spreadsheet for details.
+       1. If the entry is free, return only SVE.  Return VALID as 0.
+       2. Else if the entry is a leaf, return all attributes.  Return VALID as 1.
+          2.1. If the entry is a blocked leaf (L2_BLOCKED or L2_MMIO_BLOCKED):
+               2.1.1. If only blocked for writing (is_blockedw is true and is_pending is false):  Return saved W and PWA bits from TDW and TDPWA
+               2.1.2. Else (blocked for any access):  return the saved R, W, Xs, Xu and PWA bits from TDR, TDW, TDXS, TDXU and TDPWA
+       3. Else (non-leaf), return RWXsXu as all-1 (even if they are 0 since the entry is blocked).  Return VALID as 1.
  *
  *  @param l2_sept_entry_ptr - pointer to the L2 sept entry
  *  @param is_blockedw - BLOCKEDW state of the parent L1 entry
+ *  @param is_pending - pending state of the parent L1 entry
  */
-_STATIC_INLINE_ gpa_attr_single_vm_t l2_sept_get_gpa_attr(
-    const ia32e_sept_t *const l2_sept_entry_ptr,
-    const bool_t is_blockedw)
+_STATIC_INLINE_ gpa_attr_single_vm_t l2_sept_get_gpa_attr(const ia32e_sept_t *const l2_sept_entry_ptr, const bool_t is_blockedw, const bool_t is_pending)
 {
     gpa_attr_single_vm_t gpa_attr_single_vm = {.raw = 0};
 
@@ -586,12 +594,13 @@ _STATIC_INLINE_ gpa_attr_single_vm_t l2_sept_get_gpa_attr(
             {
                 // Saved W bit returned either way
                 gpa_attr_single_vm.w = l2_sept_entry_ptr->l2_encoding.tdwr;
-                if (!is_blockedw)
+                gpa_attr_single_vm.pwa = l2_sept_entry_ptr->l2_encoding.tdpwa;
+
+                if (!is_blockedw || is_pending)
                 {
                     gpa_attr_single_vm.r = l2_sept_entry_ptr->l2_encoding.mt0_tdrd;
                     gpa_attr_single_vm.xs = l2_sept_entry_ptr->l2_encoding.mt1_tdxs;
                     gpa_attr_single_vm.xu = l2_sept_entry_ptr->l2_encoding.mt2_tdxu;
-                    gpa_attr_single_vm.pwa = l2_sept_entry_ptr->l2_encoding.tdpwa;
                 }
             }
         }
@@ -884,10 +893,10 @@ _STATIC_INLINE_ void sept_unblock(ia32e_sept_t* ept_entry)
  * @brief  Unblock the L2 Secure EPT entry
  *         If the SEPT entry was not blocked (L2_NL_BLOCKED, L2_BLOCKED), do nothing.
  *         Else:
- *          - Restore the state to L2_MAPPED (if leaf) or L2_NL_MAPPED (if non-leaf).
- *          - If leaf, restore RWXsXu
- *         Set TDRD, TDWR, TDXS and TDXU are set to their proper values:
- *         TDRD, TDXS and TDXU are part of MT, and TDWR is set to 0.
+ *         - Restore the state to L2_MAPPED (if leaf) or L2_NL_MAPPED (if non-leaf).
+ *         - If leaf:
+ *           - Restore R, W, Xs, Xu and PWA from TDRD, TDWR, TDXS, TDXU and TDPWA
+ *           - Set TDRD, TDWR, TDXS, TDXU and TDPWA to their proper values: TDRD, TDXS and TDXU are part of MT, TDWR and TDPWA are set to 0.
  *
  * @param ept_entry - Pointer to SEPT entry to be unblocked
  */
@@ -907,20 +916,37 @@ _STATIC_INLINE_ void sept_l2_unblock(ia32e_sept_t* ept_entry)
     else if (is_l2_sept_blocked(&tmp_ept_entry))
     {
         sept_l2_update_state(&tmp_ept_entry, SEPT_STATE_L2_MAPPED_MASK);
-        tmp_ept_entry.l2_encoding.r  = tmp_ept_entry.l2_encoding.mt0_tdrd;
-        tmp_ept_entry.l2_encoding.w  = tmp_ept_entry.l2_encoding.tdwr;
-        tmp_ept_entry.l2_encoding.x  = tmp_ept_entry.l2_encoding.mt1_tdxs;
+        tmp_ept_entry.l2_encoding.r = tmp_ept_entry.l2_encoding.mt0_tdrd;
+        tmp_ept_entry.l2_encoding.w = tmp_ept_entry.l2_encoding.tdwr;
+        tmp_ept_entry.l2_encoding.x = tmp_ept_entry.l2_encoding.mt1_tdxs;
         tmp_ept_entry.l2_encoding.xu = tmp_ept_entry.l2_encoding.mt2_tdxu;
+        tmp_ept_entry.l2_encoding.pwa = tmp_ept_entry.l2_encoding.tdpwa;
         tmp_ept_entry.mt = MT_WB;
         tmp_ept_entry.l2_encoding.tdwr = 0;
+        tmp_ept_entry.l2_encoding.tdpwa = 0;
 
         atomic_mem_write_64b(&ept_entry->raw, tmp_ept_entry.raw);
     }
-
     // Else - The SEPT entry was not blocked, do nothing
-
 }
 
+_STATIC_INLINE_ void sept_l2_blockw(ia32e_sept_t* ept_entry)
+{
+    ept_entry->l2_encoding.tdwr = ept_entry->w;
+    ept_entry->l2_encoding.tdpwa = ept_entry->l2_encoding.pwa;
+    ept_entry->l2_encoding.pwa = 0;
+    ept_entry->l2_encoding.w = 0;
+    sept_l2_update_state(ept_entry, SEPT_STATE_L2_BLOCKED_MASK);
+}
+
+_STATIC_INLINE_ void sept_l2_unblockw(ia32e_sept_t* ept_entry)
+{
+    sept_l2_update_state(ept_entry, SEPT_STATE_L2_MAPPED_MASK);
+    ept_entry->l2_encoding.w = ept_entry->l2_encoding.tdwr;
+    ept_entry->l2_encoding.pwa = ept_entry->l2_encoding.tdpwa;
+    ept_entry->l2_encoding.tdwr = 0;
+    ept_entry->l2_encoding.tdpwa = 0;
+}
 
 _STATIC_INLINE_ pa_t sept_get_pa(const ia32e_sept_t *const sept_entry)
 {

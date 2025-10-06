@@ -27,6 +27,7 @@
 #include "tdx_basic_defs.h"
 #include TDX_ERROR_CODES_DEFS_HEADER
 #include OP_STATE_LOOKUP_HEADER
+#include CPUID_CONFIGURATIONS_HEADER
 #include "helpers/migration.h"
 #include "helpers/helpers.h"
 #include "x86_defs/x86_defs.h"
@@ -40,7 +41,6 @@ static api_error_type handle_command_by_type(migs_index_and_cmd_t migs_i_and_cmd
 {
     if (migs_i_and_cmd.command == MIGS_INDEX_COMMAND_NEW)
     {
-
 
         /*
          * Start the import session.
@@ -190,6 +190,12 @@ static api_error_type handle_command_by_type(migs_index_and_cmd_t migs_i_and_cmd
         migsc_p->interrupted_state.status = TDX_SUCCESS;
         migsc_p->interrupted_state.extended_err_info[0] = 0;
         migsc_p->interrupted_state.extended_err_info[1] = 0;
+
+        // set the CPUID_VALID entries for all CPUID(0x23) sub-leaves known by the TDX module to true. for all other CPUID_VALID, set false.
+        for (uint32_t entry = 0; entry < MAX_NUM_CPUID_LOOKUP; entry++)
+        {
+            tdcs_p->executions_ctl_fields.cpuid_valid[entry] = (cpuid_lookup[entry].leaf_subleaf.leaf == 0x23);
+        }
     }
     else // migs_i_and_cmd.command == MIGS_INDEX_COMMAND_RESUME
     {
@@ -290,7 +296,7 @@ api_error_type tdh_import_state_immutable(uint64_t target_tdr_pa, uint64_t hpa_a
 
     if (misc_enable.limit_cpuid_maxval != 0)
     {
-        TDX_ERROR("limit cpuid maxval bit should not be set\n");
+        TDX_ERROR("Boot NT4 bit should not be set\n");
         return_val = TDX_LIMIT_CPUID_MAXVAL_SET;
         goto EXIT;
     }
@@ -553,6 +559,7 @@ api_error_type tdh_import_state_immutable(uint64_t target_tdr_pa, uint64_t hpa_a
     if (return_val != TDX_SUCCESS)
     {
         tdcs_p->management_fields.op_state = OP_STATE_FAILED_IMPORT;
+        return_val = api_error_fatal(return_val);
         goto EXIT;
     }
 

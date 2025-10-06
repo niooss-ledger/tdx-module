@@ -117,7 +117,6 @@ api_error_type tdh_mng_create(uint64_t target_tdr_pa, hkid_api_input_t hkid_info
         goto EXIT;
     }
 
-
     // ALL_CHECKS_PASSED:  The function is guaranteed to succeed
 
     // Mark the HKID entry in the KOT as assigned

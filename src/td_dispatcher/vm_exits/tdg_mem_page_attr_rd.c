@@ -126,11 +126,10 @@ api_error_type tdg_mem_page_attr_rd(pa_t page_gpa)
         }
 
         /**
-         * Get the L2 attributes.
-         *  L2 SEPT entry does not hold a BLOCKEDW indication of its own, so provide it based on the L1 state.
+         * Get the L2 attributes.  L2 SEPT entry does not hold BLOCKEDW or PENDING indications
+         * of its own, so provide them based on the L1 state.
          */
-        gpa_attr.attr_arr[vm_id] = l2_sept_get_gpa_attr(l2_septe_ptr,
-                                        sept_state_is_any_blockedw(page_sept_entry_copy));
+        gpa_attr.attr_arr[vm_id] = l2_sept_get_gpa_attr(l2_septe_ptr, sept_state_is_any_blockedw(page_sept_entry_copy), sept_state_is_any_pending(page_sept_entry_copy));
 
         free_la(l2_septe_ptr);
     }

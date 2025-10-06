@@ -399,11 +399,11 @@ typedef struct tdvps_guest_msr_state_s
     uint64_t ia32_spec_ctrl;
     uint64_t ia32_umwait_control;
     uint64_t ia32_tsx_ctrl;
-    uint64_t ia32_perfevtselx[NUM_PMC];
+    uint64_t ia32_pmc_gp_cfg_ax[NUM_PMC];
     uint64_t msr_offcore_rspx[2];
     uint64_t ia32_xfd;
     uint64_t ia32_xfd_err;
-    uint64_t ia32_fixed_ctrx[MAX_FIXED_CTR];
+    uint64_t ia32_pmc_fx_ctrx[MAX_FIXED_CTR];
     uint64_t ia32_perf_metrics;
     uint64_t ia32_fixed_ctr_ctrl;
     uint64_t ia32_perf_global_status;
@@ -411,10 +411,9 @@ typedef struct tdvps_guest_msr_state_s
     uint64_t msr_pebs_data_cfg;
     uint64_t msr_pebs_ld_lat;
     uint64_t msr_pebs_frontend;
-    uint64_t ia32_a_pmcx[NUM_PMC];
+    uint64_t ia32_pmc_gp_ctrx[NUM_PMC];
     uint64_t ia32_ds_area;
-    uint64_t ia32_fixed_ctr_reload_cfg[4];
-    uint64_t ia32_fixed_ctr_ext[4];
+    uint64_t ia32_fixed_ctr_ext[NUM_PMC];
     uint64_t ia32_a_pmc_reload_cfg[NUM_PMC];
     uint64_t ia32_a_pmc_ext[NUM_PMC];
     uint64_t ia32_xss;

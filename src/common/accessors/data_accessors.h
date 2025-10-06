@@ -57,7 +57,6 @@ _STATIC_INLINE_ tdx_module_local_t* get_local_data(void)
     return (tdx_module_local_t*)local_data_addr;
 }
 
-
 _STATIC_INLINE_ sysinfo_table_t* get_sysinfo_table(void)
 {
     uint64_t sysinfo_table_addr;

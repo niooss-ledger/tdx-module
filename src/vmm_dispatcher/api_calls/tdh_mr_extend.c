@@ -144,7 +144,7 @@ api_error_type tdh_mr_extend(uint64_t target_page_gpa, uint64_t target_tdr_pa)
     page_hpa.raw = leaf_ept_entry_to_hpa(page_sept_entry_copy, page_gpa.raw, page_level_entry);
 
     // Map the page to measure
-    page_ptr = map_pa(page_hpa.raw_void, TDX_RANGE_RO);
+    page_ptr = map_pa_with_hkid(page_hpa.raw_void, tdr_ptr->key_management_fields.hkid, TDX_RANGE_RO);
 
     /**
      *  Update the TD measurements with the page's measurement using SHA384.

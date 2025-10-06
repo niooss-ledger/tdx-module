@@ -183,6 +183,7 @@ api_error_type tdh_mem_range_unblock(page_info_api_input_t gpa_page_info, uint64
             TDX_ERROR("TLB tracking not done\n");
             return_val = TDX_TLB_TRACKING_NOT_DONE;
         }
+
         if (return_val != TDX_SUCCESS)
         {
             TDX_ERROR("Blocked SEPT page TLB tracking is not complete\n");

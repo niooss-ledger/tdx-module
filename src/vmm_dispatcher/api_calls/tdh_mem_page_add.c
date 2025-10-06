@@ -186,11 +186,12 @@ api_error_type tdh_mem_page_add(page_info_api_input_t gpa_page_info,
     cache_aligned_copy_direct((uint64_t)source_page_ptr, (uint64_t)td_page_ptr, TDX_PAGE_SIZE_IN_BYTES);
 
     // Update the parent EPT entry with the new TD page HPA and SEPT_PRESENT state
-    sept_set_leaf_unlocked_entry_given_hpa_and_hkid(page_sept_entry_ptr,
-                                                    SEPT_PERMISSIONS_RWX,
-                                                    td_page_pa,
-                                                    tdr_ptr->key_management_fields.hkid,
-                                                    SEPT_STATE_MAPPED_MASK);
+    sept_set_leaf_unlocked_entry_given_hpa_and_hkid(
+        page_sept_entry_ptr,
+        SEPT_PERMISSIONS_RWX,
+        td_page_pa,
+        tdr_ptr->key_management_fields.hkid,
+        SEPT_STATE_MAPPED_MASK);
 
     /**
      *  Update the TD measurements with the API string and page GPA

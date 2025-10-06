@@ -33,7 +33,6 @@
 #include TDX_ERROR_CODES_DEFS_HEADER
 #include "helpers/helpers.h"
 
-
 /**
  * migsc_init
  * Initialize the migration stream context and the crypto encryption context
@@ -106,4 +105,3 @@ void copy_mbmd(mbmd_t* mbmd_dst, mbmd_t* mbmd_src)
 {
     tdx_memcpy(mbmd_dst, sizeof(mbmd_t), mbmd_src, sizeof(mbmd_t));
 }
-

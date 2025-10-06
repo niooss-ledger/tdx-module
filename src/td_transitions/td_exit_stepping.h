@@ -38,6 +38,7 @@ typedef enum {
     FILTER_FAIL_TDEXIT_WRONG_APIC_MODE,
     FILTER_FAIL_TDENTER_EPFS,
     FILTER_FAIL_SEPT_TREE_BUSY,
+    FILTER_FAIL_TDEXIT_RDRAND
 } stepping_filter_e;
 
 #define STEPPING_EPF_THRESHOLD 6   // Threshold of confidence in detecting EPT fault-based stepping in progress

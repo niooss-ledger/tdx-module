@@ -137,7 +137,7 @@ static api_error_type tdh_mng_rdwr(uint64_t target_tdr_pa, uint64_t requested_fi
     if (write)
     {
         return_val = md_write_element(MD_CTX_TD, field_id, access_type, access_qual,
-                                      md_ctx, wr_data, wr_mask, &rd_value);
+                                      md_ctx, wr_data, wr_mask, &rd_value, true);
     }
     else
     {

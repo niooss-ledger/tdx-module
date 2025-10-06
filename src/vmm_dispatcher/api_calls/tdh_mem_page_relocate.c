@@ -199,6 +199,7 @@ api_error_type tdh_mem_page_relocate(uint64_t source_page_pa,
             TDX_ERROR("TLB tracking not done\n");
             return_val = TDX_TLB_TRACKING_NOT_DONE;
         }
+
         if (return_val != TDX_SUCCESS)
         {
             return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);

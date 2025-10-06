@@ -183,7 +183,7 @@ static api_error_type tdh_vp_rd_wr(uint64_t target_tdvpr_pa,
     if (write)
     {
         return_val = md_write_element(MD_CTX_VP, requested_field_id, access_type, access_qual,
-                                      md_ctx, wr_data, wr_request_mask, &rd_data);
+                                      md_ctx, wr_data, wr_request_mask, &rd_data, true);
     }
     else
     {

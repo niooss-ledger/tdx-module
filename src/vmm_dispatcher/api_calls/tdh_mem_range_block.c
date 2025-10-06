@@ -72,17 +72,18 @@ static void block_l2_sept_entry(ia32e_sept_t* l2_sept_entry_ptr, bool_t is_l1_bl
     ia32e_sept_t tmp_ept_entry = { .raw = l2_sept_entry_ptr->raw };
 
     // Block the L2 Secure EPT entry
-    // If leaf:
-    //      If is_blockedw, save the RXsXu bits to TDR, TDXS and TDXU
-    //      Else, save the RWXsXu bits to TDR, TDW, TDXS and TDXU
-    // Clear RXsXu bits to 0
-    // Set the state to L2_BLOCKED (if leaf) or L2_NL_BLOCKED (if non-leaf)
+    // 1. Set the state to L2_BLOCKED(if leaf) or L2_NL_BLOCKED(if non - leaf)
+    // 2. If leaf :
+    //     2.1.If is_blockedw, save the R, Xs and Xu bits to TDRD, TDXS and TDXU
+    //     2.2.Else, save the R, W, Xs, Xu and PWA bits to TDRD, TDWR, TDXS, TDXU and TDPWA
+    // 3. Clear R, W, Xs, Xu and PWA bits bits to 0
 
     if (is_secure_ept_leaf_entry(&tmp_ept_entry))
     {
         if (!is_l1_blockedw)
         {
             tmp_ept_entry.l2_encoding.tdwr = tmp_ept_entry.l2_encoding.w;
+            tmp_ept_entry.l2_encoding.tdpwa = tmp_ept_entry.l2_encoding.pwa;
         }
 
         tmp_ept_entry.l2_encoding.mt0_tdrd = tmp_ept_entry.l2_encoding.r;
@@ -96,10 +97,11 @@ static void block_l2_sept_entry(ia32e_sept_t* l2_sept_entry_ptr, bool_t is_l1_bl
         sept_l2_update_state(&tmp_ept_entry, SEPT_STATE_L2_NL_BLOCKED_MASK);
     }
 
-    tmp_ept_entry.l2_encoding.r  = 0;
-    tmp_ept_entry.l2_encoding.w  = 0;
-    tmp_ept_entry.l2_encoding.x  = 0;
+    tmp_ept_entry.l2_encoding.r = 0;
+    tmp_ept_entry.l2_encoding.w = 0;
+    tmp_ept_entry.l2_encoding.x = 0;
     tmp_ept_entry.l2_encoding.xu = 0;
+    tmp_ept_entry.l2_encoding.pwa = 0;
 
     atomic_mem_write_64b(&l2_sept_entry_ptr->raw, tmp_ept_entry.raw);
 }

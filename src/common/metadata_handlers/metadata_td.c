@@ -425,6 +425,7 @@ static bool_t check_cpuid_compatibility_and_set_immutable_cpuid_flags(tdcs_t* td
                 return false;
             }
         }
+
     }
     else if (leaf == 0x80000000)
     {
@@ -751,6 +752,19 @@ api_error_code_e md_td_read_field(md_field_id_t field_id, const md_lookup_t* ent
                 break;
             case MD_TDCS_CPUID_VALUES_FIELD_ID:
                 tdx_debug_assert(entry->num_of_elem == 2);
+
+                // Check if encoded leaf and subleaf exist in the lookup table
+                uint32_t leaf, subleaf;
+                md_cpuid_field_id_get_leaf_subleaf(field_id, &leaf, &subleaf);
+                uint32_t cpuid_lookup_index = get_cpuid_lookup_entry(leaf, subleaf);
+                if (leaf == 0x23)
+                {
+                    if (md_ctx.tdcs_ptr->cpuid_values[cpuid_lookup_index].low == 0 && md_ctx.tdcs_ptr->cpuid_values[cpuid_lookup_index].high == 0)
+                    {
+                        return TDX_METADATA_FIELD_SKIP;
+                    }
+                }
+
                 value[0] = elem_ptr[0];
                 value[1] = elem_ptr[1];
                 break;
@@ -778,8 +792,8 @@ api_error_code_e md_td_read_field(md_field_id_t field_id, const md_lookup_t* ent
 }
 
 api_error_code_e md_td_write_element(md_field_id_t field_id, const md_lookup_t* entry, md_access_t access_type,
-        md_access_qualifier_t access_qual, md_context_ptrs_t md_ctx, uint64_t wr_value, uint64_t wr_request_mask,
-        uint64_t* old_value)
+                                     md_access_qualifier_t access_qual, md_context_ptrs_t md_ctx, uint64_t wr_value,
+                                     uint64_t wr_request_mask, uint64_t* old_value, bool_t wr_mask_valid)
 {
     uint64_t rd_mask = 0, wr_mask = 0, combined_wr_mask = 0;
     uint64_t read_value;
@@ -795,6 +809,7 @@ api_error_code_e md_td_write_element(md_field_id_t field_id, const md_lookup_t* 
     }
 
     // Narrow down the bits to be written with the input mask
+
     combined_wr_mask = wr_mask & wr_request_mask;
 
     // Check if the requested field is writable.
@@ -804,7 +819,7 @@ api_error_code_e md_td_write_element(md_field_id_t field_id, const md_lookup_t* 
         return TDX_METADATA_FIELD_NOT_WRITABLE;
     }
 
-    if (!md_check_forbidden_bits_unchanged(read_value, wr_value, wr_request_mask, wr_mask, rd_mask))
+    if (wr_mask_valid && !md_check_forbidden_bits_unchanged(read_value, wr_value, wr_request_mask, wr_mask, rd_mask))
     {
         return TDX_METADATA_FIELD_VALUE_NOT_VALID;
     }
@@ -971,7 +986,7 @@ tdx_static_assert(MD_TDCS_EXECUTION_CONTROLS_CLASS_CODE < MD_TDCS_CPUID_CLASS_CO
 
 api_error_code_e md_td_write_field(md_field_id_t field_id, const md_lookup_t* entry,md_access_t access_type,
                                    md_access_qualifier_t access_qual, md_context_ptrs_t md_ctx,
-                                   uint64_t value[MAX_ELEMENTS_IN_FIELD], uint64_t wr_request_mask, bool_t is_import)
+                                   uint64_t value[MAX_ELEMENTS_IN_FIELD], uint64_t wr_request_mask, bool_t is_import, bool_t wr_mask_valid)
 {
     // Since we read a multiple elements of the same field, we would like to directly access the ptr of
     // the first element of the field, which will save us the time of searching the offset and size
@@ -1001,7 +1016,11 @@ api_error_code_e md_td_write_field(md_field_id_t field_id, const md_lookup_t* en
     }
 
     // Narrow down the bits to be written with the input mask
-    combined_wr_mask = wr_mask & wr_request_mask;
+    combined_wr_mask = wr_mask;
+    if (wr_mask_valid)
+    {
+        combined_wr_mask &= wr_request_mask;
+    }
 
     // Check if the requested field is writable.
     // Note that there is no check for readable; we don't have write-only
@@ -1120,13 +1139,13 @@ api_error_code_e md_td_write_field(md_field_id_t field_id, const md_lookup_t* en
                     return TDX_METADATA_FIELD_VALUE_NOT_VALID;
                 }
 
-                md_ctx.tdcs_ptr->management_fields.num_l2_vms = (uint16_t)value[0];
-
                 // Now that we know the number of L2 VMs, check that enough pages have been allocated for TDCS
                 if (!is_required_tdcs_allocated(md_ctx.tdr_ptr, (uint16_t)value[0]))
                 {
-                    return TDX_TDCS_NOT_ALLOCATED;
+                    return TDX_METADATA_FIELD_NOT_ALLOCATED;
                 }
+
+                md_ctx.tdcs_ptr->management_fields.num_l2_vms = (uint16_t)value[0];
 
                 write_done = true;   // Value is only checked
 
@@ -1234,12 +1253,14 @@ api_error_code_e md_td_write_field(md_field_id_t field_id, const md_lookup_t* en
             }
             case MD_TDCS_VIRTUAL_IA32_ARCH_CAPABILITIES_FIELD_ID:
             {
-                ia32_arch_capabilities_t ia32_arch_cap = { .raw = value[0] };
-                if (!check_virt_ia32_arch_capabilities(md_ctx.tdcs_ptr, ia32_arch_cap))
+                if (is_not_gnr_a0_stepping())
                 {
-                    return TDX_METADATA_FIELD_VALUE_NOT_VALID;
+                    ia32_arch_capabilities_t ia32_arch_cap = {.raw = value[0]};
+                    if (!check_virt_ia32_arch_capabilities(md_ctx.tdcs_ptr, ia32_arch_cap))
+                    {
+                        return TDX_METADATA_FIELD_VALUE_NOT_VALID;
+                    }
                 }
-
                 break;
             }
             default:
@@ -1258,18 +1279,13 @@ api_error_code_e md_td_write_field(md_field_id_t field_id, const md_lookup_t* en
             elem_ptr = (uint64_t*)(first_elem_addr + ((uint64_t)i * elem_size));
             read_value = *elem_ptr & md_get_element_size_mask(entry->field_id.element_size_code);
 
-            // The caller must not attempt to modify any non-writable bit.
-            // Calculate the forbidden bit mask as follows:
-            // forbidden_mask[N] is 1 if and only if both conditions are met:
-            //    - Non-writable:  element_wr_mask[N] == 0
-            //    - Write attempt: wr_mask[N] == 1
-            // Then check if any of the forbidden bits is being modified.
-
-            uint64_t forbidden_mask = wr_request_mask & ~wr_mask;
-
-            if ((read_value & forbidden_mask) != (value[i] & forbidden_mask))
+            // future features might use write_field not as part of import
+            if ((MD_IMPORT_IMMUTABLE != access_type) && (MD_IMPORT_MUTABLE != access_type))
             {
-                return TDX_METADATA_FIELD_VALUE_NOT_VALID;
+                if (!md_check_forbidden_bits_unchanged(read_value, value[i], wr_request_mask, wr_mask, rd_mask))
+                {
+                    return TDX_METADATA_FIELD_VALUE_NOT_VALID;
+                }
             }
 
             // Update only the relevant bits per the write mask

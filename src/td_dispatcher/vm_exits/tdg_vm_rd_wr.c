@@ -99,7 +99,7 @@ static api_error_type tdg_vm_rd_wr(md_field_id_t field_id, uint64_t vm_id, tdx_m
     if (write)
     {
         return_val = md_write_element(MD_CTX_TD, field_id, MD_GUEST_WR, access_qual,
-                                      md_ctx, wr_value, wr_request_mask, &rd_value);
+                                      md_ctx, wr_value, wr_request_mask, &rd_value, true);
     }
     else
     {

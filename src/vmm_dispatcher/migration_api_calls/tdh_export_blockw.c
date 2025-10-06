@@ -216,6 +216,32 @@ api_error_type tdh_export_blockw(gpa_list_info_t gpa_list_info, uint64_t target_
             // Update the SEPT entry in memory
             atomic_mem_write_64b(&sept_entry_ptr->raw, new_sept_entry.raw);
 
+            // If the page is guest accessible (MAPPED or EXPORTED_DIRTY),
+            // then block any L2 aliases for writing.
+            // Otherwise, L2 aliases are already blocked.
+            if (sept_state_is_guest_accessible_leaf(sept_entry_copy))
+            {
+                // Block any L2 aliases for writing
+                for (uint16_t vm_id = 1; vm_id <= tdcs_p->management_fields.num_l2_vms; vm_id++)
+                {
+                    if (sept_state_is_aliased(sept_entry_copy, vm_id))
+                    {
+                        ia32e_sept_t* l2_septe_ptr = NULL;
+                        // Walk the L2 SEPT to locate the entry
+                        return_val = l2_sept_walk(tdr_p, tdcs_p, vm_id, gpa, &sept_entry_level,
+                                                  &l2_septe_ptr);
+
+                        if (return_val != TDX_SUCCESS)
+                        {
+                            extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_td_handle(target_tdr_pa, vm_id, sept_entry_level, gpa.raw, *l2_septe_ptr);
+                            fatal_error(FATAL_ERROR_ID_4, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
+                        }
+
+                        sept_l2_blockw(l2_septe_ptr);
+                        free_la(l2_septe_ptr);
+                    }
+                }
+            }
 
             // Update the TD's BW_EPOCH
             tdcs_p->migration_fields.bw_epoch.raw = tdcs_p->epoch_tracking.epoch_and_refcount.td_epoch;

@@ -124,7 +124,7 @@ const cpuid_lookup_t cpuid_lookup[MAX_NUM_CPUID_LOOKUP] = {
  [6] = { .leaf_subleaf = {.leaf = 0x7, .subleaf = 0x1},
   .valid_entry = true,
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff },
-  .fixed0_or_dynamic = { .eax = 0xfb77e20f, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xfffdfbcf },
+  .fixed0_or_dynamic = { .eax = 0xfb77e20f, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xfffdbbcf },
   .config_index = 6
   },
  [14] = { .leaf_subleaf = {.leaf = 0x7, .subleaf = 0x2},
@@ -561,7 +561,7 @@ const cpuid_configurable_t cpuid_configurable[MAX_NUM_CPUID_CONFIG] = {
   },
  [6] = { .leaf_subleaf = {.leaf = 0x7, .subleaf = 0x1},
   .valid_entry = true,
-  .allow_direct = { .eax = 0x4881db0, .edx = 0x20430 },
+  .allow_direct = { .eax = 0x4881db0, .edx = 0x24430 },
   .lookup_index = 6
   },
  [10] = { .leaf_subleaf = {.leaf = 0x7, .subleaf = 0x2},

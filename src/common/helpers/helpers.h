@@ -449,19 +449,6 @@ _STATIC_INLINE_ void tdx_memcpy(void * dst, uint64_t dst_bytes, void * src, uint
                     :"memory");
 }
 
-_STATIC_INLINE_ void tdx_memcpy_dw(void *dst, uint64_t dst_bytes, void *src, uint64_t nbytes)
-{
-    volatile uint64_t junk_a, junk_b;
-
-    tdx_sanity_check(dst_bytes >= nbytes, FATAL_ERROR_ID_184, 2);
-    tdx_sanity_check((nbytes % 4) == 0, FATAL_ERROR_ID_185, 4);
-
-    _ASM_VOLATILE_("rep; movsd;"
-                   : "=S"(junk_a), "=D"(junk_b)
-                   : "c"(nbytes / 4), "S"(src), "D"(dst)
-                   : "memory");
-}
-
 _STATIC_INLINE_ bool_t tdx_memcmp_safe(const void * a, const void * b, uint64_t nbytes)
 {
     volatile uint8_t result = 0;
@@ -491,21 +478,6 @@ _STATIC_INLINE_ bool_t tdx_memcmp(void * a, void * b, uint64_t nbytes)
         return false;
     }
     return true;
-}
-
-_STATIC_INLINE_ bool_t tdx_safe_memcmp(const void * a, const void * b, uint64_t nbytes)
-{
-    volatile uint8_t result = 0;
-
-    volatile uint8_t* a_8 = (uint8_t*)a;
-    volatile uint8_t* b_8 = (uint8_t*)b;
-
-    for (uint64_t i = 0; i < nbytes; i++)
-    {
-        result |= (a_8[i] ^ b_8[i]);
-    }
-
-    return (result == 0);
 }
 
 _STATIC_INLINE_ bool_t tdx_memcmp_to_zero(void *a, uint64_t nBytes)
@@ -859,7 +831,6 @@ api_error_type lock_sept_check_and_walk_private_gpa(
         bool_t* is_sept_locked
         );
 
-
 /**
  * @brief Same as lock_sept_check_and_walk_private_gpa, but walks until reaches any leaf,
  *        instead of specific requested level.
@@ -925,14 +896,6 @@ api_error_type lock_sept_check_and_walk_private_gpa_to_leaf(
 bool_t verify_page_info_input(page_info_api_input_t gpa_page_info, ept_level_t min_level, ept_level_t max_level);
 
 /**
- * @brief Returns the page size per given ept_level
- * @param ept_level
- *
- * @return uint64_t
-*/
-uint64_t get_page_size_per_level(ept_level_t ept_level);
-
-/**
  * @brief Translates the GPA and returns requested EPT entry, and the reached walking level.
  *
  * @param tdcs_p - Linear pointer to the TDCS - used to get GPAW, SEPTP and acquire SEPT lock.
@@ -978,24 +941,6 @@ api_error_code_e check_walk_and_map_guest_side_gpa(
         uint16_t hkid,
         mapping_type_t mapping_type,
         bool_t check_gpa_is_private,
-        void ** la
-        );
-
-/**
- * @brief If shared bit is 1, walks the shared EPT (taken from the TD VMCS)
- *        Else walk the SEPT and finally maps the translated GPA
- *
- * @param tdcs_p Linear pointer to the TDCS - used to get GPAW and SEPTP
- * @param gpa GPA - sGuest Physical Address that needs to be checked and translated.
- * @param hkid HKID to be used during the SEPT page walk (accesses to SEPT entries)
- * @param mapping_type RW access to mapped linear address
- * @param la Pointer to linear address mapped from translated GPA
- */
-void walk_and_map_guest_side_gpa(
-        const tdcs_t *const tdcs_p,
-        const pa_t gpa,
-        const uint16_t hkid,
-        const mapping_type_t mapping_type,
         void ** la
         );
 
@@ -1485,33 +1430,18 @@ _STATIC_INLINE_ bool_t is_tsx_supported_in_tdcs(tdcs_t * tdcs_ptr)
     return tdcs_ptr->executions_ctl_fields.cpuid_flags.tsx_supported;
 }
 
+_STATIC_INLINE_ bool_t is_perfmon_and_pebs_available_supported_in_tdcs (tdcs_t * tdcs_ptr)
+{
+    return tdcs_ptr->executions_ctl_fields.attributes.perfmon &&
+        !get_global_data()->plt_common_config.ia32_misc_enable.pebs_unavailable;
+}
+
 _STATIC_INLINE_ bool_t is_idt_vectoring_info_valid(void)
 {
     vmx_idt_vectoring_info_t idt_vectoring_info;
     ia32_vmread(VMX_VM_EXIT_IDT_VECTOR_FIELD_ENCODE, &idt_vectoring_info.raw);
 
     return idt_vectoring_info.valid;
-}
-
-/**
- * @note - Assuming that value is power of two
-*/
-_STATIC_INLINE_ uint64_t get_ln2_value(uint64_t value)
-{
-    if (value == 0)
-    {
-        fatal_error(FATAL_ERROR_ID_39, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
-    }
-
-    uint64_t lsb_position;
-    (void)bit_scan_forward64(value, &lsb_position);
-
-    return lsb_position;
-}
-
-_STATIC_INLINE_ bool_t is_pwr_of_2(const uint64_t value)
-{
-	return (value && ((value & (value - 1)) == 0));
 }
 
 _STATIC_INLINE_ uint64_t get_gpa_alignment(const page_info_api_input_t gpa_mapping)
@@ -1663,19 +1593,14 @@ _STATIC_INLINE_ uint32_t crystal_clock_virt_to_real(uint32_t crystal_clock)
  */
 void send_self_ipi(apic_delivery_mode_t delivery_mode, uint32_t vector);
 
-/**
- * @brief Initialize the LFSR
- *
- * @return False if there's no sufficient entropy, otherwise True
- */
-bool_t lfsr_init_seed (uint32_t* lfsr_value);
+#define RDRAND_RETRIES_LIMIT 10
 
 /**
- * @brief
+ * @brief Have RETRY_LIMIT rertries to get a 64 bit random number
  *
- * @return True
+ * @return True if succeeded, false otherwise
  */
-uint32_t lfsr_get_random (void);
+bool_t get_random_64b(uint64_t* rand);
 
 /**
  * @brief Helper functions that establish if a SEAMCALL allowed or specific operation required
@@ -1716,7 +1641,6 @@ _STATIC_INLINE_ bool_t op_state_is_import_in_progress(op_state_e op_state)
     tdx_debug_assert(op_state < NUM_OP_STATES);
     return state_flags_lookup[op_state].import_in_progress;
 }
-
 
 _STATIC_INLINE_ bool_t op_state_is_seamcall_allowed(seamcall_leaf_opcode_t current_leaf,
                                                     op_state_e op_state, bool_t other_td)
@@ -1774,6 +1698,7 @@ typedef enum
     MSR_BITMAP_DYN_XFD,
     MSR_BITMAP_DYN_PKS,
     MSR_BITMAP_DYN_TSX,
+    MSR_BITMAP_PERFMON_AND_LEGACY_PEBS,
     MSR_BITMAP_DYN_OTHER
 } msr_bitmap_bit_type;
 
@@ -1827,9 +1752,10 @@ void init_imported_td_state_mutable (tdcs_t * tdcs_ptr);
  * @brief Cross-check TD-scope immutable state for correctness
  *        Called at the end of TD init or end of TD metadata import
  * @param tdcs_ptr
+ * @param is_import
  * @return
  */
-bool_t td_immutable_state_cross_check(tdcs_t* tdcs_ptr);
+api_error_type td_immutable_state_cross_check(tdcs_t* tdcs_ptr, bool_t is_import);
 
 /**
  * init_imported_td_state_immutable /
@@ -2024,7 +1950,6 @@ void complete_cpuid_handling(tdx_module_global_t* tdx_global_data_ptr);
  * @return True or false
  */
 bool_t is_voe_in_exception_bitmap( void );
-
 
 _STATIC_INLINE_ void reset_to_next_iv(migsc_t *migsc, uint64_t iv_counter, uint16_t migs_index)
 {
@@ -2354,19 +2279,13 @@ api_error_type l2_sept_walk_guest_side(
  *
  * @return bool_t
  */
-_STATIC_INLINE_ bool_t is_gpa_attr_legal(
-    const gpa_attr_single_vm_t gpa_attr_single_vm,
-    const bool_t is_mmio)
+_STATIC_INLINE_ bool_t is_gpa_attr_legal(const gpa_attr_single_vm_t gpa_attr_single_vm)
 {
     if ((!gpa_attr_single_vm.valid && gpa_attr_single_vm.raw) ||
          gpa_attr_single_vm.reserved_14_8 ||
         (gpa_attr_single_vm.w && (!gpa_attr_single_vm.r)) ||
         (gpa_attr_single_vm.pwa && (!gpa_attr_single_vm.r)) ||
-         gpa_attr_single_vm.sve ||
-         (is_mmio &&
-          !(gpa_attr_single_vm.xs == 0 && gpa_attr_single_vm.xu == 0 &&
-            gpa_attr_single_vm.vgp == 0 && gpa_attr_single_vm.pwa == 0 &&
-            gpa_attr_single_vm.sss == 0)))
+         gpa_attr_single_vm.sve)
     {
         TDX_ERROR("Illegal attributes - 0x%llx\n", gpa_attr_single_vm.raw)
         return false;
@@ -2501,7 +2420,33 @@ _STATIC_INLINE_ void restore_td_xcr0_if_required(tdx_module_local_t* local_data_
  */
 void set_xbuff_offsets_and_size(tdcs_t* tdcs_ptr, uint64_t xfam);
 
+// TODO: remove define once WA is removed
+#define GNR_A0_CPUID 0xA06D0
+#define GNR_D_A0_CPUID 0xA06E0
+_STATIC_INLINE_ bool_t is_not_gnr_a0_stepping(void)
+{
+    tdx_module_global_t *tdx_global_data_ptr = get_global_data();
 
+    if (tdx_global_data_ptr->is_a0_wa_invoked)
+    {
+        // WA already invoked
+        return !(tdx_global_data_ptr->is_gnr_a0_cpuid || tdx_global_data_ptr->is_gnr_d_cpuid);
+    }
+
+    // WA invoked for the first time
+
+    uint32_t eax, ebx, ecx, edx;
+    ia32_cpuid(CPUID_VER_INFO_LEAF, 0,
+               &eax, &ebx,
+               &ecx, &edx);
+
+    tdx_global_data_ptr->is_gnr_a0_cpuid = (eax == GNR_A0_CPUID);
+    tdx_global_data_ptr->is_gnr_d_cpuid = (eax == GNR_D_A0_CPUID);
+
+    tdx_global_data_ptr->is_a0_wa_invoked = true;
+
+    return !(tdx_global_data_ptr->is_gnr_a0_cpuid || tdx_global_data_ptr->is_gnr_d_cpuid);
+}
 
 #define IA32_SPEC_CTRL_SSBD_BIT        BIT(2)
 #define IA32_SPEC_CTRL_IPRED_DIS_S_BIT BIT(4)
@@ -2509,6 +2454,7 @@ void set_xbuff_offsets_and_size(tdcs_t* tdcs_ptr, uint64_t xfam);
 _STATIC_INLINE_ uint64_t GET_TDX_MODULE_IA32_SPEC_CTRL(void)
 {
     uint64_t res = 0;
+    if (is_not_gnr_a0_stepping())
     {
         res |= IA32_SPEC_CTRL_IPRED_DIS_S_BIT;
     }
@@ -2516,23 +2462,6 @@ _STATIC_INLINE_ uint64_t GET_TDX_MODULE_IA32_SPEC_CTRL(void)
     res |= IA32_SPEC_CTRL_SSBD_BIT;
 
     return res;
-}
-
-_STATIC_INLINE_ void set_qword_bm(
-    uint64_t *bm_arr_ptr,
-    uint64_t idx,
-    bool_t enable_flag)
-{
-    uint64_t *entry_ptr = &bm_arr_ptr[idx / 64];
-    uint64_t val = (BIT(idx % 64));
-    if (enable_flag)
-    {
-        *entry_ptr |= val;
-    }
-    else
-    {
-        *entry_ptr &= ~val;
-    }
 }
 
 _STATIC_INLINE_ bool_t get_qword_bm(

@@ -396,10 +396,9 @@ _STATIC_INLINE_ void rdmsr_set_value_in_tdvps(tdvps_t* tdvps_p, uint64_t value)
    Assumes either PERFMON is disabled or event filter is required (TDCS.EVENT_FILTERS_NUM > 0),
    otherwise no VM exit is expected.
 */
-_STATIC_INLINE_ td_msr_access_status_t wrmsr_ia32_perfevtsel(tdcs_t* tdcs_p, tdvps_t* tdvps_p, uint32_t msr_addr)
+_STATIC_INLINE_ td_msr_access_status_t wrmsr_ia32_perfevtsel(tdcs_t *tdcs_p, tdvps_t *tdvps_p, uint32_t pmc_index, uint32_t msr_addr)
 {
     tdx_sanity_check(8 == NUM_PMC, FATAL_ERROR_ID_274, 0);
-    tdx_sanity_check((msr_addr >= IA32_PERFEVTSEL0_MSR_ADDR) && (msr_addr <= IA32_PERFEVTSEL7_MSR_ADDR), FATAL_ERROR_ID_275, 1);
 
     if (!tdcs_p->executions_ctl_fields.attributes.perfmon)
     {
@@ -417,8 +416,6 @@ _STATIC_INLINE_ td_msr_access_status_t wrmsr_ia32_perfevtsel(tdcs_t* tdcs_p, tdv
 
         fatal_error(FATAL_ERROR_ID_276, FATAL_INFO_FORMAT_UNEXPECTED_VM_EXIT_INFO, &extended_fatal_info);
     }
-
-    uint32_t msr_index = msr_addr - IA32_PERFEVTSEL0_MSR_ADDR;
 
     uint64_t msr_value = construct_wrmsr_value(tdvps_p->guest_state.gpr_state.rdx, tdvps_p->guest_state.gpr_state.rax);
     ia32_perfevtsel_t perfevtsel_value = { .raw = msr_value };
@@ -448,21 +445,18 @@ _STATIC_INLINE_ td_msr_access_status_t wrmsr_ia32_perfevtsel(tdcs_t* tdcs_p, tdv
         return TD_MSR_ACCESS_GP;
     }
 
-    tdvps_p->guest_msr_state.ia32_perfevtselx[msr_index] = perfevtsel_shadow.raw;
+    tdvps_p->guest_msr_state.ia32_pmc_gp_cfg_ax[pmc_index] = perfevtsel_shadow.raw;
 
     return TD_MSR_ACCESS_SUCCESS;
 }
-
 
 /* Read an IA32_PERFEVTSEL MSR while handling event filtering
    Assumes either PERFMON is disabled or event filter is required (TDCS.EVENT_FILTERS_NUM > 0),
    otherwise no VM exit is expected.
 */
-_STATIC_INLINE_ td_msr_access_status_t rdmsr_ia32_perfevtsel(tdcs_t* tdcs_p, tdvps_t* tdvps_p, uint32_t msr_addr)
-
+_STATIC_INLINE_ td_msr_access_status_t rdmsr_ia32_perfevtsel(tdcs_t *tdcs_p, tdvps_t *tdvps_p, uint32_t pmc_index, uint32_t msr_addr)
 {
     tdx_sanity_check(8 == NUM_PMC, FATAL_ERROR_ID_277, 0);
-    tdx_sanity_check((msr_addr >= IA32_PERFEVTSEL0_MSR_ADDR) && (msr_addr <= IA32_PERFEVTSEL7_MSR_ADDR), FATAL_ERROR_ID_278, 1);
 
     if (!tdcs_p->executions_ctl_fields.attributes.perfmon)
     {
@@ -481,9 +475,7 @@ _STATIC_INLINE_ td_msr_access_status_t rdmsr_ia32_perfevtsel(tdcs_t* tdcs_p, tdv
         fatal_error(FATAL_ERROR_ID_279, FATAL_INFO_FORMAT_UNEXPECTED_VM_EXIT_INFO, &extended_fatal_info);
     }
 
-    uint32_t msr_index = msr_addr - IA32_PERFEVTSEL0_MSR_ADDR;
-
-    ia32_perfevtsel_t perfevtsel_value = { .raw = tdvps_p->guest_msr_state.ia32_perfevtselx[msr_index] };
+    ia32_perfevtsel_t perfevtsel_value = { .raw = tdvps_p->guest_msr_state.ia32_pmc_gp_cfg_ax[pmc_index] };
     perfevtsel_value.forbidden = 0;
 
     rdmsr_set_value_in_tdvps(tdvps_p, perfevtsel_value.raw);
@@ -508,8 +500,11 @@ static td_msr_access_status_t rdmsr_ia32_debugctl(tdvps_t* tdvps_p)
 
 static td_msr_access_status_t rdmsr_ia32_arch_capabilities(tdvps_t* tdvps_p, tdcs_t* tdcs_p)
 {
-    // Return the value calculated on TDH.MNG.INIT or TDH.IMPORT.STATE.IMMUTABLE in EDX:EAX
-    rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virtual_ia32_arch_capabilities);
+    if (is_not_gnr_a0_stepping())
+    {
+        // Return the value calculated on TDH.MNG.INIT or TDH.IMPORT.STATE.IMMUTABLE in EDX:EAX
+        rdmsr_set_value_in_tdvps(tdvps_p, tdcs_p->virt_msrs.virtual_ia32_arch_capabilities);
+    }
 
     return TD_MSR_ACCESS_SUCCESS;
 }
@@ -556,6 +551,22 @@ static td_msr_access_status_t rdmsr_ia32_perf_capabilities(tdvps_t* tdvps_p, tdc
     return TD_MSR_ACCESS_SUCCESS;
 }
 
+#define INVALID_PERFMON_MSR_INDEX (-1)
+
+static uint32_t get_pmc_index_given_ia32_perfevtsel_index(const uint32_t msr_addr)
+{
+    uint32_t invalid_idx = (uint32_t)INVALID_PERFMON_MSR_INDEX;
+
+    // Legacy range
+    if ((msr_addr >= IA32_PERFEVTSEL0_MSR_ADDR) && (msr_addr < IA32_PERFEVTSEL0_MSR_ADDR + NUM_PMC))
+    {
+        return msr_addr - IA32_PERFEVTSEL0_MSR_ADDR;
+    }
+
+    // MSR_ADDR is not an ia32_perfevtsel_index
+    return invalid_idx;
+}
+
 uint16_t td_wrmsr_exit(void)
 {
     tdx_module_local_t* tdx_local_data_ptr = get_local_data();
@@ -575,6 +586,14 @@ uint16_t td_wrmsr_exit(void)
     }
 
     uint64_t msr_value = construct_wrmsr_value(tdvps_p->guest_state.gpr_state.rdx, tdvps_p->guest_state.gpr_state.rax);
+
+    // IA32_PERFEVTSEL MSRs have special handling since they can be accessed via two aliases
+    uint32_t pmc_index = get_pmc_index_given_ia32_perfevtsel_index(msr_addr);
+    if (pmc_index != (uint32_t)INVALID_PERFMON_MSR_INDEX)
+    {
+        // msr_index is a valid IA32_PEREVTSEL MSR
+        return status = (uint16_t)wrmsr_ia32_perfevtsel(tdcs_p, tdvps_p, pmc_index, msr_addr);
+    }
 
     switch (msr_addr)
     {
@@ -622,16 +641,6 @@ uint16_t td_wrmsr_exit(void)
             {
                 return construct_msr_status_with_ve_category(TD_MSR_ACCESS_MSR_NON_ARCH_EXCEPTION, VE_INFO_CONFIG_PARAVIRT);
             }
-            break;
-        case IA32_PERFEVTSEL0_MSR_ADDR:
-        case IA32_PERFEVTSEL1_MSR_ADDR:
-        case IA32_PERFEVTSEL2_MSR_ADDR:
-        case IA32_PERFEVTSEL3_MSR_ADDR:
-        case IA32_PERFEVTSEL4_MSR_ADDR:
-        case IA32_PERFEVTSEL5_MSR_ADDR:
-        case IA32_PERFEVTSEL6_MSR_ADDR:
-        case IA32_PERFEVTSEL7_MSR_ADDR:
-            status = (uint16_t)wrmsr_ia32_perfevtsel(tdcs_p, tdvps_p, msr_addr);
             break;
         case IA32_XSS_MSR_ADDR:
             status = (uint16_t)wrmsr_ia32_xss(tdvps_p, tdcs_p);
@@ -729,6 +738,14 @@ uint16_t td_rdmsr_exit(void)
         return status;
     }
 
+    // IA32_PERFEVTSEL MSRs have special handling since they can be accessed via two aliases
+    uint32_t pmc_index = get_pmc_index_given_ia32_perfevtsel_index(msr_addr);
+    if (pmc_index != (uint32_t)INVALID_PERFMON_MSR_INDEX)
+    {
+        // msr_index is a valid IA32_PEREVTSEL MSR
+        return status = (uint16_t)rdmsr_ia32_perfevtsel(tdcs_p, tdvps_p, pmc_index, msr_addr);
+    }
+
     switch (msr_addr)
     {
         case IA32_SMI_COUNT_MSR_ADDR:
@@ -808,27 +825,17 @@ uint16_t td_rdmsr_exit(void)
 
             break;
         }
-        case IA32_PERFEVTSEL0_MSR_ADDR:
-        case IA32_PERFEVTSEL1_MSR_ADDR:
-        case IA32_PERFEVTSEL2_MSR_ADDR:
-        case IA32_PERFEVTSEL3_MSR_ADDR:
-        case IA32_PERFEVTSEL4_MSR_ADDR:
-        case IA32_PERFEVTSEL5_MSR_ADDR:
-        case IA32_PERFEVTSEL6_MSR_ADDR:
-        case IA32_PERFEVTSEL7_MSR_ADDR:
-        {
-            status = (uint16_t)rdmsr_ia32_perfevtsel(tdcs_p, tdvps_p, msr_addr);
-
-            break;
-        }
         case IA32_XAPIC_DISABLE_STATUS_MSR_ADDR:
         {
-            ia32_xapic_disable_status_t ia32_xapic_disable_status = { .raw = 0 };
-            ia32_xapic_disable_status.legacy_xapic_disabled = 1;
+            if (is_not_gnr_a0_stepping())
+            {
+                ia32_xapic_disable_status_t ia32_xapic_disable_status = { .raw = 0 };
+                ia32_xapic_disable_status.legacy_xapic_disabled = 1;
 
-            rdmsr_set_value_in_tdvps(tdvps_p, ia32_xapic_disable_status.raw);
-            status = TD_MSR_ACCESS_SUCCESS;
-            break;
+                rdmsr_set_value_in_tdvps(tdvps_p, ia32_xapic_disable_status.raw);
+                status = TD_MSR_ACCESS_SUCCESS;
+                break;
+            }
         }
         default:
         {

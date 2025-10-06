@@ -398,7 +398,6 @@ api_error_type tdh_export_state_immutable(uint64_t target_tdr_pa, uint64_t hpa_a
         goto EXIT;
     }
 
-
     // Check and map the MBMD buffer in shared memory, and write out the MBMD
     if (mbmd_hpa_and_size.size < sizeof(mbmd_immutable_td_state_t))
     {

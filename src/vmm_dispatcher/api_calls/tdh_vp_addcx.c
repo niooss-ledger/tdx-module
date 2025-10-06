@@ -117,7 +117,7 @@ api_error_type tdh_vp_addcx(uint64_t target_tdcx_pa, uint64_t target_tdvpr_pa)
     if (tdvps_ptr->management.vcpu_state != VCPU_UNINITIALIZED)
     {
         TDX_ERROR("TD VCPU is already initialized\n");
-        return_val = TDX_VCPU_STATE_INCORRECT;
+        return_val = api_error_with_operand_id(TDX_VCPU_STATE_INCORRECT, tdvps_ptr->management.vcpu_state);
         goto EXIT;
     }
 

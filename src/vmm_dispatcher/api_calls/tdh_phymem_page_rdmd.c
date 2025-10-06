@@ -43,12 +43,14 @@ api_error_type tdh_phymem_page_rdmd(uint64_t target_page_pa)
     tdx_module_local_t  * local_data_ptr = get_local_data();
 
     // Target page related variables
-    pa_t                  page_pa = {.raw = target_page_pa};
+    page_size_api_input_t page_pa_and_size = { .raw = target_page_pa };
+    pa_t                  page_pa;
     pamt_block_t          page_pamt_block;
     pamt_entry_t        * page_pamt_entry_ptr;
     bool_t                page_locked_flag = false;
 
-    page_size_t           page_leaf_size;
+    page_size_t           page_min_size = page_pa_and_size.level;
+    page_size_t           page_actual_size;
     pamt_entry_t          pamt_entry;
 
     api_error_type        return_val = UNINITIALIZE_ERROR;
@@ -61,8 +63,12 @@ api_error_type tdh_phymem_page_rdmd(uint64_t target_page_pa)
     local_data_ptr->vmm_regs.r10 = 0ULL;
     local_data_ptr->vmm_regs.r11 = 0ULL;
 
+    page_min_size = PT_4KB;
+    page_actual_size = page_min_size;
+    page_pa.raw = target_page_pa;
+
     // Check that page address is page-aligned and that its HKID is zero
-    if (!is_addr_aligned_pwr_of_2(page_pa.raw, TDX_PAGE_SIZE_IN_BYTES) ||
+    if (!is_addr_aligned_pwr_of_2(page_pa.raw, TDX_PAGE_SIZE_IN_BYTES << (page_min_size * 9)) ||
         !is_pa_smaller_than_max_pa(page_pa.raw) ||
         (get_hkid_from_pa(page_pa) != 0))
     {
@@ -80,7 +86,7 @@ api_error_type tdh_phymem_page_rdmd(uint64_t target_page_pa)
 
     // Walk and locate the leaf PAMT entry
     if ((return_val = pamt_walk(page_pa, page_pamt_block, TDX_LOCK_SHARED,
-                                &page_leaf_size, false, false, &page_pamt_entry_ptr)) != TDX_SUCCESS)
+                                &page_actual_size, true, false, &page_pamt_entry_ptr)) != TDX_SUCCESS)
     {
         TDX_ERROR("Failed to PAMT walk to entry - PAMT is locked\n");
         return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
@@ -90,12 +96,13 @@ api_error_type tdh_phymem_page_rdmd(uint64_t target_page_pa)
 
     pamt_entry = *page_pamt_entry_ptr;
 
-    local_data_ptr->vmm_regs.rcx = (uint64_t)pamt_entry.pt;
+    local_data_ptr->vmm_regs.rcx = pamt_entry.pt;
+    local_data_ptr->vmm_regs.r8 = (uint64_t)page_actual_size;
 
     // HKID should be zero at this point
     local_data_ptr->vmm_regs.rdx = get_pamt_entry_owner(&pamt_entry).raw; // Shift to get TDR HPA
 
-    local_data_ptr->vmm_regs.r8  = (uint64_t)page_leaf_size;
+    local_data_ptr->vmm_regs.r8  = (uint64_t)page_actual_size;
 
     if ((pamt_entry.pt == PT_REG) || (pamt_entry.pt == PT_EPT))
     {
@@ -108,7 +115,7 @@ EXIT:
     // Release all acquired locks
     if (page_locked_flag)
     {
-        pamt_unwalk(page_pa, page_pamt_block, page_pamt_entry_ptr, TDX_LOCK_SHARED, page_leaf_size);
+        pamt_unwalk(page_pa, page_pamt_block, page_pamt_entry_ptr, TDX_LOCK_SHARED, page_actual_size);
     }
 
     return return_val;

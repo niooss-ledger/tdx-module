@@ -92,7 +92,7 @@ static api_error_type tdg_vp_rd_wr(md_field_id_t field_id, tdx_module_local_t * 
     if (write)
     {
         return_val = md_write_element(MD_CTX_VP, field_id, access_type, access_qual,
-                                      md_ctx, wr_value, wr_request_mask, &rd_value);
+                                      md_ctx, wr_value, wr_request_mask, &rd_value, true);
     }
     else
     {

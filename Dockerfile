@@ -84,7 +84,7 @@ RUN wget -P /tmp --no-check-certificate https://www.openssl.org/source/openssl-$
 ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64
 
 # Install NASM
-ENV NASM_VERSION=2.16.02
+ENV NASM_VERSION=2.15.05
 RUN wget -P /tmp --no-check-certificate https://www.nasm.us/pub/nasm/releasebuilds/$NASM_VERSION/nasm-$NASM_VERSION.tar.bz2 \
     && cd /tmp && tar xjvf /tmp/nasm-$NASM_VERSION.tar.bz2 \
     && cd /tmp/nasm-$NASM_VERSION \

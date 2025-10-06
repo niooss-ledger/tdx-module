@@ -32,8 +32,7 @@
 
 This repo contains a docker file for your convenience.  
 SW prerequisites could be found in the [Dockerfile](Dockerfile) (prerequisites could be installed also manually).  
-Please note that the TDX module isn't part of the docker image and the user must build it according to the [instructions below](#how-to-build).  
-The docker image is identical across all TDX versions, there is no need to rebuild it.
+Please note that the TDX module isn't part of the docker image and the user must build it according to the [instructions below](#how-to-build).
 
 ## Docker Container Build Instructions:
 

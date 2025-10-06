@@ -296,6 +296,7 @@ _STATIC_INLINE_ void calc_virt_ia32_vmx_cr4_fixed(tdcs_t* tdcs_p, uint64_t* not_
     calc_allowed64_vmx_ctls(GUEST_CR4_L2_INIT, write_mask.raw, not_allowed0, allowed1);
 }
 
+
 /**
  * @brief Initialize the values of the virtual IA32_VMS_* MSRs,
  * which enumerate VMX capabilities to the L1 VMM.
@@ -345,6 +346,7 @@ bool_t init_virt_ia32_arch_capabilities(tdcs_t* tdcs_p, bool_t config_flag, uint
  */
 bool_t check_virt_ia32_arch_capabilities(tdcs_t* tdcs_p, ia32_arch_capabilities_t arch_cap);
 
+
 // Conditionally write the current VMCS' IA32_SPEC_CTRL shadow field.
 // The shadow is written only if IA32_SPEC_CTRL is virtualized, i.e., when the CPU supports DDPD_U
 // but the TD is configured without DDPD_U support.
@@ -372,14 +374,12 @@ _STATIC_INLINE_ void conditionally_write_vmcs_ia32_spec_ctrl_shadow(const tdcs_t
 _STATIC_INLINE_ uint64_t calculate_virt_ia32_spec_ctrl(const tdcs_t* tdcs_p, uint64_t msr_value)
 {
     ia32_spec_ctrl_t spec_ctrl = { .raw = msr_value };
-
     tdx_module_global_t* global_data = get_global_data();
     // If the CPU supports DDPD_U but the TD is configured without DDPD_U support, clear the DDPD_U bit
     if (global_data->ddpd_supported && !tdcs_p->executions_ctl_fields.cpuid_flags.ddpd_supported)
     {
         spec_ctrl.ddpd_u = 0;
     }
-
     return spec_ctrl.raw;
 }
 

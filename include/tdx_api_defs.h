@@ -1078,35 +1078,36 @@ typedef union tdx_features_enum0_u
 {
     struct
     {
-        uint64_t td_migration                : 1;    // Bit 0
-        uint64_t td_preserving               : 1;    // Bit 1
-        uint64_t service_td                  : 1;    // Bit 2
-        uint64_t tdg_vp_rdwr                 : 1;    // Bit 3
-        uint64_t relaxed_mem_mng_concurrency : 1;    // Bit 4
-        uint64_t cpuid_virt_guest_ctrl       : 1;    // Bit 5
-        uint64_t reserved_0                  : 1;    // Bit 6
-        uint64_t td_partitioning             : 1;    // Bit 7
-        uint64_t local_attestation           : 1;    // Bit 8
-        uint64_t td_entry_enhancements       : 1;    // Bit 9
-        uint64_t host_priority_locks         : 1;    // Bit 10
-        uint64_t config_ia32_arch_cap        : 1;    // Bit 11
-        uint64_t reserved_1                  : 4;    // Bits 15:12
-        uint64_t pending_ept_violation_v2    : 1;    // Bit 16
-        uint64_t fms_config                  : 1;    // Bit 17
-        uint64_t no_rbp_mod                  : 1;    // Bit 18
-        uint64_t l2_tlb_invd_opt             : 1;    // Bit 19
-        uint64_t topology_enum               : 1;    // Bit 20
-        uint64_t partitioned_td_migration    : 1;    // Bit 21
-        uint64_t reserved_2                  : 3;    // Bits 24:22
-        uint64_t icssd                       : 1;    // Bit 25
-        uint64_t fixed_ctr12_prof            : 1;    // Bit 26
-        uint64_t maxpa_virt                  : 1;    // Bit 27
-        uint64_t apx                         : 1;    // Bit 28
-        uint64_t cpuid2_virt                 : 1;    // Bit 29
-        uint64_t reserved_4                  : 1;    // Bit 30
-        uint64_t enhanced_event_filtering    : 1;    // Bit 31
-        uint64_t tdx_connect_partitioning    : 1;    // Bit 32
-        uint64_t maxgpa_virt                 : 1;    // Bit 33
+        uint64_t td_migration                :  1;   // Bit 0
+        uint64_t td_preserving               :  1;   // Bit 1
+        uint64_t service_td                  :  1;   // Bit 2
+        uint64_t tdg_vp_rdwr                 :  1;   // Bit 3
+        uint64_t relaxed_mem_mng_concurrency :  1;   // Bit 4
+        uint64_t cpuid_virt_guest_ctrl       :  1;   // Bit 5
+        uint64_t reserved_0                  :  1;   // Bit 6
+        uint64_t td_partitioning             :  1;   // Bit 7
+        uint64_t local_attestation           :  1;   // Bit 8
+        uint64_t td_entry_enhancements       :  1;   // Bit 9
+        uint64_t host_priority_locks         :  1;   // Bit 10
+        uint64_t config_ia32_arch_cap        :  1;   // Bit 11
+        uint64_t reserved_1                  :  4;   // Bits 15:12
+        uint64_t pending_ept_violation_v2    :  1;   // Bit 16
+        uint64_t fms_config                  :  1;   // Bit 17
+        uint64_t no_rbp_mod                  :  1;   // Bit 18
+        uint64_t l2_tlb_invd_opt             :  1;   // Bit 19
+        uint64_t topology_enum               :  1;   // Bit 20
+        uint64_t partitioned_td_migration    :  1;   // Bit 21
+        uint64_t reserved_2                  :  2;   // Bits 23:22
+        uint64_t event_filtering             :  1;   // Bit 24
+        uint64_t icssd                       :  1;   // Bit 25
+        uint64_t fixed_ctr12_prof            :  1;   // Bit 26
+        uint64_t maxpa_virt                  :  1;   // Bit 27
+        uint64_t apx                         :  1;   // Bit 28
+        uint64_t cpuid2_virt                 :  1;   // Bit 29
+        uint64_t ve_reduction                :  1;   // Bit 30
+        uint64_t enhanced_event_filtering    :  1;   // Bit 31
+        uint64_t tdx_connect_partitioning    :  1;   // Bit 32
+        uint64_t maxgpa_virt                 :  1;   // Bit 33
         uint64_t reserved_5                  : 30;   // Bits 63:34
     };
     uint64_t raw;
@@ -1227,17 +1228,17 @@ typedef union td_handle_and_flags_u
 {
     struct
     {
-        uint64_t allow_existing : 1;  // Used for TDH.MEM.SEPT.ADD only
-
-        uint64_t reserved_0     : 11; // Used for all relevant API's...
-        uint64_t tdr_hpa_51_12  : 40;
-        uint64_t reserved_1     : 12;
+        uint64_t allow_existing    : 1;  // Used for TDH.MEM.SEPT.ADD only
+                                   
+        uint64_t reserved_0        : 11; // Used for all relevant API's...
+        uint64_t tdr_hpa_51_12     : 40;
+        uint64_t reserved_1        : 12;
     };
 
     struct
     {
-        uint64_t l2_sept_add_mode : 1;  // Used for TDH.MEM.PAGE.DEMOTE only
-        uint64_t _other_bits      : 63;
+        uint64_t l2_sept_add_mode  : 1;  // Used for TDH.MEM.PAGE.DEMOTE only
+        uint64_t _other_bits       : 63;
     };
 
     uint64_t raw;
@@ -1314,6 +1315,20 @@ typedef union gla_list_info_u
     uint64_t raw;
 } gla_list_info_t;
 tdx_static_assert(sizeof(gla_list_info_t) == 8, gla_list_info_t);
+
+#define MAX_EVENT_FILTERS           512
+
+typedef union exit_reason_and_ve_category_u
+{
+    struct
+    {
+        uint64_t exit_reason  : 32;
+        uint64_t ve_category  :  8;
+        uint64_t reserved     : 24;
+    };
+    uint64_t raw;
+} exit_reason_and_ve_category_t;
+tdx_static_assert(sizeof(exit_reason_and_ve_category_t) == 8, exit_reason_and_ve_category_t);
 
 #pragma pack(pop)
 

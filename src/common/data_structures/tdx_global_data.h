@@ -39,6 +39,7 @@
 #include "auto_gen/cpuid_configurations_defines.h"
 #include "crypto/sha384.h"
 
+
 #define AES_XTS_128                BIT(0)
 #define AES_XTS_128_WITH_INTEGRITY BIT(1)
 #define AES_XTS_256                BIT(2)
@@ -183,7 +184,8 @@ typedef struct
 
     uint64_t                        ia32_tsc_adjust;
 
-    //MSRs
+    ia32_misc_enable_t              ia32_misc_enable;
+
     ia32_vmx_basic_t                ia32_vmx_basic;
     ia32_vmx_misc_t                 ia32_vmx_misc;
     ia32_vmx_allowed_bits_t         ia32_vmx_true_pinbased_ctls;

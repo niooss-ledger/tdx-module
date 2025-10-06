@@ -420,6 +420,7 @@ api_error_type tdh_export_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
     pa_t                    migsc_pa;
     bool_t                  migsc_locked_flag = false;
 
+
     uint64_t                old_value;
     bool_t                  mig_locked_flag = false;
     uint64_t                mig_count_increment;   // Value to increment MIG_COUNT after success is guaranteed
@@ -433,6 +434,7 @@ api_error_type tdh_export_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
     mac_list_pa[0].raw = mac_list_0_pa;
     mac_list_pa[1].raw = mac_list_1_pa;
     migs_i_and_cmd.raw = migs_i_and_cmd_val;
+
 
     // Check, lock and map the owner TDR page
     return_val = check_lock_and_map_explicit_tdr(tdr_pa,
@@ -526,6 +528,7 @@ api_error_type tdh_export_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
         TDX_ERROR("GPA list info is incorrect = 0x%llx\n", gpa_list_info.raw);
         goto EXIT;
     }
+
 
     /* Check that the migration buffers list physical address is canonical, shared,
        and aligned to 4KB, and map it. */
@@ -666,6 +669,7 @@ api_error_type tdh_export_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
             gpa_list_entry.pending = sept_state_is_any_pending(sept_entry_copy);
             gpa_list_entry.l2_map = 0;
 
+
             if (GPA_ENTRY_STATUS_SUCCESS != (err_status = handle_operation(gpa_list_entry, &mig_count_increment, &sept_entry_copy,
                                                                            &dirty_count_increment, &mig_buff_list_entry)))
             {
@@ -712,6 +716,7 @@ api_error_type tdh_export_mem(gpa_list_info_t gpa_list_info, uint64_t target_tdr
         {
             FATAL_ERROR();
         }
+
 
         if (mig_buff_list_entry.invalid == 0)
         {
@@ -850,6 +855,7 @@ EXIT:
     {
         free_la(gpa_list_p);
     }
+
 
     if (sept_tree_locked_flag)
     {

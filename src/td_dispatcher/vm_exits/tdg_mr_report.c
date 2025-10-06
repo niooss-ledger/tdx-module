@@ -137,6 +137,7 @@ api_error_type tdg_mr_report(uint64_t report_struct_gpa, uint64_t additional_dat
         goto EXIT;
     }
 
+
     // Interruption Point: only if TEEINFOHASH was not cached (so its calculation took a long time)
     if (!is_cached_teeinfohash_used && is_interrupt_pending_guest_side())
     {

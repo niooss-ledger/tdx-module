@@ -60,6 +60,7 @@ static api_error_type handle_command_by_type(migs_index_and_cmd_t migs_i_and_cmd
             return api_error_with_operand_id(return_val, OPERAND_ID_R9);
         }
 
+
         /*
          * Check that a valid migration key has been set by the Migration TD.  If this
          * is not the first migration session, then the migration key must have been
@@ -85,6 +86,7 @@ static api_error_type handle_command_by_type(migs_index_and_cmd_t migs_i_and_cmd
         tdcs_p->migration_fields.mig_enc_key = tmp_end_key;
 
         basic_memset_to_zero(&tmp_end_key, sizeof(tmp_end_key));
+
 
         tdcs_p->migration_fields.mig_dec_working_key = tdcs_p->migration_fields.mig_dec_key;
         tdcs_p->migration_fields.mig_dec_key_set = false;

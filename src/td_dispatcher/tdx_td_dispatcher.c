@@ -134,6 +134,7 @@ void tdx_return_to_td(bool_t launch_state, bool_t called_from_tdenter, gprs_stat
 
     restore_td_xcr0_if_required(local_data_ptr);
 
+
     // Check that we have no mapped keyholes left, beside the 2 that we store for TDR/TDVPR PAMT entries
     tdx_sanity_check(local_data_ptr->keyhole_state.total_ref_count == NUM_OF_PRESERVED_KEYHOLES,
                      SCEC_KEYHOLE_MANAGER_SOURCE, 30);
@@ -210,12 +211,12 @@ static void save_guest_td_gpr_state_on_td_vmexit(void)
 }
 
 
-void td_generic_ve_exit(vm_vmexit_exit_reason_t vm_exit_reason, uint64_t exit_qualification)
+void td_generic_ve_exit(vm_vmexit_exit_reason_t vm_exit_reason, uint64_t exit_qualification, ve_category_e category)
 {
     tdx_module_local_t* tdx_local_data_ptr = get_local_data();
     tdvps_t* tdvps_p = tdx_local_data_ptr->vp_ctx.tdvps;
 
-    tdx_inject_ve((uint32_t)vm_exit_reason.raw, exit_qualification, tdvps_p, 0, 0);
+    tdx_inject_ve((uint32_t)vm_exit_reason.raw, exit_qualification, category, tdvps_p, 0, 0);
 }
 
 
@@ -238,6 +239,7 @@ void td_call(tdx_module_local_t* tdx_local_data_ptr, bool_t* interrupt_occurred)
     tdx_leaf_and_version_t leaf_opcode;
     leaf_opcode.raw = tdx_local_data_ptr->td_regs.rax;
 
+
     if ((leaf_opcode.reserved0 != 0) || (leaf_opcode.reserved1 != 0))
     {
         TDX_ERROR("Leaf and version not supported 0x%llx\n", leaf_opcode.raw);
@@ -246,8 +248,7 @@ void td_call(tdx_module_local_t* tdx_local_data_ptr, bool_t* interrupt_occurred)
     }
 
     // Only a few functions have multiple versions
-    if ((leaf_opcode.version > 0) &&
-        (leaf_opcode.leaf != TDG_VM_RD_LEAF))
+    if ((leaf_opcode.version > 0) && !((leaf_opcode.leaf == TDG_VM_RD_LEAF) || (leaf_opcode.leaf == TDG_VP_VEINFO_GET_LEAF)))
     {
         TDX_ERROR("Invalid version %d for leaf %d\n", leaf_opcode.version, leaf_opcode.leaf);
         retval = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RAX);
@@ -270,7 +271,7 @@ void td_call(tdx_module_local_t* tdx_local_data_ptr, bool_t* interrupt_occurred)
         }
         case TDG_VP_VEINFO_GET_LEAF:
         {
-            retval = tdg_vp_veinfo_get();
+            retval = tdg_vp_veinfo_get((uint8_t)leaf_opcode.version);
             break;
         }
         case TDG_VP_INFO_LEAF:
@@ -457,6 +458,7 @@ EXIT:
         }
     }
 }
+
 
 /**
  * @brief Handle VM entry failures per basic exit reason
@@ -733,9 +735,13 @@ void tdx_td_dispatcher(void)
         case VMEXIT_REASON_INVD_INSTRUCTION:
         case VMEXIT_REASON_VMCALL_INSTRUCTION:
         case VMEXIT_REASON_WBINVD_INSTRUCTION:
-        case VMEXIT_REASON_PCONFIG:
         case VMEXIT_REASON_APIC_WRITE:
-            td_generic_ve_exit(vm_exit_reason, vm_exit_qualification.raw);
+            td_generic_ve_exit(vm_exit_reason, vm_exit_qualification.raw, VE_INFO_NON_CONFIG_PARAVIRT);
+            break;
+
+        // Unconditional #VE injection, but VM exit itself is conditioned on some configuration
+        case VMEXIT_REASON_PCONFIG: // If CPUID(0x7,0x0).EDX[18] is virtualized as 0, PCONFIG is disabled and there's no VM exit
+            td_generic_ve_exit(vm_exit_reason, vm_exit_qualification.raw, VE_INFO_CONFIG_PARAVIRT);
             break;
 
         case VMEXIT_REASON_GETSEC_INSTRUCTION:
@@ -834,9 +840,10 @@ void tdx_td_dispatcher(void)
         case VMEXIT_REASON_MSR_READ:
         case VMEXIT_REASON_MSR_WRITE:
         {
-            td_msr_access_status_t status = (vm_exit_reason.basic_reason == VMEXIT_REASON_MSR_READ) ?
+            uint16_t status = (vm_exit_reason.basic_reason == VMEXIT_REASON_MSR_READ) ?
                                             td_rdmsr_exit() : td_wrmsr_exit();
-
+            uint16_t status_category = (status >> 8) & 0xFF;
+            status &= 0xFF;
             if (status != TD_MSR_ACCESS_SUCCESS)
             {
                 if (status == TD_MSR_ACCESS_GP)
@@ -846,7 +853,7 @@ void tdx_td_dispatcher(void)
                 else
                 {
                     tdx_sanity_check((status == TD_MSR_ACCESS_MSR_NON_ARCH_EXCEPTION), SCEC_TD_DISPATCHER_SOURCE, 3);
-                    td_generic_ve_exit(vm_exit_reason, 0);
+                    td_generic_ve_exit(vm_exit_reason, 0, status_category);
                 }
             }
             break;

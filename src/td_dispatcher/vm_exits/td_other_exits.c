@@ -99,7 +99,7 @@ bool_t td_cr_access_exit(vmx_exit_qualification_t vm_exit_qualification)
 {
     uint64_t   value;
     ia32_cr0_t cr0;
-    cr_write_status_e status = CR_ACCESS_SUCCESS;
+    uint16_t status = CR_ACCESS_SUCCESS;
 
     tdx_module_local_t* tdx_local_data_ptr = get_local_data();
 
@@ -139,6 +139,9 @@ bool_t td_cr_access_exit(vmx_exit_qualification_t vm_exit_qualification)
                     return false;
             }
 
+            uint16_t status_category = (status >> 8) & 0xFF;
+            status &= 0xFF;
+
             if (status == CR_ACCESS_GP)
             {
                 inject_gp(0);
@@ -146,7 +149,7 @@ bool_t td_cr_access_exit(vmx_exit_qualification_t vm_exit_qualification)
             }
             else if (status == CR_ACCESS_NON_ARCH)
             {
-                tdx_inject_ve(VMEXIT_REASON_CR_ACCESS, vm_exit_qualification.raw, tdvps_p, 0, 0);
+                tdx_inject_ve(VMEXIT_REASON_CR_ACCESS, vm_exit_qualification.raw, status_category, tdvps_p, 0, 0);
                 return true;
             }
 
@@ -242,14 +245,13 @@ void tdx_ept_misconfig_exit_to_vmm(pa_t gpa)
     async_tdexit_to_vmm(TDX_SUCCESS, vm_exit_reason, 0, 0, gpa.raw, 0);
 }
 
-void tdx_inject_ve(uint64_t vm_exit_reason, uint64_t exit_qualification, tdvps_t* tdvps_p,
-        uint64_t gpa, uint64_t gla)
+void tdx_inject_ve(uint64_t vm_exit_reason, uint64_t exit_qualification,
+                   ve_category_e category, tdvps_t* tdvps_p, uint64_t gpa, uint64_t gla)
 {
     bool_t ve_info_mapped = false;
     tdvps_ve_info_t* ve_info_p;
 
     // Before we inject a #VE, reinject IDT vectoring events that happened during VM exit, if any
-
     tdx_debug_assert(tdvps_p->management.curr_vm == 0);
     {
         ve_info_p = &tdvps_p->ve_info;
@@ -275,6 +277,7 @@ void tdx_inject_ve(uint64_t vm_exit_reason, uint64_t exit_qualification, tdvps_t
         ve_info_p->gla = gla;
         ve_info_p->gpa = gpa;
         ve_info_p->eptp_index = (uint16_t)eptp_index;
+        ve_info_p->ve_category = (uint8_t)category;
         ve_info_p->instruction_length = (uint32_t)length;
         ve_info_p->instruction_info = (uint32_t)info;
 

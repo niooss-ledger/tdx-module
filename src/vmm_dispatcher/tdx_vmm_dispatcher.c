@@ -37,6 +37,8 @@
 #include "helpers/helpers.h"
 #include "metadata_handlers/metadata_generic.h"
 
+
+
 _STATIC_INLINE_ void mark_lp_as_busy(void)
 {
     get_local_data()->lp_is_busy = true;
@@ -63,6 +65,7 @@ void tdx_vmm_dispatcher(void)
     // Get leaf code from RAX in local data (saved on entry)
     tdx_leaf_and_version_t leaf_opcode;
     leaf_opcode.raw = local_data->vmm_regs.rax;
+
 
     ia32_core_capabilities_t core_capabilities;
 
@@ -274,7 +277,7 @@ void tdx_vmm_dispatcher(void)
     }
     case TDH_MNG_INIT_LEAF:
     {
-        local_data->vmm_regs.rax = tdh_mng_init(local_data->vmm_regs.rcx, local_data->vmm_regs.rdx);
+        local_data->vmm_regs.rax = tdh_mng_init(local_data->vmm_regs.rcx, local_data->vmm_regs.rdx, local_data->vmm_regs.r8);
         break;
     }
     case TDH_VP_INIT_LEAF:

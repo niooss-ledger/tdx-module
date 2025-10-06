@@ -57,7 +57,7 @@ __ASM_OBJECTS := $(shell cat $(PROJ_DIR)/asm_objects.txt)
 # Libraries
 CRYPTO_LIB_BUILD_FLAVOR := RELEASE
 ifndef CRYPTO_LIB_VERSION
-CRYPTO_LIB_VERSION      := 2021_10_0
+CRYPTO_LIB_VERSION      := 2021_12_0
 endif # CRYPTO_LIB_VERSION
 CRYPTO_LIB_MAIN_DIR     := $(PROJ_DIR)/libs/ipp/ipp-crypto-ipp-crypto_$(CRYPTO_LIB_VERSION)
 CRYPTO_LIB_SRC_DIR      := $(CRYPTO_LIB_MAIN_DIR)/sources

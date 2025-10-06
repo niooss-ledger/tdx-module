@@ -358,6 +358,7 @@ tdx_static_assert(sizeof(page_list_entry_t) == 8, page_list_entry_t);
 
 #define MAC_LIST_ENTRIES_IN_PAGE        256
 
+
 /** Initialize a MIGSC:  must be done once per migration session before the MIGSC is used
     Caller needs to use aes_gcm_reset() to set the IV as required. */
 void migsc_init(migsc_t *migsc, const key256_t *key);
@@ -381,6 +382,7 @@ _STATIC_INLINE_ bool_t is_gpa_list_entry_op_cancel_or_nop(gpa_list_entry_t gpa_l
 {
     return ((gpa_list_entry.operation & GPA_ENTRY_OP_EXPORT_NOP_MASK) == GPA_ENTRY_OP_NOP);
 }
+
 
 _STATIC_INLINE_ bool_t gpa_list_entry_is_valid(gpa_list_entry_t gpa_list_entry)
 {

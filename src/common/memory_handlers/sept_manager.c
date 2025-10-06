@@ -607,3 +607,4 @@ void set_arch_l2_septe_details_in_vmm_regs(ia32e_sept_t l2_sept_entry, uint16_t 
     local_data_ptr->vmm_regs.rcx = detailed_arch_sept_entry.raw;
     local_data_ptr->vmm_regs.rdx = detailed_arch_info.raw;
 }
+

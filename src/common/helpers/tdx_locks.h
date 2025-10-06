@@ -89,7 +89,7 @@ _STATIC_INLINE_ lock_return_t acquire_mutex_lock_or_wait(mutex_lock_t * lock_ptr
 
     return LOCK_RET_SUCCESS;
 }
-#endif // DEBUGFEATURE_TDX_DBG_TRACE
+#endif // DEBUGFEATURE_TDX_DBG_TRACE_DEBUGFEATURE_BULLSEYE_BUILD
 
 _STATIC_INLINE_ void release_mutex_lock(mutex_lock_t * lock_ptr)
 {

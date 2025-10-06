@@ -493,6 +493,8 @@ _STATIC_INLINE_ void l2_sept_update_gpa_attr(
         l2_sept_entry_ptr->l2_encoding.x = 0;
         l2_sept_entry_ptr->l2_encoding.mt2_tdxu = l2_sept_entry_ptr->l2_encoding.xu;
         l2_sept_entry_ptr->l2_encoding.xu = 0;
+        l2_sept_entry_ptr->l2_encoding.tdpwa = l2_sept_entry_ptr->l2_encoding.pwa;
+        l2_sept_entry_ptr->l2_encoding.pwa = 0;
     }
 }
 
@@ -502,7 +504,7 @@ _STATIC_INLINE_ void l2_sept_update_gpa_attr(
  *  - If the entry is free, return only SVE.  Return VALID as 0.
  *  - Else if the entry is a leaf, return all attributes.  Return VALID as 1.
  *    - If the entry is a blocked leaf, return saved W bit (if is_blockedw) or saved RWXsXu bits (if !is_blockedw)
- *  - Else (non-leaf), return RWXsXu as all-1 (even if they are 0 since the entry is blocked).  Return VALID as 1.
+ *  - Else (non-leaf), return R, W, Xs, Xuand pwa as all-1 (even if they are 0 since the entry is blocked).  Return VALID as 1.
  *
  *  @param l2_sept_entry_ptr - pointer to the L2 sept entry
  *  @param is_blockedw - BLOCKEDW state of the parent L1 entry
@@ -541,6 +543,7 @@ _STATIC_INLINE_ gpa_attr_single_vm_t l2_sept_get_gpa_attr(
                     gpa_attr_single_vm.r = l2_sept_entry_ptr->l2_encoding.mt0_tdrd;
                     gpa_attr_single_vm.xs = l2_sept_entry_ptr->l2_encoding.mt1_tdxs;
                     gpa_attr_single_vm.xu = l2_sept_entry_ptr->l2_encoding.mt2_tdxu;
+                    gpa_attr_single_vm.pwa = l2_sept_entry_ptr->l2_encoding.tdpwa;
                 }
             }
         }
@@ -822,7 +825,9 @@ _STATIC_INLINE_ void sept_l2_unblock(ia32e_sept_t* ept_entry)
     }
 
     // Else - The SEPT entry was not blocked, do nothing
+
 }
+
 
 _STATIC_INLINE_ pa_t sept_get_pa(const ia32e_sept_t *const sept_entry)
 {
@@ -913,5 +918,6 @@ ia32e_sept_t* secure_ept_walk(ia32e_eptp_t septp, pa_t gpa, uint16_t private_hki
 ept_walk_result_t gpa_translate(ia32e_eptp_t eptp, pa_t gpa, bool_t private_gpa,
                                 uint16_t private_hkid, access_rights_t access_rights,
                                 pa_t* hpa, ia32e_ept_t* cached_ept_entry, access_rights_t* accumulated_rwx);
+
 
 #endif /* SRC_COMMON_MEMORY_HANDLERS_SEPT_MANAGER_H_ */

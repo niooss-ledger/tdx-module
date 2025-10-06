@@ -24,7 +24,6 @@
  * @file sha384.c
  * @brief Crypto implementation of SHA384
  */
-
 #include "crypto/sha384.h"
 #include "helpers/helpers.h"
 #include "ippcp.h"

@@ -347,7 +347,6 @@ api_error_type tdh_mem_page_demote(page_info_api_input_t gpa_page_info, td_handl
                 // For L2, it means that if the page is not pending, the L2 entry gets unblocked.
                 // Else, it remains blocked (L2 has a single blocked state that applies for pending too)
                 ia32e_sept_t l2_sept_entry = *l2_sept_entry_ptr[vm_id];
-
                 tdx_debug_assert(unblock_required_flag);
                 if (!sept_state_is_any_pending(split_page_sept_entry_copy))
                 {

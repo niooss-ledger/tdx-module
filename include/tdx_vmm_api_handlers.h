@@ -330,10 +330,11 @@ api_error_type tdh_mng_key_freeid(uint64_t tdr_pa);
  *
  * @param tdr_pa The physical address of a TDR page
  * @param td_params_pa The physical address of an input TD_PARAMS struct
+ * @param event_filters_info_params HPA (including HKID) of an array of EVENT_FILTER entries
  *
  * @return Success or Error type
  */
-api_error_type tdh_mng_init(uint64_t tdr_pa, uint64_t td_params_pa);
+api_error_type tdh_mng_init(uint64_t tdr_pa, uint64_t td_params_pa, uint64_t event_filters_info_params);
 
 
 /**

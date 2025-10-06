@@ -168,10 +168,9 @@ typedef struct tdvps_ve_info_s
     uint64_t  gla;
     uint64_t  gpa;
     uint16_t  eptp_index;
+    uint8_t reserved_0[2];
 
     // Non-Architectural Fields
-
-    uint8_t              reserved0[2];
     union
     {
         struct
@@ -181,7 +180,9 @@ typedef struct tdvps_ve_info_s
         };
         uint64_t inst_len_and_info;
     };
-    uint8_t              reserved1[84];
+
+    uint8_t ve_category;
+    uint8_t reserved_1[83];
 } tdvps_ve_info_t;
 tdx_static_assert(sizeof(tdvps_ve_info_t) == SIZE_OF_VE_INFO_STRUCT_IN_BYTES, tdvps_ve_info_t);
 
@@ -379,7 +380,7 @@ typedef struct tdvps_guest_state_s
 } tdvps_guest_state_t;
 tdx_static_assert(sizeof(tdvps_guest_state_t) == SIZE_OF_TDVPS_GUEST_STATE_IN_BYTES, tdvps_guest_state_t);
 
-#define SIZE_OF_TDVPS_GUEST_MSR_STATE_IN_BYTES   560
+#define SIZE_OF_TDVPS_GUEST_MSR_STATE_IN_BYTES   616
 #define OFFSET_OF_TDVPS_GUEST_MSR_STATE_IN_BYTES (OFFSET_OF_TDVPS_GUEST_STATE_IN_BYTES+SIZE_OF_TDVPS_GUEST_STATE_IN_BYTES)
 
 /**
@@ -418,9 +419,15 @@ typedef struct tdvps_guest_msr_state_s
     uint64_t ia32_fmask;
     uint64_t ia32_kernel_gs_base;
     uint64_t ia32_tsc_aux;
+    uint64_t ia32_fred_rsp0;
+    uint64_t ia32_pl0_ssp;
+    uint64_t ia32_user_msr_ctl;
+    uint64_t ia32_pebs_base;
+    uint64_t ia32_pebs_index;
+    uint64_t ia32_misc_enable;
+    uint64_t msr_smi_count;
 } tdvps_guest_msr_state_t;
 tdx_static_assert(sizeof(tdvps_guest_msr_state_t) == SIZE_OF_TDVPS_GUEST_MSR_STATE_IN_BYTES, tdvps_guest_msr_state_t);
-
 
 #define SIZE_OF_TD_VMCS_IN_BYTES   (TDX_PAGE_SIZE_IN_BYTES/2)
 #define OFFSET_OF_TDVPS_TD_VMCS_IN_BYTES 0x1000
@@ -514,7 +521,7 @@ typedef struct ALIGN(TDX_PAGE_SIZE_IN_BYTES) tdvps_s
     cpuid_control_t                cpuid_control[NUM_OF_CPUID_CTRL_ENTRIES];
     tdvps_guest_state_t            guest_state;
     tdvps_guest_msr_state_t        guest_msr_state;
-    uint8_t                        reserved_2[848]; /**< Reserved for aligning the next field */
+    uint8_t                        reserved_2[792]; /**< Reserved for aligning the next field */
 
     tdvps_td_vmcs_t                td_vmcs;
     uint8_t                        reserved_3[TDX_PAGE_SIZE_IN_BYTES - SIZE_OF_TD_VMCS_IN_BYTES]; /**< Reserved for aligning the next field */

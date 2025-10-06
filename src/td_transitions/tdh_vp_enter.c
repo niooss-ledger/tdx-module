@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation                                          
-//                                                                               
-// Permission is hereby granted, free of charge, to any person obtaining a copy  
-// of this software and associated documentation files (the "Software"),         
-// to deal in the Software without restriction, including without limitation     
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
-// and/or sell copies of the Software, and to permit persons to whom             
-// the Software is furnished to do so, subject to the following conditions:      
-//                                                                               
-// The above copyright notice and this permission notice shall be included       
-// in all copies or substantial portions of the Software.                        
-//                                                                               
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
-// OR OTHER DEALINGS IN THE SOFTWARE.                                            
-//                                                                               
+// Copyright (C) 2023 Intel Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"),
+// to deal in the Software without restriction, including without limitation
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,
+// and/or sell copies of the Software, and to permit persons to whom
+// the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+// OR OTHER DEALINGS IN THE SOFTWARE.
+//
 // SPDX-License-Identifier: MIT
 
 /**
@@ -139,8 +139,7 @@ static void emulate_ept_violation_td_exit(tdx_module_local_t* local_data_ptr, pa
     exit_qualification.vm = vm_id;
 
     // Emulate an Async TDEXIT
-    initialize_extended_state(local_data_ptr->vp_ctx.xfam);
-
+    initialize_extended_state(tdvps_ptr->management.xfam);
     tdvps_ptr->management.state = VCPU_READY;
     tdvps_ptr->management.last_td_exit = LAST_EXIT_ASYNC_FAULT;
 
@@ -191,7 +190,7 @@ static void save_xmms_by_mask(tdvps_t* tdvps_ptr, uint16_t xmm_select)
 
 }
 
-static void save_regs_after_tdvmcall(tdvps_t* tdvps_ptr, tdvmcall_control_t control, 
+static void save_regs_after_tdvmcall(tdvps_t* tdvps_ptr, tdvmcall_control_t control,
                     uint64_t gprs[16])
 {
     uint64_t mask;
@@ -212,7 +211,7 @@ static void save_regs_after_tdvmcall(tdvps_t* tdvps_ptr, tdvmcall_control_t cont
         if ((control.gpr_select & mask) != 0)
         {
             gprs[i] = get_local_data()->vmm_regs.gprs[i];
-        }       
+        }
         mask <<= 1;
     }
 
@@ -277,8 +276,23 @@ static void restore_guest_td_state_before_td_entry(tdcs_t* tdcs_ptr, tdvps_t* td
 
         for (uint32_t i = 0; i < NUM_PMC; i++)
         {
-            safe_wrmsr(IA32_A_PMC0_MSR_ADDR + i, tdvps_ptr->guest_msr_state.ia32_a_pmc[i]);
-            safe_wrmsr(IA32_PERFEVTSEL0_MSR_ADDR + i, tdvps_ptr->guest_msr_state.ia32_perfevtsel[i]);
+            {
+                safe_wrmsr(IA32_A_PMC0_MSR_ADDR + i, tdvps_ptr->guest_msr_state.ia32_a_pmc[i]);
+                
+                ia32_perfevtsel_t perfevtsel_value = { .raw = tdvps_ptr->guest_msr_state.ia32_perfevtsel[i] };
+                if (perfevtsel_value.forbidden) // if forbidden
+                {
+                    /* The Perfmon event has been filtered out.  Write the value but clear the ENABLE bit (22) to 0.
+                       This ensures that the IA32_PERF_GLOBAL_INUSE MSR returns the in-use status bit for this
+                       counter as if it is being used, since the bit is set if and only if IA32_PERFEVTSELx
+                       EVENT_SELECT bits (7:0) are not 0. */
+                    perfevtsel_value.forbidden = 0;
+                    perfevtsel_value.en = 0;
+                }
+
+                safe_wrmsr(IA32_PERFEVTSEL0_MSR_ADDR + i, perfevtsel_value.raw);
+
+            }
         }
 
         for (uint32_t i = 0; i < 2; i++)
@@ -325,12 +339,12 @@ static void restore_guest_td_state_before_td_entry(tdcs_t* tdcs_ptr, tdvps_t* td
         }
 
         uint64_t perf_global_status_mask = (BIT(32) | BIT(59));
-        // save VMM's Perf Global Status (PGS) counter freezing and FC0 
+        // save VMM's Perf Global Status (PGS) counter freezing and FC0
         local_data_ptr->vmm_ia32_perf_global_status = ia32_rdmsr(IA32_PERF_GLOBAL_STATUS_MSR_ADDR) & perf_global_status_mask;
 
         if (0x0 != local_data_ptr->vmm_ia32_perf_global_status)
         {
-            // unfreeze counters and/or clear FC0 
+            // unfreeze counters and/or clear FC0
             safe_wrmsr(IA32_PERF_GLOBAL_STATUS_RESET_MSR_ADDR, perf_global_status_mask);
         }
 
@@ -805,9 +819,9 @@ api_error_type tdh_vp_enter(uint64_t vcpu_handle_and_flags)
     else if ((filter_result == FILTER_OK_NOTIFY_EPS_FAULT) && can_inject_epf_ve(exit_qualification, tdvps_ptr))
     {
         tdx_debug_assert(tdvps_ptr->management.curr_vm == 0);
-        tdx_inject_ve((uint32_t)exit_reason.raw, exit_qualification.raw, tdvps_ptr, faulting_gpa.raw, 0);
+        tdx_inject_ve((uint32_t)exit_reason.raw, exit_qualification.raw, VE_INFO_ARCH, tdvps_ptr, faulting_gpa.raw, 0);
     }
-    
+
     /*-------------------------------------------------------------------------------------
     At this point we're at the VM to be entered - if there was an L2->L1 virtual exit
     then the state of L1 is after the L2->L1 exit.

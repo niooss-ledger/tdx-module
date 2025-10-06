@@ -24,6 +24,7 @@
  * @brief Crypto implementation for AES GCM library
  */
 
+
 #include "crypto/aes_gcm.h"
 #include "ippcp.h"
 #include "debug/tdx_debug.h"
@@ -223,3 +224,5 @@ aes_gcm_api_error aes_gcm_finalize(aes_gcm_ctx_t *ctx, uint8_t *mac)
 
     return (aes_gcm_api_error) status;
 }
+
+

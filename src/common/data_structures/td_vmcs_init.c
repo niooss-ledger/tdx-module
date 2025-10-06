@@ -214,7 +214,6 @@ static void init_td_vmcs_exec_control_field(tdcs_t * tdcs_ptr, uint16_t vm_id)
     sec_proc_based_execution_controls.en_pconfig = tdcs_ptr->executions_ctl_fields.cpuid_flags.pconfig_supported;
 
     ter_proc_based_execution_controls.gpaw = tdcs_ptr->executions_ctl_fields.gpaw;
-
     if (get_global_data()->ddpd_supported != tdcs_ptr->executions_ctl_fields.cpuid_flags.ddpd_supported)
     {
         ter_proc_based_execution_controls.virt_ia32_spec_ctrl = 1;

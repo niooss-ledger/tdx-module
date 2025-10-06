@@ -326,6 +326,8 @@ _STATIC_INLINE_ api_error_type check_cpuid_configurations(tdx_module_global_t* g
         return api_error_with_operand_id(TDX_INCORRECT_MSR_VALUE, IA32_MISC_ENABLES_MSR_ADDR);
     }
 
+    global_data_ptr->plt_common_config.ia32_misc_enable.raw = misc_enable.raw;
+
     uint32_t last_base_leaf, last_extended_leaf;
     uint32_t ebx, ecx, edx;
 
@@ -513,6 +515,7 @@ _STATIC_INLINE_ api_error_type check_cpuid_configurations(tdx_module_global_t* g
             // FxCtr[i]_is_supported := ECX[i] || (EDX[4:0] > i)
             // So, set all bitmap bits per EDX[4:0] and OR with the bitmap in ECX.
             global_data_ptr->fc_bitmap = (uint32_t)((BIT(cpuid_0a_edx.num_fcs) - 1) | cpuid_0a_ecx.raw);
+
         }
 
         /* Get the supported extended features.  Allow only features that are recognized
@@ -924,7 +927,6 @@ _STATIC_INLINE_ api_error_type check_l2_vmx_msrs(tdx_module_global_t* tdx_global
     vmx_procbased_ctls3_t procbased_ctls3_init = { .raw = PROCBASED_CTLS3_L2_INIT };
 
     vmx_procbased_ctls3_t procbased_ctls3_variable = { .raw = PROCBASED_CTLS3_L2_VARIABLE };
-    
     // The L2 VMCS spreadsheet generates the VARIABLE mask for the VIRTUALIZE_IA32_SPEC_CTRL as 1,
     // however this bit is only set if the CPU supports it. Therefore don't check it.
     procbased_ctls3_variable.virt_ia32_spec_ctrl = 0;
@@ -1034,7 +1036,6 @@ _STATIC_INLINE_ api_error_type check_vmx_msrs(tdx_module_global_t* tdx_global_da
     }
 
     vmx_procbased_ctls3_t procbased_ctls3_variable = { .raw = PROCBASED_CTLS3_VARIABLE };
-    
     // The TD VMCS spreadsheet generates the VARIABLE mask for the VIRTUALIZE_IA32_SPEC_CTRL as 1,
     // however this bit is only set if the CPU supports it. Therefore don't check it.
     procbased_ctls3_variable.virt_ia32_spec_ctrl = 0;

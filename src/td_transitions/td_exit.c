@@ -275,8 +275,17 @@ static void save_guest_td_state_before_td_exit(tdcs_t* tdcs_ptr, tdx_module_loca
 
         for (uint32_t i = 0; i < NUM_PMC; i++)
         {
-            tdvps_ptr->guest_msr_state.ia32_a_pmc[i] = ia32_rdmsr(IA32_A_PMC0_MSR_ADDR + i);
-            tdvps_ptr->guest_msr_state.ia32_perfevtsel[i] = ia32_rdmsr(IA32_PERFEVTSEL0_MSR_ADDR + i);
+            {
+                tdvps_ptr->guest_msr_state.ia32_a_pmc[i] = ia32_rdmsr(IA32_A_PMC0_MSR_ADDR + i);
+                
+                if (!tdcs_ptr->executions_ctl2_fields.event_filters_num)
+                {
+                    /* IA32_PERFEVTSEL[i] values are only saved if event filtering is not enabled.
+                       If event filtering is enabled, TDVPS always holds the up-to-date value of
+                       each IA32_PERFEVTSEL[i]. */
+                    tdvps_ptr->guest_msr_state.ia32_perfevtsel[i] = ia32_rdmsr(IA32_PERFEVTSEL0_MSR_ADDR + i);
+                }
+            }
         }
 
         for (uint32_t i = 0; i < 2; i++)

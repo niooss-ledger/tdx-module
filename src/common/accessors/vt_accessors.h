@@ -37,6 +37,7 @@
 #include "tdx_api_defs.h"
 #include "auto_gen/tdx_error_codes_defs.h"
 
+
 typedef uint64_t vmcs_ptr_t;
 
 /**
@@ -249,12 +250,10 @@ _STATIC_INLINE_ uint64_t ia32_seamops_capabilities(void)
 {
     uint64_t leaf = 0; // for CAPABILITES
     uint64_t capabilities = 0;
- 
     _ASM_VOLATILE_ (
             ".byte 0x66; .byte 0x0F; .byte 0x01; .byte 0xCE;"
             :"=a"(capabilities) : "a"(leaf)
             :"memory", "cc");
-
     return capabilities;
 }
 
@@ -280,7 +279,6 @@ _STATIC_INLINE_ uint64_t ia32_seamops_seamdb_getref(uint64_t* last_entry, uint25
 {
     uint64_t leaf = SEAMOPS_SEAMDB_GETREF_LEAF;
     uint64_t result;
-
     _ASM_VOLATILE_ (
             ".byte 0x66; .byte 0x0F; .byte 0x01; .byte 0xCE;"
             "movq %%r10, %1;"
@@ -295,7 +293,6 @@ _STATIC_INLINE_ uint64_t ia32_seamops_seamdb_getref(uint64_t* last_entry, uint25
              "=r"(last_entry_nonce->qwords[3]), "=r"(*seamdb_size)
             :"a"(leaf)
             :"memory", "cc", "r10", "r11", "r12", "r13", "r14", "r15");
-
     return result;
 }
 
@@ -308,7 +305,6 @@ _STATIC_INLINE_ uint64_t ia32_seamops_seamdb_report(void* report_struct_la,
 {
     uint64_t leaf = SEAMOPS_SEAMDB_REPORT_LEAF;
     uint64_t result;
-
     _ASM_VOLATILE_ (
             "movq %4,  %%r8\n"
             "movq %5,  %%r9\n"
@@ -324,7 +320,6 @@ _STATIC_INLINE_ uint64_t ia32_seamops_seamdb_report(void* report_struct_la,
              "r"(report_data_la), "r"(tee_info_hash_la), "r"(entry_idx),
              "r"(entry_nonce)
             :"memory", "cc", "r8", "r9", "r10", "r11", "r12", "r13", "r14");
-
     return result;
 }
 
@@ -332,13 +327,11 @@ _STATIC_INLINE_ uint64_t ia32_seamops_seamverify_report(const report_mac_struct_
 {
     uint64_t leaf = SEAMOPS_SEAMVERIFYREPORT_LEAF;
     uint64_t result;
-
         _ASM_VOLATILE_ (
             ".byte 0x66; .byte 0x0F; .byte 0x01; .byte 0xCE;"
             :"=a"(result)
             :"a"(leaf), "b"(report_mac)
             :"memory", "cc");
-
     return result;
 }
 

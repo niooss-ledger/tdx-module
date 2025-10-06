@@ -74,6 +74,7 @@ typedef union migs_iv_s
 } migs_iv_t;
 tdx_static_assert(CRYPTO_IV_SIZE == sizeof(migs_iv_t), migs_iv_t);
 
+
 aes_gcm_api_error aes_gcm_init(const key256_t *key, aes_gcm_ctx_t *ctx, const migs_iv_t *iv);    // validates also that enough memory was allocated for the context
 // Refreshes AES-GCM context before usage to update internal pointers
 // Should be called if the used AES-GCM context was initialized earlier by other SEAMCALL
@@ -84,5 +85,6 @@ aes_gcm_api_error aes_gcm_encrypt(aes_gcm_ctx_t *ctx, const uint8_t *src, uint8_
 aes_gcm_api_error aes_gcm_decrypt(aes_gcm_ctx_t *ctx, const uint8_t *src, uint8_t *dst, int32_t size);
 aes_gcm_api_error aes_gcm_decrypt_direct(aes_gcm_ctx_t *ctx, const uint8_t *src, uint8_t *dst, int32_t size);
 aes_gcm_api_error aes_gcm_finalize(aes_gcm_ctx_t *ctx, uint8_t *mac);
+
 
 #endif /* __AES_GCM_H_INCLUDED__ */

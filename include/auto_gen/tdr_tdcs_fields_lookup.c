@@ -394,9 +394,9 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0120, .attributes = { .raw = 0x10 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
    .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
-   .guest_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .guest_wr_mask = (7ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .guest_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .guest_wr_mask = (9223372036854775823ULL & 0xFFFFFFFFFFFFFFFFULL),
    .migtd_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .migtd_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
-   .export_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .import_mask = (7ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .export_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .import_mask = (9223372036854775823ULL & 0xFFFFFFFFFFFFFFFFULL),
    .special_rd_handling = false, .special_wr_handling = true,
    .mig_export = MIG_ME, .mig_import = MIG_MEO 
  },
@@ -425,7 +425,67 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MBO 
  },
  {
-   // CPUID_VALID // 33
+   // VE_REDUCTION_VALID // 33
+   .field_id =  { .raw  = 0x911000000000001A }, 
+   .num_of_fields = 1, .num_of_elem = 1, .offset = 0x012D, .attributes = { .raw = 0x0 },
+   .prod_rd_mask = (-1ULL & 0xFFULL), .prod_wr_mask = (0ULL & 0xFFULL),
+   .dbg_rd_mask = (-1ULL & 0xFFULL), .dbg_wr_mask = (0ULL & 0xFFULL),
+   .guest_rd_mask = (-1ULL & 0xFFULL), .guest_wr_mask = (0ULL & 0xFFULL),
+   .migtd_rd_mask = (-1ULL & 0xFFULL), .migtd_wr_mask = (0ULL & 0xFFULL),
+   .export_mask = (-1ULL & 0xFFULL), .import_mask = (-1ULL & 0xFFULL),
+   .special_rd_handling = false, .special_wr_handling = false,
+   .mig_export = MIG_MB, .mig_import = MIG_MBO 
+ },
+ {
+   // CPUID_FIXED0_BITMAP // 34
+   .field_id =  { .raw  = 0x9110000300000021 }, 
+   .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0F08, .attributes = { .raw = 0x0 },
+   .prod_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .guest_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .guest_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .migtd_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .migtd_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .export_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .import_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .special_rd_handling = false, .special_wr_handling = false,
+   .mig_export = MIG_MB, .mig_import = MIG_MBO 
+ },
+ {
+   // FEATURE_PARAVIRT_CTLS // 35
+   .field_id =  { .raw  = 0x9110000300000022 }, 
+   .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0F58, .attributes = { .raw = 0x0 },
+   .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .guest_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .guest_wr_mask = (4095ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .migtd_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .migtd_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .export_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .import_mask = (4095ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .special_rd_handling = false, .special_wr_handling = true,
+   .mig_export = MIG_ME, .mig_import = MIG_MEO 
+ },
+ {
+   // FILTERED_EVENTS_COUNT // 36
+   .field_id =  { .raw  = 0x9110000300000023 }, 
+   .num_of_fields = 4, .num_of_elem = 1, .offset = 0x0F60, .attributes = { .raw = 0x30 },
+   .prod_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .dbg_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .dbg_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .guest_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .guest_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .migtd_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .migtd_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .export_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .import_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
+   .special_rd_handling = false, .special_wr_handling = false,
+   .mig_export = MIG_NONE, .mig_import = MIG_IBS 
+ },
+ {
+   // EVENT_FILTERS_NUM // 37
+   .field_id =  { .raw  = 0x9110000100000027 }, 
+   .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0F80, .attributes = { .raw = 0x0 },
+   .prod_rd_mask = (0ULL & 0xFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFULL),
+   .dbg_rd_mask = (0ULL & 0xFFFFULL), .dbg_wr_mask = (0ULL & 0xFFFFULL),
+   .guest_rd_mask = (0ULL & 0xFFFFULL), .guest_wr_mask = (0ULL & 0xFFFFULL),
+   .migtd_rd_mask = (0ULL & 0xFFFFULL), .migtd_wr_mask = (0ULL & 0xFFFFULL),
+   .export_mask = (0ULL & 0xFFFFULL), .import_mask = (0ULL & 0xFFFFULL),
+   .special_rd_handling = false, .special_wr_handling = false,
+   .mig_export = MIG_NONE, .mig_import = MIG_NONE 
+ },
+ {
+   // CPUID_VALID // 38
    .field_id =  { .raw  = 0x9110000000000080 }, 
    .num_of_fields = 80, .num_of_elem = 1, .offset = 0x0134, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFULL), .prod_wr_mask = (0ULL & 0xFFULL),
@@ -437,7 +497,31 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_NONE 
  },
  {
-   // XBUFF_OFFSETS // 34
+   // CPUID4_NATIVE_VALUES // 39
+   .field_id =  { .raw  = 0x9110000200000200 }, 
+   .num_of_fields = 4, .num_of_elem = 4, .offset = 0x0F10, .attributes = { .raw = 0x0 },
+   .prod_rd_mask = (0ULL & 0xFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFULL),
+   .dbg_rd_mask = (-1ULL & 0xFFFFFFFFULL), .dbg_wr_mask = (0ULL & 0xFFFFFFFFULL),
+   .guest_rd_mask = (0ULL & 0xFFFFFFFFULL), .guest_wr_mask = (0ULL & 0xFFFFFFFFULL),
+   .migtd_rd_mask = (0ULL & 0xFFFFFFFFULL), .migtd_wr_mask = (0ULL & 0xFFFFFFFFULL),
+   .export_mask = (-1ULL & 0xFFFFFFFFULL), .import_mask = (-1ULL & 0xFFFFFFFFULL),
+   .special_rd_handling = false, .special_wr_handling = true,
+   .mig_export = MIG_MB, .mig_import = MIG_MBO 
+ },
+ {
+   // CPUID4_NATIVE_VALID // 40
+   .field_id =  { .raw  = 0x9110000000000240 }, 
+   .num_of_fields = 4, .num_of_elem = 1, .offset = 0x0F50, .attributes = { .raw = 0x0 },
+   .prod_rd_mask = (0ULL & 0xFFULL), .prod_wr_mask = (0ULL & 0xFFULL),
+   .dbg_rd_mask = (0ULL & 0xFFULL), .dbg_wr_mask = (0ULL & 0xFFULL),
+   .guest_rd_mask = (0ULL & 0xFFULL), .guest_wr_mask = (0ULL & 0xFFULL),
+   .migtd_rd_mask = (0ULL & 0xFFULL), .migtd_wr_mask = (0ULL & 0xFFULL),
+   .export_mask = (0ULL & 0xFFULL), .import_mask = (0ULL & 0xFFULL),
+   .special_rd_handling = false, .special_wr_handling = false,
+   .mig_export = MIG_NONE, .mig_import = MIG_NONE 
+ },
+ {
+   // XBUFF_OFFSETS // 41
    .field_id =  { .raw  = 0x9110000200000800 }, 
    .num_of_fields = 19, .num_of_elem = 1, .offset = 0x0190, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFULL),
@@ -449,7 +533,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_IBS 
  },
  {
-   // TD_EPOCH // 35
+   // TD_EPOCH // 42
    .field_id =  { .raw  = 0x9210000300000000 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0200, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -461,7 +545,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_IBS 
  },
  {
-   // REFCOUNT // 36
+   // REFCOUNT // 43
    .field_id =  { .raw  = 0x9210000100000001 }, 
    .num_of_fields = 2, .num_of_elem = 1, .offset = 0x0208, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFULL),
@@ -473,7 +557,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_IBS 
  },
  {
-   // MRTD // 37
+   // MRTD // 44
    .field_id =  { .raw  = 0x1310000300000000 }, 
    .num_of_fields = 1, .num_of_elem = 6, .offset = 0x0240, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -485,7 +569,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MB 
  },
  {
-   // MRCONFIGID // 38
+   // MRCONFIGID // 45
    .field_id =  { .raw  = 0x1310000300000010 }, 
    .num_of_fields = 1, .num_of_elem = 6, .offset = 0x0270, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -497,7 +581,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MB 
  },
  {
-   // MROWNER // 39
+   // MROWNER // 46
    .field_id =  { .raw  = 0x1310000300000018 }, 
    .num_of_fields = 1, .num_of_elem = 6, .offset = 0x02A0, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -509,7 +593,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MB 
  },
  {
-   // MROWNERCONFIG // 40
+   // MROWNERCONFIG // 47
    .field_id =  { .raw  = 0x1310000300000020 }, 
    .num_of_fields = 1, .num_of_elem = 6, .offset = 0x02D0, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -521,7 +605,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MB 
  },
  {
-   // RTMR // 41
+   // RTMR // 48
    .field_id =  { .raw  = 0x1310000300000040 }, 
    .num_of_fields = 4, .num_of_elem = 6, .offset = 0x0300, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -533,7 +617,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_ME, .mig_import = MIG_ME 
  },
  {
-   // CPUID_VALUES // 42
+   // CPUID_VALUES // 49
    .field_id =  { .raw  = 0x9410000300000000 }, 
    .num_of_fields = 80, .num_of_elem = 2, .offset = 0x0800, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -545,7 +629,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MBO 
  },
  {
-   // VIRTUAL_IA32_ARCH_CAPABILITIES // 43
+   // VIRTUAL_IA32_ARCH_CAPABILITIES // 50
    .field_id =  { .raw  = 0x961000030000010A }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0778, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -557,7 +641,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MB 
  },
  {
-   // VIRTUAL_IA32_VMX_BASIC // 44
+   // VIRTUAL_IA32_VMX_BASIC // 51
    .field_id =  { .raw  = 0x9610000300000480 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0700, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -569,7 +653,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MB 
  },
  {
-   // VIRTUAL_IA32_VMX_MISC // 45
+   // VIRTUAL_IA32_VMX_MISC // 52
    .field_id =  { .raw  = 0x9610000300000485 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0708, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -581,7 +665,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MB 
  },
  {
-   // VIRTUAL_IA32_VMX_CR0_FIXED0 // 46
+   // VIRTUAL_IA32_VMX_CR0_FIXED0 // 53
    .field_id =  { .raw  = 0x9610000300000486 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0710, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -593,7 +677,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MB 
  },
  {
-   // VIRTUAL_IA32_VMX_CR0_FIXED1 // 47
+   // VIRTUAL_IA32_VMX_CR0_FIXED1 // 54
    .field_id =  { .raw  = 0x9610000300000487 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0718, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -605,7 +689,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MB 
  },
  {
-   // VIRTUAL_IA32_VMX_CR4_FIXED0 // 48
+   // VIRTUAL_IA32_VMX_CR4_FIXED0 // 55
    .field_id =  { .raw  = 0x9610000300000488 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0720, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -617,7 +701,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MB 
  },
  {
-   // VIRTUAL_IA32_VMX_CR4_FIXED1 // 49
+   // VIRTUAL_IA32_VMX_CR4_FIXED1 // 56
    .field_id =  { .raw  = 0x9610000300000489 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0728, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -629,7 +713,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MB 
  },
  {
-   // VIRTUAL_IA32_VMX_PROCBASED_CTLS2 // 50
+   // VIRTUAL_IA32_VMX_PROCBASED_CTLS2 // 57
    .field_id =  { .raw  = 0x961000030000048B }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0730, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -641,7 +725,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MB 
  },
  {
-   // VIRTUAL_IA32_VMX_EPT_VPID_CAP // 51
+   // VIRTUAL_IA32_VMX_EPT_VPID_CAP // 58
    .field_id =  { .raw  = 0x961000030000048C }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0738, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -653,7 +737,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MB 
  },
  {
-   // VIRTUAL_IA32_VMX_TRUE_PINBASED_CTLS // 52
+   // VIRTUAL_IA32_VMX_TRUE_PINBASED_CTLS // 59
    .field_id =  { .raw  = 0x961000030000048D }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0740, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -665,7 +749,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MB 
  },
  {
-   // VIRTUAL_IA32_VMX_TRUE_PROCBASED_CTLS // 53
+   // VIRTUAL_IA32_VMX_TRUE_PROCBASED_CTLS // 60
    .field_id =  { .raw  = 0x961000030000048E }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0748, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -677,7 +761,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MB 
  },
  {
-   // VIRTUAL_IA32_VMX_TRUE_EXIT_CTLS // 54
+   // VIRTUAL_IA32_VMX_TRUE_EXIT_CTLS // 61
    .field_id =  { .raw  = 0x961000030000048F }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0750, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -689,7 +773,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MB 
  },
  {
-   // VIRTUAL_IA32_VMX_TRUE_ENTRY_CTLS // 55
+   // VIRTUAL_IA32_VMX_TRUE_ENTRY_CTLS // 62
    .field_id =  { .raw  = 0x9610000300000490 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0758, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -701,7 +785,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MB 
  },
  {
-   // VIRTUAL_IA32_VMX_VMFUNC // 56
+   // VIRTUAL_IA32_VMX_VMFUNC // 63
    .field_id =  { .raw  = 0x9610000300000491 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0760, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -713,7 +797,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MB 
  },
  {
-   // VIRTUAL_IA32_VMX_PROCBASED_CTLS3 // 57
+   // VIRTUAL_IA32_VMX_PROCBASED_CTLS3 // 64
    .field_id =  { .raw  = 0x9610000300000492 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0768, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -725,7 +809,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MB 
  },
  {
-   // VIRTUAL_IA32_VMX_EXIT_CTLS2 // 58
+   // VIRTUAL_IA32_VMX_EXIT_CTLS2 // 65
    .field_id =  { .raw  = 0x9610000300000493 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0770, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -737,7 +821,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MB 
  },
  {
-   // MIG_DEC_KEY_SET // 59
+   // MIG_DEC_KEY_SET // 66
    .field_id =  { .raw  = 0x9810000000000001 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0580, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFULL), .prod_wr_mask = (0ULL & 0xFFULL),
@@ -749,7 +833,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_NONE 
  },
  {
-   // EXPORT_COUNT // 60
+   // EXPORT_COUNT // 67
    .field_id =  { .raw  = 0x9810000200000002 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0584, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFULL),
@@ -761,7 +845,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MB 
  },
  {
-   // IMPORT_COUNT // 61
+   // IMPORT_COUNT // 68
    .field_id =  { .raw  = 0x9810000200000003 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0588, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFULL),
@@ -773,7 +857,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_ME, .mig_import = MIG_ME 
  },
  {
-   // MIG_EPOCH // 62
+   // MIG_EPOCH // 69
    .field_id =  { .raw  = 0x9810000200000004 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x058C, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFULL),
@@ -785,7 +869,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_NONE 
  },
  {
-   // BW_EPOCH // 63
+   // BW_EPOCH // 70
    .field_id =  { .raw  = 0x9810000300000005 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0590, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -797,7 +881,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_NONE 
  },
  {
-   // TOTAL_MB_COUNT // 64
+   // TOTAL_MB_COUNT // 71
    .field_id =  { .raw  = 0x9810000300000006 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0598, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -809,7 +893,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_NONE 
  },
  {
-   // MIG_DEC_KEY // 65
+   // MIG_DEC_KEY // 72
    .field_id =  { .raw  = 0x9810000300000010 }, 
    .num_of_fields = 1, .num_of_elem = 4, .offset = 0x05A0, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -821,7 +905,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_NONE 
  },
  {
-   // MIG_DEC_WORKING_KEY // 66
+   // MIG_DEC_WORKING_KEY // 73
    .field_id =  { .raw  = 0x9810000300000014 }, 
    .num_of_fields = 1, .num_of_elem = 4, .offset = 0x05C0, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -833,7 +917,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_NONE 
  },
  {
-   // MIG_ENC_KEY // 67
+   // MIG_ENC_KEY // 74
    .field_id =  { .raw  = 0x9810000300000018 }, 
    .num_of_fields = 1, .num_of_elem = 4, .offset = 0x05E0, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -845,7 +929,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_NONE 
  },
  {
-   // MIG_ENC_WORKING_KEY // 68
+   // MIG_ENC_WORKING_KEY // 75
    .field_id =  { .raw  = 0x981000030000001C }, 
    .num_of_fields = 1, .num_of_elem = 4, .offset = 0x0600, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -857,7 +941,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_NONE 
  },
  {
-   // MIG_VERSION // 69
+   // MIG_VERSION // 76
    .field_id =  { .raw  = 0x9810000100000020 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0620, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFULL),
@@ -869,7 +953,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_NONE 
  },
  {
-   // MIG_WORKING_VERSION // 70
+   // MIG_WORKING_VERSION // 77
    .field_id =  { .raw  = 0x9810000100000021 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0622, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFULL),
@@ -881,7 +965,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_NONE 
  },
  {
-   // DIRTY_COUNT // 71
+   // DIRTY_COUNT // 78
    .field_id =  { .raw  = 0x9810000300000030 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0628, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -893,7 +977,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_NONE 
  },
  {
-   // MIG_COUNT // 72
+   // MIG_COUNT // 79
    .field_id =  { .raw  = 0x9810000300000031 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0630, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -905,7 +989,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_NONE 
  },
  {
-   // NUM_MIGS // 73
+   // NUM_MIGS // 80
    .field_id =  { .raw  = 0x9810000100000032 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0638, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFULL),
@@ -917,7 +1001,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_NONE 
  },
  {
-   // NUM_MIGRATED_VCPUS // 74
+   // NUM_MIGRATED_VCPUS // 81
    .field_id =  { .raw  = 0x9810000200000034 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x063C, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFULL),
@@ -929,7 +1013,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_IBS 
  },
  {
-   // PRE_IMPORT_UUID // 75
+   // PRE_IMPORT_UUID // 82
    .field_id =  { .raw  = 0x9810000300000040 }, 
    .num_of_fields = 1, .num_of_elem = 4, .offset = 0x0640, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -941,7 +1025,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_NONE 
  },
  {
-   // SERVTD_HASH // 76
+   // SERVTD_HASH // 83
    .field_id =  { .raw  = 0x9910000300000000 }, 
    .num_of_fields = 1, .num_of_elem = 6, .offset = 0x0D00, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -953,7 +1037,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_IBS 
  },
  {
-   // SERVTD_NUM // 77
+   // SERVTD_NUM // 84
    .field_id =  { .raw  = 0x9910000100000006 }, 
    .num_of_fields = 1, .num_of_elem = 1, .offset = 0x0D30, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFULL),
@@ -965,7 +1049,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_CB 
  },
  {
-   // SERVTD_BINDINGS_TABLE // 78
+   // SERVTD_BINDINGS_TABLE // 85
    .field_id =  { .raw  = 0x9910000300000080 }, 
    .num_of_fields = 1, .num_of_elem = 16, .offset = 0x0D90, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -977,7 +1061,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_ME, .mig_import = MIG_NONE 
  },
  {
-   // MIGSC_LINKS // 79
+   // MIGSC_LINKS // 86
    .field_id =  { .raw  = 0x9A10000300000000 }, 
    .num_of_fields = 512, .num_of_elem = 1, .offset = 0x5000, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -989,7 +1073,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_NONE 
  },
  {
-   // X2APIC_IDS // 80
+   // X2APIC_IDS // 87
    .field_id =  { .raw  = 0x9C10000200000000 }, 
    .num_of_fields = 576, .num_of_elem = 1, .offset = 0x1100, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (-1ULL & 0xFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFULL),
@@ -1001,7 +1085,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_MB, .mig_import = MIG_MBO 
  },
  {
-   // MSR_BITMAPS // 81
+   // MSR_BITMAPS // 88
    .field_id =  { .raw  = 0x2010000300000000 }, 
    .num_of_fields = 512, .num_of_elem = 1, .offset = 0x2000, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -1013,7 +1097,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_IBS 
  },
  {
-   // SEPT_ROOT // 82
+   // SEPT_ROOT // 89
    .field_id =  { .raw  = 0x2110000300000000 }, 
    .num_of_fields = 512, .num_of_elem = 1, .offset = 0x3000, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -1025,7 +1109,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_IBS 
  },
  {
-   // L2_SEPT_ROOT_1 // 83
+   // L2_SEPT_ROOT_1 // 90
    .field_id =  { .raw  = 0x2510000300000000 }, 
    .num_of_fields = 512, .num_of_elem = 1, .offset = 0x6000, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -1037,7 +1121,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_NONE 
  },
  {
-   // L2_SEPT_ROOT_2 // 84
+   // L2_SEPT_ROOT_2 // 91
    .field_id =  { .raw  = 0x2910000300000000 }, 
    .num_of_fields = 512, .num_of_elem = 1, .offset = 0x7000, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),
@@ -1049,7 +1133,7 @@ const md_lookup_t tdr_tdcs_lookup[MAX_NUM_TDR_TDCS_LOOKUP] = {
    .mig_export = MIG_NONE, .mig_import = MIG_NONE 
  },
  {
-   // L2_SEPT_ROOT_3 // 85
+   // L2_SEPT_ROOT_3 // 92
    .field_id =  { .raw  = 0x2D10000300000000 }, 
    .num_of_fields = 512, .num_of_elem = 1, .offset = 0x8000, .attributes = { .raw = 0x0 },
    .prod_rd_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL), .prod_wr_mask = (0ULL & 0xFFFFFFFFFFFFFFFFULL),

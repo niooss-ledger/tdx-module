@@ -213,6 +213,7 @@ api_error_type tdh_export_blockw(gpa_list_info_t gpa_list_info, uint64_t target_
             // Update the SEPT entry in memory
             atomic_mem_write_64b(&sept_entry_ptr->raw, new_sept_entry.raw);
 
+
             // Update the TD's BW_EPOCH
             tdcs_p->migration_fields.bw_epoch.raw = tdcs_p->epoch_tracking.epoch_and_refcount.td_epoch;
 

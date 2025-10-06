@@ -99,6 +99,21 @@ _STATIC_INLINE_ uint64_t construct_wrmsr_value(uint64_t rdx, uint64_t rax)
     return ((rdx << 32) | (rax & BIT_MASK_32BITS));
 }
 
+typedef enum
+{
+    VE_INFO_ARCH = 0x00,
+    VE_INFO_PENDING = 0x01,
+    VE_INFO_RESERVED_GPA_BITS = 0x02,
+    VE_INFO_CONFIG_PARAVIRT = 0x10,
+    VE_INFO_NON_CONFIG_PARAVIRT = 0x11,
+    VE_INFO_UNSUPPORTED_FEATURE = 0x80
+} ve_category_e;
+
+_STATIC_INLINE_ uint16_t construct_msr_status_with_ve_category(uint16_t status, ve_category_e ve_category)
+{
+    return (uint16_t)(((uint32_t)ve_category << 8) | (uint32_t)status);
+}
+
 _STATIC_INLINE_ bool_t are_gpa_bits_above_virt_maxpa_set(uint64_t gpa, bool_t gpaw, uint64_t virt_maxpa)
 {
     uint16_t gpa_width = gpaw ? 52 : 48;
@@ -1396,7 +1411,7 @@ typedef enum
  *
  * @return Success status or a #GP/#VE indicator
  */
-cr_write_status_e write_guest_cr0(uint64_t value, bool_t allow_pe_disable);
+uint16_t write_guest_cr0(uint64_t value, bool_t allow_pe_disable);
 
 /**
  * @brief Check if CR4 value is allowed by current TD attributes
@@ -1418,7 +1433,7 @@ bool_t is_guest_cr4_allowed_by_td_config(ia32_cr4_t cr4, tdcs_t* tdcs_p, ia32_xc
  *
  * @return Success status or a #GP/#VE indicator
  */
-cr_write_status_e write_guest_cr4(uint64_t value, tdcs_t* tdcs_p, tdvps_t* tdvsp_p);
+uint16_t write_guest_cr4(uint64_t value, tdcs_t* tdcs_p, tdvps_t* tdvsp_p);
 
 /**
  * @brief Checks the validity the TD attributes that will be set in the TDCS
@@ -1564,6 +1579,7 @@ _STATIC_INLINE_ bool_t op_state_is_import_in_progress(op_state_e op_state)
     return state_flags_lookup[op_state].import_in_progress;
 }
 
+
 _STATIC_INLINE_ bool_t op_state_is_seamcall_allowed(seamcall_leaf_opcode_t current_leaf,
                                                     op_state_e op_state, bool_t other_td)
 {
@@ -1627,6 +1643,19 @@ typedef enum
     MSR_ACTION_VE,
     MSR_ACTION_GP,
     MSR_ACTION_GP_OR_VE,
+    MSR_ACTION_GP_OR_VE_BY_REDUCED_VE,
+    MSR_ACTION_GP_OR_VE_BY_EST,
+    MSR_ACTION_GP_OR_VE_BY_TM2,
+    MSR_ACTION_GP_OR_VE_BY_DCA,
+    MSR_ACTION_GP_OR_VE_BY_TSC_DEADLINE,
+    MSR_ACTION_GP_OR_VE_BY_MTRR,
+    MSR_ACTION_GP_OR_VE_BY_MCA,
+    MSR_ACTION_GP_OR_VE_BY_ACPI,
+    MSR_ACTION_GP_OR_VE_BY_RDT_M,
+    MSR_ACTION_GP_OR_VE_BY_RDT_A,
+    MSR_ACTION_GP_OR_VE_BY_TME,
+    MSR_ACTION_GP_OR_VE_BY_PCONFIG,
+    MSR_ACTION_GP_OR_VE_BY_CORE_CAPABILITIES,
     MSR_ACTION_FATAL_ERROR,
     MSR_ACTION_OTHER,
 } msr_bitmap_action;
@@ -1649,7 +1678,7 @@ void set_xbuff_offsets_and_size(tdcs_t* tdcs_ptr, uint64_t xfam);
  * Initialize TD-scope metadata.
  * For mutable state import:
  *   - Initialize fields marked as "IE" in the TDR/TDCS spreadsheet.
- *   - currently it does nothing
+ *   - Update mutable fields that are calculated based on imported fields.
  *
  * @param tdcs_ptr - pointer to tdcs
  */
@@ -1837,6 +1866,7 @@ void complete_cpuid_handling(tdx_module_global_t* tdx_global_data_ptr);
  */
 bool_t is_voe_in_exception_bitmap( void );
 
+
 _STATIC_INLINE_ void reset_to_next_iv(migsc_t *migsc, uint64_t iv_counter, uint16_t migs_index)
 {
     migs_iv_t iv;
@@ -1878,6 +1908,15 @@ tdx_static_assert(sizeof(servtd_hash_buff_t) == 58, servtd_hash_buff_t);
    4. Return the actual number of entries. */
 uint32_t prepare_servtd_hash_buff(tdcs_t* tdcs_ptr, servtd_hash_buff_t* servtd_has_buf);
 void calculate_servtd_hash(tdcs_t* tdcs_ptr, bool_t handle_avx_state);
+
+// Update TDCS.CPUID_FLAGS based on TD_CTLS.REDUCE_VE and FEATURE_PARAVIRT_CTLS
+// This helper is used on write by the guest TD and at the end of mutable TD state import
+void update_mutable_cpuid_flags(tdcs_t* tdcs_p);
+
+// Check the imported CPUID_FIXED0_BITMAP.  Each bit that is set to 1 must pass one of the two conditions:
+// The same bit in FIXED0_BITMAP of the local lookup table is 0, or
+// The applicable leaf is in the local lookup table, and all its sub-leaves virtual values in TDCS are 0.
+bool_t check_imported_cpuid_fixed0_bitmap(tdcs_t* tdcs_p);
 
 _STATIC_INLINE_ bool_t is_td_guest_in_64b_mode(void)
 {

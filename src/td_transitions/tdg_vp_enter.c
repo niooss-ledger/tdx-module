@@ -135,6 +135,9 @@ api_error_type tdg_vp_enter(uint64_t flags, uint64_t reg_list_gpa)
 
     set_vm_vmcs_as_active(tdvps_p, vm_id);
 
+    // Before VM entry, update the current VM's VMCS' Guest IA32_PERF_GLOBAL_CTRL
+    conditionally_write_vmcs_ia32_perf_global_ctrl_msr(tdcs_p);
+
     // Translate soft-translated GPAs, if required
     if (!translate_gpas(tdr_p, tdcs_p, tdvps_p, vm_id, &failed_gpa))
     {

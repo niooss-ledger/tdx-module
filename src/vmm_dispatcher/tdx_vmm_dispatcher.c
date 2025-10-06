@@ -177,7 +177,7 @@ void tdx_vmm_dispatcher(void)
         (leaf_opcode.leaf != TDH_SYS_UPDATE_LEAF)
 #ifdef DEBUGFEATURE_TDX_DBG_TRACE
         && (leaf_opcode.leaf != TDDEBUGCONFIG_LEAF)
-#endif
+#endif // DEBUGFEATURE_TDX_DBG_TRACE
         )
     {
         TDX_ERROR("Module system not ready, can't execute leaf 0x%llx\n", leaf_opcode.leaf);
@@ -196,7 +196,7 @@ void tdx_vmm_dispatcher(void)
                                                    local_data->vmm_regs.r8);
         break;
     }
-#endif
+#endif // DEBUGFEATURE_TDX_DBG_TRACE
     case TDH_MNG_ADDCX_LEAF:
     {
         local_data->vmm_regs.rax = tdh_mng_add_cx(local_data->vmm_regs.rcx, local_data->vmm_regs.rdx);

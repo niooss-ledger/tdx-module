@@ -418,13 +418,36 @@ static bool_t check_cpuid_compatibility_and_set_flags(tdcs_t* tdcs_ptr, uint32_t
     {
         cpuid_80000008_eax_t cpuid_80000008_eax = { .raw = cpuid_values.eax };
 
-        if (!is_virt_maxpa_on_import_valid(cpuid_80000008_eax.pa_bits))
+        if (tdcs_ptr->executions_ctl_fields.config_flags.maxgpa_virt)
         {
-            return false;
-        }
+            // Check a virtual MAXGPA value for validity:
+            //   - Must be equal or lower than 52 (if GPAW is 1) or 48 (if GPAW is 0)
+            //   - Must not be higher than the native MAXPA (in PL.MAXPA)
+            //   - Must not be higher that the virtual MAXPA
+            //   - Must not be lower than the MIN_VIRT_MAXPA
+            uint64_t maxgpa = tdcs_ptr->executions_ctl_fields.gpaw ? 52 : 48;
 
-        // Save the virtual MAXPA for easy access
-        tdcs_ptr->executions_ctl_fields.virt_maxpa = cpuid_80000008_eax.pa_bits;
+            if ((cpuid_80000008_eax.gpa_bits > maxgpa) ||
+                (cpuid_80000008_eax.gpa_bits > global_data_ptr->max_pa) ||
+                (cpuid_80000008_eax.gpa_bits > cpuid_80000008_eax.pa_bits) ||
+                (cpuid_80000008_eax.gpa_bits < MIN_VIRT_MAXPA))
+            {
+                return false;
+            }
+
+            // Save the virtual MAXPA for easy access
+            tdcs_ptr->executions_ctl_fields.virt_maxpa = cpuid_80000008_eax.gpa_bits;
+        }
+        else
+        {
+            if (!is_virt_maxpa_on_import_valid(cpuid_80000008_eax.pa_bits))
+            {
+                return false;
+            }
+
+            // Save the virtual MAXPA for easy access
+            tdcs_ptr->executions_ctl_fields.virt_maxpa = cpuid_80000008_eax.pa_bits;
+        }
     }
 
     tdcs_ptr->executions_ctl_fields.cpuid_valid[cpuid_index] = true;
@@ -886,6 +909,13 @@ api_error_code_e md_td_write_field(md_field_id_t field_id, const md_lookup_t* en
         {
             case MD_TDCS_NUM_VCPUS_FIELD_ID:
             {
+                if ((value[0] == 0) || (value[0] > MAX_VCPUS_PER_TD))
+                {
+                    return TDX_METADATA_FIELD_VALUE_NOT_VALID;
+                }
+
+                // Sanity check that compares it with tdcs.max_vcpus is done in check_and_init_imported_td_state_immutable
+
                 break;
             }
             case MD_TDR_TD_UUID_FIELD_ID:

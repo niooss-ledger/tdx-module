@@ -381,7 +381,7 @@ typedef struct tdx_module_global_s
 #ifdef DEBUGFEATURE_TDX_DBG_TRACE
     debug_control_t debug_control;
     debug_message_t trace_buffer[TRACE_BUFFER_SIZE];
-#endif
+#endif // DEBUGFEATURE_TDX_DBG_TRACE
 } tdx_module_global_t;
 
 tdx_static_assert(offsetof(tdx_module_global_t, global_lock) % 2 == 0, global_lock);

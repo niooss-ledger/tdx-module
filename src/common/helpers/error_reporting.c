@@ -49,7 +49,7 @@ void tdx_arch_fatal_error( void )
     TDX_ERROR("!!!!!!!!!!!!!!!!!!         - LAST MESSAGE -        !!!!!!!!!!!!!!!!!!\n");
     debug_control_t* p_ctl = &(get_global_data()->debug_control);
     dump_print_buffer_to_vmm_memory(p_ctl->emergency_buffer, 0);
-#endif
+#endif // DEBUGFEATURE_TDX_DBG_TRACE
 
     ia32_ud2();
 }

@@ -141,7 +141,7 @@ const cpuid_lookup_t cpuid_lookup[MAX_NUM_CPUID_LOOKUP] = {
   },
  [7] = { .leaf_subleaf = {.leaf = 0xa, .subleaf = 0xffffffff},
   .valid_entry = true,
-  .verify_mask = { .eax = 0xff00, .ecx = 0xfffffff0, .edx = 0x8000 },
+  .verify_mask = { .eax = 0xff00, .ecx = 0xffffff80, .edx = 0x8000 },
   .verify_value = { .eax = 0x800, .ecx = 0x0, .edx = 0x8000 },
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff },
   .fixed0_or_dynamic = { .edx = 0xffff6000 },
@@ -424,7 +424,7 @@ const cpuid_lookup_t cpuid_lookup[MAX_NUM_CPUID_LOOKUP] = {
   },
  [60] = { .leaf_subleaf = {.leaf = 0x23, .subleaf = 0x1},
   .valid_entry = true,
-  .verify_mask = { .eax = 0xffffff00, .ebx = 0xfffffff0 },
+  .verify_mask = { .eax = 0xffffff00, .ebx = 0xffffff80 },
   .verify_value = { .eax = 0x0, .ebx = 0x0 },
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff },
   .fixed0_or_dynamic = { .ecx = 0xffffffff, .edx = 0xffffffff },
@@ -478,7 +478,7 @@ const cpuid_lookup_t cpuid_lookup[MAX_NUM_CPUID_LOOKUP] = {
   .verify_mask = { .ebx = 0x200 },
   .verify_value = { .ebx = 0x200 },
   .verify_same = { .eax = 0xffffffff, .ebx = 0xffffffff, .ecx = 0xffffffff, .edx = 0xffffffff },
-  .fixed0_or_dynamic = { .eax = 0xffff0000, .ebx = 0xfffffdff, .ecx = 0xffffffff, .edx = 0xffffffff },
+  .fixed0_or_dynamic = { .ebx = 0xfffffdff, .ecx = 0xffffffff, .edx = 0xffffffff },
   .config_index = 9
   }
 };

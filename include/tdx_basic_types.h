@@ -44,11 +44,11 @@ typedef signed short int       int16_t;
 typedef signed int             int32_t;
 typedef signed long long int   int64_t;
 
-#else
+#else // __cplusplus_CTE_BUILD_!__cplusplus
 
 #include <cstdint>
 
-#endif
+#endif // __cplusplus_CTE_BUILD_!__cplusplus
 
 ////////////////////////////////////////////////////////////////////////////
 // Boolean and true/false definitions.
@@ -63,12 +63,12 @@ typedef uint8_t                  bool_t;
 // Universal true and false values.
 #ifndef true
 #   define true  ((bool_t)1)
-#endif
+#endif // true
 #ifndef false
 #   define false ((bool_t)0)
-#endif
+#endif // false
 
-#else
+#else // __cplusplus
 typedef bool                  bool_t;
 #endif //__cplusplus
 

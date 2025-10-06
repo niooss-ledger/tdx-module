@@ -236,6 +236,7 @@ typedef struct PACKED tdx_module_local_s
     uint64_t              vmm_xcr0_state;
 
     uint64_t              vmm_ia32_fixed_ctr_ctrl;
+    uint64_t              ia32_fixed_ctr_ctrl_value;
     uint64_t              vmm_ia32_fixed_ctr0;
     uint64_t              vmm_ia32_perf_global_status;
     uint64_t              vmm_ia32_perf_global_ctrl;
@@ -243,7 +244,7 @@ typedef struct PACKED tdx_module_local_s
 
 #ifdef DEBUGFEATURE_TDX_DBG_TRACE
     uint32_t              local_dbg_msg_num;
-#endif
+#endif // DEBUGFEATURE_TDX_DBG_TRACE
 
 } tdx_module_local_t;
 tdx_static_assert(offsetof(tdx_module_local_t, vmm_regs) == TDX_LOCAL_DATA_VMM_GPRS_STATE_OFFSET, tdx_module_local_t);

@@ -40,7 +40,7 @@
 
 #if (((TDMR_PAMT_INIT_COUNT * 16) % 64) != 0)
     #error "TDMR_4K_PAMT_INIT_COUNT is wrong"
-#endif
+#endif // (((TDMR_PAMT_INIT_CO...
 
 api_error_type tdh_sys_tdmr_init(uint64_t tdmr_pa)
 {

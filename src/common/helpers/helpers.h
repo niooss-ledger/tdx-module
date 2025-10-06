@@ -290,7 +290,7 @@ void basic_memset(uint64_t dst, uint64_t dst_bytes, uint8_t val, uint64_t nbytes
 void basic_memset_to_zero(void * dst, uint64_t nbytes);
 #if (!defined(__cplusplus))
 void* memset(void *str, int c, uint32_t n);
-#endif
+#endif // __cplusplus
 
 /**
  * @brief Copies source to destination using movdir64b
@@ -1723,18 +1723,7 @@ api_error_type abort_import_session(
     tdcs_t                  *tdcs_p,
     api_error_type           status,
     uint32_t                 status_details);
-#if 0
-/* Abort an import session and set the "output" registers' values.
- * Sets the output registers' (RCX and RDX) values, and then calls
- * "abort_import_session" to update the OP_STATE and calculate the error code
-*/
-api_error_type abort_import_session_with_septe_details(
-    tdcs_t                  *tdcs_p,
-    ia32e_sept_t             septe,
-    ept_level_t              level,
-    api_error_type           status,
-    uint32_t                 status_details);
-#endif
+
 /**
  * @brief Generates as 256-bit random value by using RDSEED x86 instruction
  * @param rand - Pointer to output random 256-bit value\

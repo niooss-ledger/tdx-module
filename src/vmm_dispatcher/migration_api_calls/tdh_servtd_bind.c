@@ -180,7 +180,7 @@ api_error_type tdh_servtd_bind(uint64_t target_tdr_pa, uint64_t servtd_tdr, uint
             }
         }
     }
-#endif
+#endif // (MAX_SERVTDS>1)
 
     // Calculate the service TD's TDINFO_HASH
     if ((return_val = get_teeinfohash(servtd_tdcs_p, servtd_attr.ignore_tdinfo,

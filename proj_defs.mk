@@ -32,68 +32,71 @@ PROJ_FLAGS += -DFAULT_SAFE_MAGIC_INDICATOR=$(FAULT_SAFE_MAGIC_INDICATOR)
 
 ifdef TDX_MODULE_BUILD_DATE
 PROJ_FLAGS += -DTDX_MODULE_BUILD_DATE=$(TDX_MODULE_BUILD_DATE)
-else
+else # TDX_MODULE_BUILD_DATE
 PROJ_FLAGS += -DTDX_MODULE_BUILD_DATE=$(shell date +%Y%m%d)
-endif
+endif # TDX_MODULE_BUILD_DATE
 
 ifdef TDX_MODULE_BUILD_NUM
 PROJ_FLAGS += -DTDX_MODULE_BUILD_NUM=$(TDX_MODULE_BUILD_NUM)
-else
+else # TDX_MODULE_BUILD_NUM
 PROJ_FLAGS += -DTDX_MODULE_BUILD_NUM=0
-endif
+endif # TDX_MODULE_BUILD_NUM
 
 ifdef TDX_MODULE_SEAM_SVN
 PROJ_FLAGS += -DTDX_MINOR_SEAM_SVN=$(TDX_MODULE_SEAM_SVN)
-else
+else # TDX_MODULE_SEAM_SVN
 PROJ_FLAGS += -DTDX_MINOR_SEAM_SVN=0
-endif
+endif # TDX_MODULE_SEAM_SVN
 
 PROJ_FLAGS += -DTDX_MODULE_MAJOR_VER=1
 PROJ_FLAGS += -DTDX_MODULE_MINOR_VER=5
 
 ifdef TDX_MODULE_UPDATE_VER
 PROJ_FLAGS += -DTDX_MODULE_UPDATE_VER=$(TDX_MODULE_UPDATE_VER)
-else
-PROJ_FLAGS += -DTDX_MODULE_UPDATE_VER=6
-endif
+else # TDX_MODULE_UPDATE_VER
+PROJ_FLAGS += -DTDX_MODULE_UPDATE_VER=8
+endif # TDX_MODULE_UPDATE_VER
 
 ifdef TDX_MODULE_INTERNAL_VER
 PROJ_FLAGS += -DTDX_MODULE_INTERNAL_VER=$(TDX_MODULE_INTERNAL_VER)
-else
-PROJ_FLAGS += -DTDX_MODULE_INTERNAL_VER=0
-endif
+else # TDX_MODULE_INTERNAL_VER
+PROJ_FLAGS += -DTDX_MODULE_INTERNAL_VER=4
+endif # TDX_MODULE_INTERNAL_VER
 
 ################################################################
 
 ################################################################
 ## TDX features
 
+# Default features
+PROJ_FLAGS += -DNO_SPEC_CTRL_VIRT_SUPPORT
+PROJ_FLAGS += -DTD_MIGRATION_SUPPORTED
+
 ifdef TDX_MODULE_HV
 PROJ_FLAGS += -DTDX_MODULE_HV=$(TDX_MODULE_HV)
-else
+else # TDX_MODULE_HV
 PROJ_FLAGS += -DTDX_MODULE_HV=0
-endif
+endif # TDX_MODULE_HV
 
 ifdef TDX_MIN_UPDATE_HV
 PROJ_FLAGS += -DTDX_MIN_UPDATE_HV=$(TDX_MIN_UPDATE_HV)
-else
+else # TDX_MIN_UPDATE_HV
 PROJ_FLAGS += -DTDX_MIN_UPDATE_HV=0
-endif
+endif # TDX_MIN_UPDATE_HV
 
 ifdef TDX_NO_DOWNGRADE
 PROJ_FLAGS += -DTDX_NO_DOWNGRADE=$(TDX_NO_DOWNGRADE)
-else
+else # TDX_NO_DOWNGRADE
 PROJ_FLAGS += -DTDX_NO_DOWNGRADE=0
-endif
+endif # TDX_NO_DOWNGRADE
 
 ################################################################
 
 ################################################################
 ## Debug features
-
 ifdef DBG_TRACE
 PROJ_FLAGS += -DDEBUGFEATURE_TDX_DBG_TRACE
-endif
+endif # DBG_TRACE
 
 ################################################################
 
@@ -110,17 +113,17 @@ PROJ_FLAGS += -D_NO_IPP_DEPRECATED
 ifdef PRODUCTION_SIGN
 ifndef RELEASE
   $(error Cannot create production-signed TDX module in non-RELEASE build)
-endif
+endif # RELEASE
 PRODUCTION_FLAGS = -DPRODUCTION_SIGN
-else
+else # PRODUCTION_SIGN
 PRODUCTION_FLAGS =
-endif
+endif # PRODUCTION_SIGN
 
 ################################################################
 
 
 #Architecture git data
-COMMIT_ID = a1b03ec5
+COMMIT_ID = d541e48e
 ARCHITECTURE_BRANCH_NAME = TDX_Module_1.5.06_v0.90
 CPUID_EXCEL_VERSION_SUPPORTED = 8
 MSR_EXCEL_VERSION_SUPPORTED = 6

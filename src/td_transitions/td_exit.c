@@ -164,7 +164,7 @@ static void load_vmm_state_before_td_exit(tdx_module_local_t* local_data_ptr)
     }
     else
     {
-        if (TDX_MODULE_IA32_FIXED_CTR_CTRL != local_data_ptr->vmm_ia32_fixed_ctr_ctrl)
+        if (local_data_ptr->ia32_fixed_ctr_ctrl_value != local_data_ptr->vmm_ia32_fixed_ctr_ctrl)
         {
             ia32_wrmsr(IA32_FIXED_CTR_CTRL_MSR_ADDR, local_data_ptr->vmm_ia32_fixed_ctr_ctrl);
         }
@@ -614,6 +614,9 @@ static void td_l2_to_l1_exit_internal(api_error_code_e tdexit_case, vm_vmexit_ex
     // Make L1 the current VM
     tdvps_ptr->management.curr_vm = 0;
     set_vm_vmcs_as_active(tdvps_ptr, tdvps_ptr->management.curr_vm);
+
+    // Before VM entry, update the current VM's VMCS' Guest IA32_PERF_GLOBAL_CTRL
+    conditionally_write_vmcs_ia32_perf_global_ctrl_msr(ld_p->vp_ctx.tdcs);
 
     // If IA32_SPEC_CTRL is virtualized, write the VMCS' IA32_SPEC_CTRL shadow
     conditionally_write_vmcs_ia32_spec_ctrl_shadow(ld_p->vp_ctx.tdcs, tdvps_ptr->guest_msr_state.ia32_spec_ctrl);

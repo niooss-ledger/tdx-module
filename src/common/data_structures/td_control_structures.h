@@ -235,8 +235,8 @@ tdx_static_assert(sizeof(tdcs_management_fields_t) == 128, tdcs_management_field
                                TDX_ATTRIBUTES_LASS_SUPPORT | TDX_ATTRIBUTES_ICSSD_SUPPORT)
 #define TDX_ATTRIBUTES_FIXED1 0x0
 
-
-#define CONFIG_FLAGS_FIXED0   (BIT(0) | BIT(1) | BIT(2) | BIT(3))    // gpaw, flexible_pending_ve, no_rbp_mode, maxpa_virt
+// gpaw, flexible_pending_ve, no_rbp_mode, maxpa_virt, maxgpa_virt
+#define CONFIG_FLAGS_FIXED0   (BIT(0) | BIT(1) | BIT(2) | BIT(3) | BIT(4))
 #define CONFIG_FLAGS_FIXED1   0x0
 
 
@@ -591,7 +591,7 @@ tdx_static_assert(sizeof(tdcs_service_td_fields_t) == 1024, tdcs_service_td_fiel
 
 #if (MAX_POSSIBLE_CPUID_LOOKUP < MAX_NUM_CPUID_LOOKUP)
 #error "Invalid number of MAX_POSSIBLE_CPUID_LOOKUP"
-#endif
+#endif // (MAX_POSSIBLE_CPUID_...
 
 /**
  * @struct tdcs_t

@@ -95,4 +95,4 @@ void log_to_com_port(const char* buff, uint32_t length, uint16_t print_port)
     }
 }
 
-#endif
+#endif // DEBUGFEATURE_TDX_DBG_TRACE

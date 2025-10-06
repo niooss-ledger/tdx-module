@@ -82,7 +82,16 @@ void td_ept_violation_exit(vmx_exit_qualification_t exit_qualification, vm_vmexi
         uint64_t gla;
         ia32_vmread(VMX_VM_EXIT_GUEST_LINEAR_ADDRESS_ENCODE, &gla);
 
-        inject_pf(gla, pfec);
+        if (tdcs_p->executions_ctl_fields.config_flags.maxgpa_virt)
+        {
+            tdx_inject_ve(vm_exit_reason.raw, exit_qualification.raw,
+                            tdx_local_data_ptr->vp_ctx.tdvps, gpa.raw, gla);
+        }
+        else
+        {
+            inject_pf(gla, pfec);
+        }
+
         return;
     }
 

@@ -492,6 +492,6 @@ uint64_t debug_sprintf_s(char* buf_ptr, uint64_t buf_size, const char* format, .
     return write_count;
 }
 
-#endif
+#endif // DEBUGFEATURE_TDX_DBG_TRACE
 
 #pragma clang diagnostic pop

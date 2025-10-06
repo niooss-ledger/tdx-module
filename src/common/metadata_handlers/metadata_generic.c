@@ -64,32 +64,7 @@ _STATIC_INLINE_ bool_t is_special_l2_vmcs_field_id(md_field_id_t field_id)
 
     return false;
 }
-#if 0 // TODO future use
-_STATIC_INLINE_ bool_t is_l2_vm_field_id(md_field_id_t field_id, uint16_t* vm_id)
-{
-    if (field_id.context_code == MD_CTX_VP)
-    {
-        if ((field_id.class_code >= MD_TDVPS_VMCS_1_CLASS_CODE) &&
-            (field_id.class_code < (MD_TDVPS_VMCS_1_CLASS_CODE + (L2_VP_CLASS_CODE_INC * MAX_L2_VMS))))
-        {
-            *vm_id = md_vp_get_l2_vm_index(field_id.class_code);
-            return true;
-        }
-    }
-    else if (field_id.context_code == MD_CTX_TD)
-    {
-        if ((field_id.class_code >= MD_TDCS_L2_SECURE_EPT_ROOT__1_CLASS_CODE) &&
-            (field_id.class_code < (MD_TDCS_L2_SECURE_EPT_ROOT__1_CLASS_CODE + (L2_TD_CLASS_CODE_INC * MAX_L2_VMS))))
-        {
-            *vm_id = md_td_get_l2_vm_index(field_id.class_code);
-            return true;
-        }
-    }
 
-    *vm_id = 0;
-    return false;
-}
-#endif
 _STATIC_INLINE_ bool_t is_equal_field_id(md_field_id_t field_id1, md_field_id_t field_id2)
 {
     return ((field_id1.field_code == field_id2.field_code) &&
@@ -1012,7 +987,7 @@ api_error_code_e md_dump_list(md_context_code_e ctx_code, md_field_id_t field_id
         // Dump the sequence
 #ifdef DEBUGFEATURE_TDX_DBG_TRACE
         uint64_t prev_field_id = lookup_context.field_id.raw;
-#endif
+#endif // DEBUGFEATURE_TDX_DBG_TRACE
 
         sequence_done = md_dump_sequence(sequence_ptr, ctx_code, md_ctx, buff_size, access_type, access_qual,
                                          &elements_written, &lookup_context);
@@ -1023,7 +998,7 @@ api_error_code_e md_dump_list(md_context_code_e ctx_code, md_field_id_t field_id
 #ifdef DEBUGFEATURE_TDX_DBG_TRACE
             TDX_LOG("Sequence written from field 0x%llx, to field (which is next) 0x%llx\n",
                     prev_field_id, lookup_context.field_id.raw);
-#endif
+#endif // DEBUGFEATURE_TDX_DBG_TRACE
 
             // Update the list header
             list_header_ptr->num_sequences++;

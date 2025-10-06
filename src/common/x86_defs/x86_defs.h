@@ -1251,7 +1251,8 @@ typedef union cpuid_80000008_eax_u
     {
         uint32_t pa_bits  : 8;
         uint32_t la_bits  : 8;
-        uint32_t reserved : 16;
+        uint32_t gpa_bits : 8;
+        uint32_t reserved : 8;
     };
     uint32_t raw;
 } cpuid_80000008_eax_t;
@@ -1400,6 +1401,8 @@ tdx_static_assert(sizeof(ia32_apic_register_t) == 4*4, ia32_apic_register_t);
 
 #define HW_EXCEPTION                    3
 
-#define TDX_MODULE_IA32_FIXED_CTR_CTRL  0x3
+#define TDX_MODULE_IA32_FIXED_CTR_CTRL  0x3 // Controls for IA32_FIXED_CTR0 is enabled for both OS and USR modes, no PMI on overflow (bits 3:0 = 3)
+#define TDX_MODULE_IA32_ENABLE_CTR0_CTRL BITS(3,0)
+#define TDX_MODULE_IA32_CTR_0_1_2_MASK BITS(11,0)
 
 #endif /* SRC_COMMON_X86_DEFS_X86_DEFS_H_ */

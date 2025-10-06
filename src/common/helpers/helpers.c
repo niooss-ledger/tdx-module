@@ -49,7 +49,7 @@ void* memset(void *str, int c, uint32_t n)
 
     return str;
 }
-#endif
+#endif // __cplusplus
 
 api_error_code_e program_mktme_keys(uint16_t hkid)
 {
@@ -1430,6 +1430,11 @@ bool_t verify_td_config_flags(config_flags_t config_flags)
         return false;
     }
 
+    if (config_flags.maxgpa_virt && config_flags.maxpa_virt)
+    {
+        return false;
+    }
+
     return true;
 }
 
@@ -1856,6 +1861,8 @@ bool_t td_immutable_state_cross_check(tdcs_t* tdcs_ptr)
         return false;
     }
 
+
+    UNUSED(tdcs_ptr);
     return true;
 }
 
@@ -1866,9 +1873,8 @@ api_error_type check_and_init_imported_td_state_immutable (tdcs_t* tdcs_ptr)
         return api_error_with_operand_id_fatal(TDX_OPERAND_INVALID, OPERAND_ID_RDX);
     }
 
-    
-    // num_vcpus sanity check (at this point num_vcpus is already set)
-    if ((tdcs_ptr->management_fields.num_vcpus == 0) || (tdcs_ptr->management_fields.num_vcpus > tdcs_ptr->executions_ctl_fields.max_vcpus))
+    // num_vcpus sanity check (at this point num_vcpus and max_vcpus already set)
+    if (tdcs_ptr->management_fields.num_vcpus > tdcs_ptr->executions_ctl_fields.max_vcpus)
     {
         return api_error_with_operand_id_fatal(TDX_OPERAND_INVALID, OPERAND_ID_MAX_VCPUS);
     }
@@ -2105,22 +2111,6 @@ api_error_type abort_import_session(
     }
 }
 
-#if 0
-api_error_type abort_import_session_with_septe_details(
-    tdcs_t                  *tdcs_p,
-    ia32e_sept_t             septe,
-    ept_level_t              level,
-    api_error_type           status,
-    uint32_t                 status_details)
-{
-
-    // Update output register operands
-    tdx_module_local_t  * local_data_ptr = get_local_data();
-    set_arch_septe_details_in_vmm_regs(septe, level, local_data_ptr);
-
-    return abort_import_session(tdcs_p, status, status_details);
-}
-#endif
 bool_t generate_256bit_random(uint256_t* rand)
 {
     uint8_t successfull_randomizations = 0;

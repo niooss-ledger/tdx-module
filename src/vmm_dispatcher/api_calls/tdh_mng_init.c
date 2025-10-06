@@ -532,30 +532,44 @@ static api_error_type read_and_set_cpuid_configurations(tdcs_t * tdcs_ptr,
                 cpuid_80000008_eax.la_bits = LEGACY_LINEAR_ADDRESS_WIDTH;
             }
 
-            if (td_params_ptr->config_flags.maxpa_virt)
+            if (td_params_ptr->config_flags.maxgpa_virt)
             {
-                if (cpuid_80000008_eax.pa_bits)
+                cpuid_80000008_eax.pa_bits = (uint32_t)global_data_ptr->max_pa;
+                cpuid_80000008_eax.gpa_bits = (uint32_t)MIN(global_data_ptr->max_pa,
+                        (tdcs_ptr->executions_ctl_fields.gpaw ? MAX_PA : MAX_PA_FOR_GPA_NOT_WIDE));
+
+                // Save the virtual MAXPA for easy access
+                tdcs_ptr->executions_ctl_fields.virt_maxpa = cpuid_80000008_eax.gpa_bits;
+            }
+            else
+            {
+                if (td_params_ptr->config_flags.maxpa_virt)
                 {
-                    if (!is_virt_maxpa_valid(tdcs_ptr->executions_ctl_fields.gpaw, cpuid_80000008_eax.pa_bits))
+                    if (cpuid_80000008_eax.pa_bits)
                     {
-                        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_CPUID_CONFIG);
-                        goto EXIT;
+                        if (!is_virt_maxpa_valid(tdcs_ptr->executions_ctl_fields.gpaw, cpuid_80000008_eax.pa_bits))
+                        {
+                            return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_CPUID_CONFIG);
+                            goto EXIT;
+                        }
+                    }
+                    else
+                    {
+                        // A configured MAXPA value of 0 means the minimum of the native MAXPA and of GPAW should be used
+                        cpuid_80000008_eax.pa_bits = (uint32_t)MIN(global_data_ptr->max_pa,
+                                (tdcs_ptr->executions_ctl_fields.gpaw ? MAX_PA : MAX_PA_FOR_GPA_NOT_WIDE));
                     }
                 }
                 else
                 {
-                    // A configured MAXPA value of 0 means the minimum of the native MAXPA and of GPAW should be used
-                    cpuid_80000008_eax.pa_bits = (uint32_t)MIN(global_data_ptr->max_pa, (tdcs_ptr->executions_ctl_fields.gpaw ? MAX_PA : MAX_PA_FOR_GPA_NOT_WIDE));
+                    cpuid_80000008_eax.pa_bits = (uint32_t)global_data_ptr->max_pa;
                 }
-            }
-            else
-            {
-                cpuid_80000008_eax.pa_bits = (uint32_t)global_data_ptr->max_pa;
-            }
-            
 
-            // Save the virtual MAXPA for easy access
-            tdcs_ptr->executions_ctl_fields.virt_maxpa = cpuid_80000008_eax.pa_bits;
+                cpuid_80000008_eax.gpa_bits = 0;
+
+                // Save the virtual MAXPA for easy access
+                tdcs_ptr->executions_ctl_fields.virt_maxpa = cpuid_80000008_eax.pa_bits;
+            }
 
             final_tdcs_values.eax = cpuid_80000008_eax.raw;
         }

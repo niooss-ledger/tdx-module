@@ -405,4 +405,21 @@ _STATIC_INLINE_ uint64_t calculate_real_ia32_spec_ctrl(const tdcs_t* tdcs_p, uin
     return spec_ctrl.raw;
 }
 
+// If PERFMON is not enabled, write the VMCS of the current VM to be entered with Guest
+//   IA32_PERF_GLOBAL_CTRL value:
+//   - Fixed Counter 0 Enable:      Set to 1.  This enables Fixed Counter 0 to count instructions
+//                                  for 0/1-step mitigation.
+//   - Fixed Couner 1 & 2 Enables:  Set to the host VMM value, as sampled by the SEAMCALL
+//                                  dispatcher.  This enables Fixed Counters 1 and 2 to counted
+//                                  cycles spent in the guest TD, if the host VMM uses them.
+//   NOTE:  The function assumes LP.CURR_ATTRIBUTES is up to date.
+_STATIC_INLINE_ void conditionally_write_vmcs_ia32_perf_global_ctrl_msr(tdcs_t* tdcs_p)
+{
+    if (!is_perfmon_supported_in_tdcs(tdcs_p))
+    {
+        // Set temp.EN_FC0 (bit 32).  This is done to enable Fixed Counter 0 for 0/1-step mitigation
+        ia32_vmwrite(VMX_GUEST_IA32_PERF_GLOBAL_CONTROL_FULL_ENCODE, (get_local_data()->vmm_ia32_perf_global_ctrl | BIT(32)));
+    }
+}
+
 #endif /* SRC_COMMON_HELPERS_VIRT_MSR_HELPERS_H_ */

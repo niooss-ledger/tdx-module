@@ -65,7 +65,7 @@ void tdx_fault_wrapper(void);
 
 #ifdef DEBUGFEATURE_TDX_DBG_TRACE
 void tdx_debug_exception_handler(uint64_t vector, uint64_t errc, uint64_t faulting_rip);
-#endif
+#endif // DEBUGFEATURE_TDX_DBG_TRACE
 
 // Names from that point can be changed freely
 

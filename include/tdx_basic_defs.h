@@ -34,7 +34,7 @@
 
 #ifndef NULL
 #define NULL            ((void*)0)
-#endif
+#endif // NULL
 
 //Static Assertion
 #define tdx_static_assert(e,x) _Static_assert(e, "Static assertion failure in "#x)
@@ -61,7 +61,7 @@
 
 #ifndef offsetof
 #define offsetof(type, field)   __builtin_offsetof(type, field)
-#endif
+#endif // offsetof
 
 #define sizeof_field(type, field)    sizeof(((type *)0)->field)
 

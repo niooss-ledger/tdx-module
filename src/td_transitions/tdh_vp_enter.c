@@ -305,11 +305,14 @@ static void restore_guest_td_state_before_td_entry(tdcs_t* tdcs_ptr, tdvps_t* td
     {
         // save VMM's Fixed Counter Controls (FCC) MSR
         local_data_ptr->vmm_ia32_fixed_ctr_ctrl = ia32_rdmsr(IA32_FIXED_CTR_CTRL_MSR_ADDR);
+        local_data_ptr->ia32_fixed_ctr_ctrl_value =((local_data_ptr->vmm_ia32_fixed_ctr_ctrl & ~TDX_MODULE_IA32_ENABLE_CTR0_CTRL)
+                                                    | TDX_MODULE_IA32_FIXED_CTR_CTRL)
+                                                    & TDX_MODULE_IA32_CTR_0_1_2_MASK;
         
-        if (TDX_MODULE_IA32_FIXED_CTR_CTRL != local_data_ptr->vmm_ia32_fixed_ctr_ctrl)
+        if (local_data_ptr->ia32_fixed_ctr_ctrl_value != local_data_ptr->vmm_ia32_fixed_ctr_ctrl)
         {
             // load TD's FCC with FC0 enabled in all rings, no PMI on overflow
-            safe_wrmsr(IA32_FIXED_CTR_CTRL_MSR_ADDR, TDX_MODULE_IA32_FIXED_CTR_CTRL);
+            safe_wrmsr(IA32_FIXED_CTR_CTRL_MSR_ADDR, local_data_ptr->ia32_fixed_ctr_ctrl_value);
         }
 
         // save VMM's FC0 value
@@ -955,6 +958,9 @@ api_error_type tdh_vp_enter(uint64_t vcpu_handle_and_flags)
     restore_guest_td_state_before_td_entry(tdcs_ptr, tdvps_ptr);
 
     update_host_state_in_td_vmcs(local_data_ptr, tdvps_ptr, tdvps_ptr->management.curr_vm);
+
+    // Before VM entry, update the current VM's VMCS' Guest IA32_PERF_GLOBAL_CTRL
+    conditionally_write_vmcs_ia32_perf_global_ctrl_msr(tdcs_ptr);
 
     local_data_ptr->single_step_def_state.last_entry_tsc = ia32_rdtsc();
 

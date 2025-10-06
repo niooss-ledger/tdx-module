@@ -377,5 +377,5 @@ void tdx_print(uint64_t severity, const char* format, ... )
 }
 
 
-#endif
+#endif // DEBUGFEATURE_TDX_DBG_TRACE
 

@@ -137,6 +137,7 @@ static bool_t md_sys_get_elements(md_field_id_t field_id, const md_lookup_t* ent
                 tdx_features_0.icssd = 1;
                 tdx_features_0.fixed_ctr12_prof = 1;
                 tdx_features_0.maxpa_virt = 1;
+                tdx_features_0.maxgpa_virt = 1;
                 tdx_features_0.cpuid2_virt = 1;
 
                 *element_array = tdx_features_0.raw;

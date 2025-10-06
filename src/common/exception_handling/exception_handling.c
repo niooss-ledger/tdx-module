@@ -88,7 +88,7 @@ const idt_and_gdt_tables_t tdx_idt_and_gdt =
                   .selector = TDX_MODULE_CS_SELECTOR, .gate_type = IA32_IDT_GATE_TYPE_INTERRUPT_32,
                   .present = 1
                },
-#endif
+#endif // DEBUGFEATURE_TDX_DBG_TRACE
         // #GP handler - the only exception currently supported
         [13] = {
                   .selector = TDX_MODULE_CS_SELECTOR, .gate_type = IA32_IDT_GATE_TYPE_INTERRUPT_32,
@@ -168,7 +168,7 @@ const idt_and_gdt_tables_t tdx_idt_and_gdt =
                   .selector = TDX_MODULE_CS_SELECTOR, .gate_type = IA32_IDT_GATE_TYPE_INTERRUPT_32,
                   .present = 1
                }
-#endif
+#endif // DEBUGFEATURE_TDX_DBG_TRACE
 
         // All other entries and bits are filled with zeroes by default
     },
@@ -201,4 +201,4 @@ void tdx_debug_exception_handler(uint64_t vector, uint64_t errc, uint64_t faulti
 
     while(1) {};
 }
-#endif
+#endif // DEBUGFEATURE_TDX_DBG_TRACE

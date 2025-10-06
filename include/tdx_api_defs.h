@@ -83,10 +83,12 @@ typedef enum seamcall_leaf_opcode_e
     TDH_VP_WR_LEAF                   = 43,
     TDH_SYS_LP_SHUTDOWN_LEAF         = 44,
     TDH_SYS_CONFIG_LEAF              = 45,
-    TDH_SERVTD_BIND_LEAF             = 48,
-    TDH_SERVTD_PREBIND_LEAF          = 49,
+
     TDH_SYS_SHUTDOWN_LEAF            = 52,
-    TDH_SYS_UPDATE_LEAF              = 53,
+    TDH_SYS_UPDATE_LEAF              = 53
+
+    ,TDH_SERVTD_BIND_LEAF            = 48,
+    TDH_SERVTD_PREBIND_LEAF          = 49,
     TDH_EXPORT_ABORT_LEAF            = 64,
     TDH_EXPORT_BLOCKW_LEAF           = 65,
     TDH_EXPORT_RESTORE_LEAF          = 66,
@@ -107,9 +109,12 @@ typedef enum seamcall_leaf_opcode_e
     TDH_IMPORT_STATE_VP_LEAF         = 87,
     TDH_MIG_STREAM_CREATE_LEAF       = 96
 
+
 #ifdef DEBUGFEATURE_TDX_DBG_TRACE
     ,TDDEBUGCONFIG_LEAF = 0xFE
-#endif
+#endif // DEBUGFEATURE_TDX_DBG_TRACE
+
+
 } seamcall_leaf_opcode_t;
 
 /**< Enum for TDCALL leaves opcodes */
@@ -409,7 +414,8 @@ typedef union config_flags_s {
         flexible_pending_ve : 1,  /**< Controls the guest TD’s ability to change the PENDING page access behavior */
         no_rbp_mod          : 1,  /**< Controls whether RBP value can be modified by TDG.VP.VMCALL and TDH.VP.ENTER. */
         maxpa_virt          : 1,  /**< Controls MAXPA Virtualization. */
-        reserved            : 60; /**< Must be 0. */
+        maxgpa_virt         : 1,  /**< Controls MAXGPA Virtualization. */
+        reserved            : 59; /**< Must be 0. */
     };
     uint64_t raw;
 } config_flags_t;
@@ -1097,7 +1103,11 @@ typedef union tdx_features_enum0_u
         uint64_t maxpa_virt                  : 1;    // Bit 27
         uint64_t apx                         : 1;    // Bit 28
         uint64_t cpuid2_virt                 : 1;    // Bit 29
-        uint64_t reserved_4                  : 34;   // Bits 63:30
+        uint64_t reserved_4                  : 1;    // Bit 30
+        uint64_t enhanced_event_filtering    : 1;    // Bit 31
+        uint64_t tdx_connect_partitioning    : 1;    // Bit 32
+        uint64_t maxgpa_virt                 : 1;    // Bit 33
+        uint64_t reserved_5                  : 30;   // Bits 63:34
     };
     uint64_t raw;
 } tdx_features_enum0_t;

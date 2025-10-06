@@ -117,7 +117,7 @@ void tdx_failed_vmentry(void)
 
     tdx_arch_fatal_error();
 }
-#endif
+#endif // DEBUGFEATURE_TDX_DBG_TRACE
 
 void tdx_return_to_td(bool_t launch_state, bool_t called_from_tdenter, gprs_state_t* gpr_state)
 {
@@ -628,7 +628,7 @@ stepping_filter_e tdx_td_l1_l2_dispatcher_common_prologue(tdx_module_local_t* lo
                 idt_vectoring, activity);
         TDX_ERROR("Interruptibility state = 0x%llx, Entry intr info = 0x%llx\n",
                 interruptibility, entry_int);
-#endif
+#endif // DEBUGFEATURE_TDX_DBG_TRACE
         FATAL_ERROR();
     }
 
@@ -644,7 +644,7 @@ stepping_filter_e tdx_td_l1_l2_dispatcher_common_prologue(tdx_module_local_t* lo
             local_data->vp_ctx.tdvps->guest_state.gpr_state.rbx,
             local_data->vp_ctx.tdvps->guest_state.gpr_state.rcx,
             local_data->vp_ctx.tdvps->guest_state.gpr_state.rdx);
-#endif
+#endif // DEBUGFEATURE_TDX_DBG_TRACE
 
     // If the TD is debuggable, the host VMM can request all L2 exits to be converted to TD exits.
     if ((vm_id > 0) && local_data->vp_ctx.tdvps->management.l2_debug_ctls[vm_id].td_exit_on_l2_vm_exit)

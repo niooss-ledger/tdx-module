@@ -140,7 +140,7 @@ tdx_tdentry_to_td:
     
 #ifdef DEBUGFEATURE_TDX_DBG_TRACE
     call tdx_failed_vmentry
-#endif
+#endif // DEBUGFEATURE_TDX_DBG_TRACE
 
     /**
     * Unreachable code.  panic.
@@ -156,7 +156,7 @@ vmlaunch_lbl:
     
 #ifdef DEBUGFEATURE_TDX_DBG_TRACE
     call tdx_failed_vmentry
-#endif
+#endif // DEBUGFEATURE_TDX_DBG_TRACE
 
     /**
      * Unreachable code.  panic. 

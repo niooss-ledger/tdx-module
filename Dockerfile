@@ -84,7 +84,7 @@ RUN wget -P /tmp --no-check-certificate https://www.openssl.org/source/openssl-$
 ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64
 
 # Install NASM
-ENV NASM_VERSION=2.15.05
+ENV NASM_VERSION=2.16.02
 RUN wget -P /tmp --no-check-certificate https://www.nasm.us/pub/nasm/releasebuilds/$NASM_VERSION/nasm-$NASM_VERSION.tar.bz2 \
     && cd /tmp && tar xjvf /tmp/nasm-$NASM_VERSION.tar.bz2 \
     && cd /tmp/nasm-$NASM_VERSION \
@@ -114,3 +114,17 @@ RUN pip uninstall --yes setuptools \
     && pip install setuptools>=65.5.1 \
     && pip install cmake==3.18 \
     && update-alternatives --install /usr/bin/cmake cmake /usr/local/bin/cmake 1 \
+	
+# Install clang 16
+ENV CLANG_VERSION=16.0.3
+RUN git clone --depth 1 --branch llvmorg-$CLANG_VERSION https://github.com/llvm/llvm-project.git /tmp/llvm-project \
+    && mkdir -p /opt/clang-$CLANG_VERSION && cd /opt/clang-$CLANG_VERSION \
+    && cmake -DCMAKE_BACKWARDS_COMPATIBILITY=2.9 -DPython3_FIND_STRATEGY=LOCATION -DPython3_EXECUTABLE=/usr/bin/python3.8 \
+    -DLLVM_ENABLE_PROJECTS="clang;compiler-rt" -DCOMPILER_RT_BUILD_SANITIZERS=ON -DLLDB_INCLUDE_TESTS=OFF \
+    -DCMAKE_CXX_COMPILER=/usr/bin/g++-8 -DCMAKE_C_COMPILER=/usr/bin/gcc-8 -DCMAKE_BUILD_TYPE=Release -G "Unix Makefiles" /tmp/llvm-project/llvm \
+    && make -j 8 \
+    && update-alternatives --install /usr/bin/clang-$CLANG_VERSION clang-$CLANG_VERSION /opt/clang-$CLANG_VERSION/bin/clang 1 \
+    && update-alternatives --install /usr/bin/clang++-$CLANG_VERSION clang++-$CLANG_VERSION /opt/clang-$CLANG_VERSION/bin/clang++ 1 \
+    && update-alternatives --install /usr/bin/clang-16 clang-16 /opt/clang-$CLANG_VERSION/bin/clang 1 \
+    && update-alternatives --install /usr/bin/clang++-16 clang++-16 /opt/clang-$CLANG_VERSION/bin/clang++ 1 \
+    && rm -rf /tmp/llvm-project

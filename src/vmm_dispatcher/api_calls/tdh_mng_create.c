@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "x86_defs/x86_defs.h"
 #include "data_structures/td_control_structures.h"
 #include "memory_handlers/keyhole_manager.h"
@@ -116,6 +116,15 @@ api_error_type tdh_mng_create(uint64_t target_tdr_pa, hkid_api_input_t hkid_info
         return_val = TDX_RND_NO_ENTROPY;
         goto EXIT;
     }
+
+    // Generate a random 64bit, 1GB aligned value, which won't cause an arithmetic overflow when added to a valid HPA
+    if (!generate_custom_random(&tdr_ptr->tdx_io_fields.rnd_hpa_offset, 1))
+    {
+        TDX_ERROR("Failed to generate random for RND_HPA_OFFSET\n");
+        return_val = TDX_RND_NO_ENTROPY;
+        goto EXIT;
+    }
+    tdr_ptr->tdx_io_fields.rnd_hpa_offset &= RND_HPA_OFFSET_MASK;
 
     // ALL_CHECKS_PASSED:  The function is guaranteed to succeed
 

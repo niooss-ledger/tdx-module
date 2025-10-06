@@ -57,6 +57,16 @@ _STATIC_INLINE_ tdx_module_local_t* get_local_data(void)
     return (tdx_module_local_t*)local_data_addr;
 }
 
+_STATIC_INLINE_ io_system_info_table_t* get_io_system_info_table()
+{
+    uint64_t io_sysinfo_table_addr;
+    _ASM_ ("movq %%gs:%c[io_sysinfo], %0\n\t"
+             :"=r"(io_sysinfo_table_addr)
+             :[io_sysinfo]"i"(offsetof(tdx_module_local_t, io_sysinfo_fast_ref_ptr)));
+
+    return (io_system_info_table_t*)io_sysinfo_table_addr;
+}
+
 _STATIC_INLINE_ sysinfo_table_t* get_sysinfo_table(void)
 {
     uint64_t sysinfo_table_addr;
@@ -155,6 +165,7 @@ _STATIC_INLINE_ tdx_module_local_t* init_data_fast_ref_ptrs(void)
     {
         local_data->local_data_fast_ref_ptr  = local_data;
         local_data->sysinfo_fast_ref_ptr     = calculate_sysinfo_table();
+        local_data->io_sysinfo_fast_ref_ptr = (uint8_t *)local_data->sysinfo_fast_ref_ptr + sizeof(sysinfo_table_t);
         local_data->global_data_fast_ref_ptr = calculate_global_data((sysinfo_table_t *) local_data->sysinfo_fast_ref_ptr);
     }
 

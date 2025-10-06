@@ -26,10 +26,10 @@
 
 #include "metadata_generic.h"
 #include "metadata_sys.h"
-#include GLOBAL_SYS_FIELDS_LOOKUP_HEADER
+#include "auto_gen/global_sys_fields_lookup.h"
 #include "helpers/error_reporting.h"
 #include "accessors/data_accessors.h"
-#include CPUID_CONFIGURATIONS_HEADER
+#include "auto_gen/cpuid_configurations.h"
 #include "helpers/migration.h"
 #include "data_structures/loader_data.h"
 #include "x86_defs/msr_defs.h"
@@ -122,7 +122,6 @@ static bool_t md_sys_get_elements(md_field_id_t field_id, const md_lookup_t* ent
                 tdx_features_0.raw = 0;
                 tdx_features_0.td_migration = 1;
                 tdx_features_0.service_td = 1;
-                tdx_features_0.partitioned_td_migration = 1;
                 tdx_features_0.td_preserving = 1;
                 tdx_features_0.tdg_vp_rdwr = 1;
                 tdx_features_0.relaxed_mem_mng_concurrency = 1;
@@ -140,19 +139,34 @@ static bool_t md_sys_get_elements(md_field_id_t field_id, const md_lookup_t* ent
                 tdx_features_0.l2_tlb_invd_opt = 1;
                 tdx_features_0.fms_config = 1;
                 tdx_features_0.topology_enum = 1;
-                tdx_features_0.ve_reduction = 1;
-                tdx_features_0.event_filtering = 1;
                 tdx_features_0.icssd = 1;
                 tdx_features_0.fixed_ctr12_prof = 1;
                 tdx_features_0.maxpa_virt = 1;
                 tdx_features_0.maxgpa_virt = 1;
-                tdx_features_0.fatal_diagnostics = 1;
                 tdx_features_0.cpuid2_virt = 1;
-                tdx_features_0.enhanced_event_filtering = 0;
-                tdx_features_0.tdx_io = 0;
-                tdx_features_0.tdx_connect_partitioning = tdx_features_0.tdx_io;
+                tdx_features_0.tdx_io = get_sysinfo_table()->mcheck_fields.io_sys_info_table_version > 0? 1: 0;
 
                 *element_array = tdx_features_0.raw;
+            }
+            else
+            {
+                return false;
+            }
+            break;
+        case MD_SYS_MEMORY_MANAGEMENT_CLASS_CODE:
+            if (entry->field_id.field_code == MD_SYS_GUEST_GPA_ATTR_MASK_FIELD_CODE)
+            {
+                *element_array = 0;
+            }
+            else
+            {
+                return false;
+            }
+            break;
+        case MD_SYS_TDX_CONNECT_CLASS_CODE:
+            if (entry->field_id.field_code == MD_SYS_TDX_CONNECT_FEATURES_FIELD_CODE)
+            {
+                *element_array = TDX_CONNECT_FEATURES_MASK;
             }
             else
             {
@@ -334,10 +348,6 @@ static bool_t md_sys_get_elements(md_field_id_t field_id, const md_lookup_t* ent
             {
                 *element_array = MIN_VIRT_MAXPA;
             }
-            else if (entry->field_id.field_code == MD_SYS_MAX_EVENT_FILTERS_FIELD_CODE)
-            {
-                *element_array = MAX_EVENT_FILTERS;
-            }
             else
             {
                 return false;
@@ -516,7 +526,7 @@ api_error_code_e md_sys_read_element(md_field_id_t field_id, const md_lookup_t* 
         uint64_t elem_num_in_field = (field_id.field_code - entry->field_id.field_code) % entry->num_of_elem;
         uint64_t offset = elem_num_in_field * elem_size;
 
-        tdx_sanity_check(offset + elem_size <= array_size, FATAL_ERROR_ID_233, 20);
+        tdx_sanity_check(offset + elem_size <= array_size, SCEC_METADATA_HANDLER_SOURCE, 20);
 
         uint64_t* elem_ptr = (uint64_t*)((uint8_t*)element_array + offset);
         read_value = *elem_ptr;
@@ -567,7 +577,7 @@ api_error_code_e md_sys_read_field(md_field_id_t field_id, const md_lookup_t* en
         for (uint32_t i = 0; i < entry->num_of_elem; i++)
         {
             uint64_t offset = i * elem_size;
-            tdx_sanity_check(offset + elem_size <= array_size, FATAL_ERROR_ID_234, 21);
+            tdx_sanity_check(offset + elem_size <= array_size, SCEC_METADATA_HANDLER_SOURCE, 21);
             uint64_t* elem_ptr = (uint64_t*)((uint8_t*)element_array + offset);
             read_value = *elem_ptr;
             value[i] = read_value & read_mask;

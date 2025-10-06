@@ -26,9 +26,9 @@
 
 #include "metadata_generic.h"
 #include "metadata_td.h"
-#include TDVPS_FIELDS_LOOKUP_HEADER
-#include TD_VMCS_FIELDS_LOOKUP_HEADER
-#include CPUID_CONFIGURATIONS_HEADER
+#include "auto_gen/tdvps_fields_lookup.h"
+#include "auto_gen/td_vmcs_fields_lookup.h"
+#include "auto_gen/cpuid_configurations.h"
 #include "helpers/error_reporting.h"
 #include "helpers/helpers.h"
 #include "helpers/virt_msr_helpers.h"
@@ -41,7 +41,7 @@ _STATIC_INLINE_ uint64_t get_element_num(md_field_id_t field_id, const md_lookup
 
     IF_RARE (field_id.class_code == MD_TDCS_CPUID_CLASS_CODE)
     {
-        tdx_sanity_check(cpuid_lookup_index < MAX_NUM_CPUID_LOOKUP, FATAL_ERROR_ID_235, 10);
+        tdx_sanity_check(cpuid_lookup_index < MAX_NUM_CPUID_LOOKUP, SCEC_METADATA_HANDLER_SOURCE, 10);
 
         // Check that element size is really 8 byte, so we can use sizeof(uint64_t)
         tdx_debug_assert(entry->field_id.element_size_code == 3);
@@ -56,7 +56,7 @@ _STATIC_INLINE_ uint64_t get_element_num(md_field_id_t field_id, const md_lookup
 static uint64_t translate_hp_lock_timeout_to_usec(uint32_t timeout_in_tsc_ticks)
 {
     // Assert that the casting below is safe
-    tdx_sanity_check((get_global_data()->native_tsc_frequency <= BIT_MASK_32BITS), FATAL_ERROR_ID_236, 25);
+    tdx_sanity_check((get_global_data()->native_tsc_frequency <= BIT_MASK_32BITS), SCEC_METADATA_HANDLER_SOURCE, 25);
     return ((uint64_t)timeout_in_tsc_ticks * 1000000ULL) / get_global_data()->native_tsc_frequency;
 }
 
@@ -71,7 +71,7 @@ static uint64_t check_hp_lock_timeout_and_translate_to_tsc(uint64_t timeout, uin
         return false;
     }
     uint64_t native_tsc_frequency = get_global_data()->native_tsc_frequency;
-    tdx_sanity_check((native_tsc_frequency <= BIT_MASK_32BITS), FATAL_ERROR_ID_237, 26);
+    tdx_sanity_check((native_tsc_frequency <= BIT_MASK_32BITS), SCEC_METADATA_HANDLER_SOURCE, 26);
 
     // safe to cast due to the sanity check above
     uint64_t tsc_tmp = translate_usec_to_tsc((uint32_t)timeout, (uint32_t)native_tsc_frequency);
@@ -107,11 +107,8 @@ static bool_t check_cpuid_xfam_masks(cpuid_config_return_values_t* cpuid_values,
     return true;
 }
 
-// When a CPUID leaf/sub-leaf is imported during immutable TD state import, check compatibility of CPUID
-// values with the current platform and set immutable TDCS.CPUID_FLAGS.
-// Note:  Mutable CPUID_FLAGS are set at the end of mutable state import, by update_mutable_cpuid_flags()
-static bool_t check_cpuid_compatibility_and_set_immutable_cpuid_flags(tdcs_t* tdcs_ptr, uint32_t leaf, uint32_t subleaf,
-                                                                      cpuid_config_return_values_t cpuid_values, uint32_t cpuid_index)
+static bool_t check_cpuid_compatibility_and_set_flags(tdcs_t* tdcs_ptr, uint32_t leaf, uint32_t subleaf,
+                                                      cpuid_config_return_values_t cpuid_values, uint32_t cpuid_index)
 {
     td_param_attributes_t attributes;
     ia32_xcr0_t xfam;
@@ -122,66 +119,50 @@ static bool_t check_cpuid_compatibility_and_set_immutable_cpuid_flags(tdcs_t* td
 
     if (cpuid_index == CPUID_LOOKUP_IDX_NA)
     {
-        // This can still be OK if the imported values are all-0 and the lookup table has this leaf as fixed-0
-        if (!tdx_memcmp_to_zero((void*)cpuid_values.values, sizeof(cpuid_config_return_values_t)) ||
-            !(is_cpuid_fixed0(CPUID_FIXED0_BITMAP, leaf)))
+        return false;
+    }
+
+    // CPUID leaves/sub-leaves that are CONFIG_DIRECT or ALLOW_DIRECT
+    // Note: The following code assumes these are the first NUM_CONFIG entries
+    // of the whole NUM_LOOKUP entries in the various CPUID tables.
+
+    // Loop on all 4 CPUID values
+    for (uint32_t i = 0; i < 4; i++)
+    {
+        uint32_t cpuid_value = cpuid_values.values[i];
+
+        // Any bit whose value is 1 must not be FIXED_0 or DYNAMIC
+        if ((cpuid_value & cpuid_lookup[cpuid_index].fixed0_or_dynamic.values[i]) != 0)
         {
             return false;
         }
-    }
-    else
-    {
-        // CPUID leaf/sub-leaf is in the lookup tables.  Loop on all 4 CPUID values and do the generic checks.
-        for (uint32_t i = 0; i < 4; i++)
+
+        // Any bit whose value is 0 must not be FIXED_1
+        if ((~cpuid_value & cpuid_lookup[cpuid_index].fixed1.values[i]) != 0)
         {
-            uint32_t cpuid_value = cpuid_values.values[i];
+            return false;
+        }
 
-            // Any bit whose value is 1 must not be FIXED_0 or DYNAMIC
-            if ((cpuid_value & cpuid_lookup[cpuid_index].fixed0_or_dynamic.values[i]) != 0)
+        uint32_t config_index = cpuid_lookup[cpuid_index].config_index;
+
+        // configurable (CONFIG_DIRECT or ALLOW_DIRECT) CPUID leaf/sub-leaf
+        if (config_index != CPUID_CONFIG_NULL_IDX)
+        {
+            // Any bit whose value is 1 and is ALLOW_DIRECT must be natively 1
+            uint32_t masked_cpuid_value = cpuid_value & cpuid_configurable[config_index].allow_direct.values[i];
+            if (masked_cpuid_value != (masked_cpuid_value & global_data_ptr->cpuid_values[cpuid_index].values.values[i]))
             {
                 return false;
-            }
-
-            // Any bit whose value is 0 must not be FIXED_1
-            if ((~cpuid_value & cpuid_lookup[cpuid_index].fixed1.values[i]) != 0)
-            {
-                return false;
-            }
-
-            uint32_t config_index = cpuid_lookup[cpuid_index].config_index;
-            // configurable (CONFIG_DIRECT or ALLOW_DIRECT) CPUID leaf/sub-leaf
-            if (config_index != CPUID_CONFIG_NULL_IDX)
-            {
-                // Any bit whose value is 1 and is ALLOW_DIRECT must be natively 1
-                uint32_t masked_cpuid_value = cpuid_value & cpuid_configurable[config_index].allow_direct.values[i];
-                if (masked_cpuid_value != (masked_cpuid_value & global_data_ptr->cpuid_values[cpuid_index].values.values[i]))
-                {
-                    return false;
-                }
             }
         }
     }
 
-
-    // Special CPUID Leaves/Sub-Leaves Handling
+    // Special CPUID Leafs/Sub-Leafs Handling
     // - Check bits that are not allowed by XFAM
-    // - Check bits that are not allowed by ATTRIBUTES(KL, PERFMON etc.)
-    // - Record CPUID_FLAGS that will be used for MSR virtualization and TD entry / exit.
-    //   This saves time looking up the value in TDCS.CPUID_VALUES in those flows.
-    //   Only immutable CPUID_FLAGS are updated.
-    //   Mutable CPUID_FLAGS depend on mutable field import, and thus are updated later
+    // - Check bits that are not allowed by ATTRIBUTES (KL, PERFMON etc.)
+    // - Record CPUID flags that will be used for MSR virtualization and TD entry/exit.
 
-    if (leaf == 0)
-    {
-        // CPUID(0).EAX is the last base leaf.  Check that it fits into the lookup tables
-        if (cpuid_values.eax > CPUID_LAST_BASE_LEAF)
-        {
-            return false;
-        }
-
-        tdcs_ptr->executions_ctl2_fields.cpuid_last_base_leaf = cpuid_values.eax;
-    }
-    else if (leaf == CPUID_VER_INFO_LEAF)
+    if (leaf == CPUID_VER_INFO_LEAF)
     {
         //  CPUID(1).EAX is the virtual Family/Model/Stepping configuration
         fms_info_t cpuid_01_eax = { .raw = cpuid_values.eax };
@@ -205,7 +186,6 @@ static bool_t check_cpuid_compatibility_and_set_immutable_cpuid_flags(tdcs_t* td
         tdcs_ptr->executions_ctl_fields.cpuid_flags.monitor_mwait_supported = cpuid_01_ecx.monitor;
         tdcs_ptr->executions_ctl_fields.cpuid_flags.dca_supported = cpuid_01_ecx.dca;
         tdcs_ptr->executions_ctl_fields.cpuid_flags.tsc_deadline_supported = cpuid_01_ecx.tsc_deadline;
-        tdcs_ptr->executions_ctl_fields.cpuid_flags.xtpr_update_supported = cpuid_01_ecx.xtpr_update_control;
     }
     else if (leaf == 0x5)
     {
@@ -215,10 +195,6 @@ static bool_t check_cpuid_compatibility_and_set_immutable_cpuid_flags(tdcs_t* td
         //   This was done above.
         // - Virtual CPUID(5) bits that are not known by the TDX module to be reserved are checked for exact
         //   match with the native CPUID(5) values.
-
-        // CPUID(5) will always appear in the lookup table, since we sample its native values on TDH.SYS.INIT
-        tdx_debug_assert(cpuid_index != CPUID_LOOKUP_IDX_NA);
-
         if (tdcs_ptr->executions_ctl_fields.cpuid_flags.monitor_mwait_supported)
         {
             // MONITOR/MWAIT is supported, CPUID(5) is expected to be
@@ -425,17 +401,6 @@ static bool_t check_cpuid_compatibility_and_set_immutable_cpuid_flags(tdcs_t* td
                 return false;
             }
         }
-
-    }
-    else if (leaf == 0x80000000)
-    {
-        // CPUID(0).EAX is the last base leaf.  Check that it fits into the lookup tables
-        if (cpuid_values.eax > CPUID_LAST_EXTENDED_LEAF)
-        {
-            return false;
-        }
-
-        tdcs_ptr->executions_ctl2_fields.cpuid_last_ext_leaf = cpuid_values.eax;
     }
     else if (leaf == 0x80000008)
     {
@@ -473,12 +438,7 @@ static bool_t check_cpuid_compatibility_and_set_immutable_cpuid_flags(tdcs_t* td
         }
     }
 
-    if (cpuid_index != CPUID_LOOKUP_IDX_NA)
-    {
-        // CPUID leaf/subleaf is in the lookup tables.  For a leaf/subleaf that is in the CPUID_FIXED0_BITMAP
-        // and not in the table there is no need to set a valid flag.
-        tdcs_ptr->executions_ctl_fields.cpuid_valid[cpuid_index] = true;
-    }
+    tdcs_ptr->executions_ctl_fields.cpuid_valid[cpuid_index] = true;
 
     return true;
 }
@@ -521,13 +481,12 @@ static api_error_code_e md_td_get_element(md_field_id_t field_id, const md_looku
 
     md_get_rd_wr_mask(entry, access_type, access_qual, &rd_mask, &wr_mask);
 
-    uint32_t leaf = 0, subleaf = 0;
-
     switch (field_id.class_code)
     {
         case MD_TDR_TD_MANAGEMENT_CLASS_CODE:
         case MD_TDR_KEY_MANAGEMENT_CLASS_CODE:
         case MD_TDR_TD_PRESERVING_CLASS_CODE:
+        case MD_TDR_TDX_I_O_CLASS_CODE:
         {
             page_ptr = (uint8_t*)md_ctx.tdr_ptr;
             break;
@@ -541,27 +500,24 @@ static api_error_code_e md_td_get_element(md_field_id_t field_id, const md_looku
             }
 
             // Check if encoded leaf and subleaf exist in the lookup table
+            uint32_t leaf, subleaf;
             md_cpuid_field_id_get_leaf_subleaf(field_id, &leaf, &subleaf);
             cpuid_lookup_index = get_cpuid_lookup_entry(leaf, subleaf);
 
-            if (MD_IMPORT_IMMUTABLE != access_type)
+            if (cpuid_lookup_index >= MAX_NUM_CPUID_LOOKUP)
             {
-                if (cpuid_lookup_index == CPUID_LOOKUP_IDX_NA)
-                {
-                    if (!(((access_type == MD_HOST_RD) ||
-                        ((access_type == MD_SERV_TD_RD) && (access_qual.serv_td_qualifier.service_td_type == SERVTD_TYPE_MIGTD))) &&
-                        is_cpuid_fixed0(md_ctx.tdcs_ptr->executions_ctl2_fields.cpuid_fixed0_bitmap, leaf)))
-                    {
-                        return TDX_METADATA_FIELD_NOT_READABLE;
-                    }
-                    else
-                    {
-                        // 0 here is a dummy value to avoid out-of-bound acces further down the flow
-                        // read_value will be filled by 0 in the special read handling
-                        cpuid_lookup_index = 0;
-                    }
-                }
+                return TDX_METADATA_FIELD_ID_INCORRECT;
             }
+
+            // CPUID leaf/subleaf that is faulting or not valid can't be read
+            // This check is not done during import
+            if ((access_type != MD_IMPORT_IMMUTABLE) &&
+                (cpuid_lookup[cpuid_lookup_index].faulting
+                 || !md_ctx.tdcs_ptr->executions_ctl_fields.cpuid_valid[cpuid_lookup_index]))
+            {
+                return TDX_METADATA_FIELD_NOT_READABLE;
+            }
+
         }
         // No break - fallthrough
         case MD_TDCS_TD_MANAGEMENT_CLASS_CODE:
@@ -575,6 +531,7 @@ static api_error_code_e md_td_get_element(md_field_id_t field_id, const md_looku
         case MD_TDCS_MIGSC_LINKS_CLASS_CODE:
         case MD_TDCS_VIRT_MSR_VALUES_CLASS_CODE:
         case MD_TDCS_X2APIC_IDS_CLASS_CODE:
+        case MD_TDCS_TDX_CONNECT_CLASS_CODE:
         {
             page_ptr = (uint8_t*)md_ctx.tdcs_ptr;
             break;
@@ -623,30 +580,6 @@ static api_error_code_e md_td_get_element(md_field_id_t field_id, const md_looku
             case MD_TDCS_NUM_CPUID_VALUES_FIELD_ID:
             {
                 read_value = MAX_NUM_CPUID_LOOKUP;
-                break;
-            }
-            case MD_TDCS_CPUID_VALUES_FIELD_ID:
-            {
-                if (MD_IMPORT_IMMUTABLE != access_type)
-                {
-                    // On read from host VMM or MigTD, check first if the CPUID leaf is fixed-0.
-                    // This is not done on export since we export the FIXED-0 bitmap directly.
-                    if (((access_type == MD_HOST_RD) ||
-                        ((access_type == MD_SERV_TD_RD) && (access_qual.serv_td_qualifier.service_td_type == SERVTD_TYPE_MIGTD))) &&
-                        is_cpuid_fixed0(md_ctx.tdcs_ptr->executions_ctl2_fields.cpuid_fixed0_bitmap, leaf))
-                    {
-                        read_value = 0;
-                    }
-                    else
-                    {
-                        // CPUID leaf/subleaf that is not valid can't be read
-                        if (!md_ctx.tdcs_ptr->executions_ctl_fields.cpuid_valid[cpuid_lookup_index])
-                        {
-                            return TDX_METADATA_FIELD_NOT_READABLE;
-                        }
-                    }
-                }
-
                 break;
             }
             case MD_TDCS_MIG_ENC_KEY_FIELD_ID:
@@ -752,19 +685,6 @@ api_error_code_e md_td_read_field(md_field_id_t field_id, const md_lookup_t* ent
                 break;
             case MD_TDCS_CPUID_VALUES_FIELD_ID:
                 tdx_debug_assert(entry->num_of_elem == 2);
-
-                // Check if encoded leaf and subleaf exist in the lookup table
-                uint32_t leaf, subleaf;
-                md_cpuid_field_id_get_leaf_subleaf(field_id, &leaf, &subleaf);
-                uint32_t cpuid_lookup_index = get_cpuid_lookup_entry(leaf, subleaf);
-                if (leaf == 0x23)
-                {
-                    if (md_ctx.tdcs_ptr->cpuid_values[cpuid_lookup_index].low == 0 && md_ctx.tdcs_ptr->cpuid_values[cpuid_lookup_index].high == 0)
-                    {
-                        return TDX_METADATA_FIELD_SKIP;
-                    }
-                }
-
                 value[0] = elem_ptr[0];
                 value[1] = elem_ptr[1];
                 break;
@@ -792,8 +712,8 @@ api_error_code_e md_td_read_field(md_field_id_t field_id, const md_lookup_t* ent
 }
 
 api_error_code_e md_td_write_element(md_field_id_t field_id, const md_lookup_t* entry, md_access_t access_type,
-                                     md_access_qualifier_t access_qual, md_context_ptrs_t md_ctx, uint64_t wr_value,
-                                     uint64_t wr_request_mask, uint64_t* old_value, bool_t wr_mask_valid)
+        md_access_qualifier_t access_qual, md_context_ptrs_t md_ctx, uint64_t wr_value, uint64_t wr_request_mask,
+        uint64_t* old_value)
 {
     uint64_t rd_mask = 0, wr_mask = 0, combined_wr_mask = 0;
     uint64_t read_value;
@@ -809,7 +729,6 @@ api_error_code_e md_td_write_element(md_field_id_t field_id, const md_lookup_t* 
     }
 
     // Narrow down the bits to be written with the input mask
-
     combined_wr_mask = wr_mask & wr_request_mask;
 
     // Check if the requested field is writable.
@@ -819,7 +738,7 @@ api_error_code_e md_td_write_element(md_field_id_t field_id, const md_lookup_t* 
         return TDX_METADATA_FIELD_NOT_WRITABLE;
     }
 
-    if (wr_mask_valid && !md_check_forbidden_bits_unchanged(read_value, wr_value, wr_request_mask, wr_mask, rd_mask))
+    if (!md_check_forbidden_bits_unchanged(read_value, wr_value, wr_request_mask, wr_mask, rd_mask))
     {
         return TDX_METADATA_FIELD_VALUE_NOT_VALID;
     }
@@ -838,32 +757,6 @@ api_error_code_e md_td_write_element(md_field_id_t field_id, const md_lookup_t* 
 
         switch (entry->field_id.raw)
         {
-            case MD_TDCS_FEATURE_PARAVIRT_CTLS_FIELD_ID:
-            {
-                feature_paravirt_ctls_t pv_ctls = { .raw = wr_value };
-                // If the TD_CTLS.LOCK bit is set, no modification is allowed.  If the value is the same as it is now, just ignore it.
-                if (md_ctx.tdcs_ptr->executions_ctl_fields.td_ctls.lock)
-                {
-                    if (pv_ctls.raw != read_value)
-                    {
-                        return TDX_METADATA_FIELD_VALUE_NOT_VALID;
-                    }
-                }
-                else
-                {
-                    tdx_sanity_check(pv_ctls.reserved == 0, FATAL_ERROR_ID_239, (uint32_t)pv_ctls.raw);   // This should be covered by the write mask
-
-                    // Update the TDCS field now, since it's used below
-                    md_ctx.tdcs_ptr->executions_ctl2_fields.feature_paravirt_ctls = pv_ctls;
-
-                    // Update the mutable CPUID_FLAGS based on the updated FEATURE_PARAVIRT_CTLS and the existing TD_CTLS.REDUCE_VE
-                    update_mutable_cpuid_flags(md_ctx.tdcs_ptr);
-                }
-
-                // The TDCS field was updated above, no need to write
-                write_done = true;
-                break;
-            }
             case MD_TDCS_MIG_DEC_KEY_FIELD_ID:
                 // Note that we actually set this flag before mig_dec_key is written below.
                 // This is OK because the relevant case (writing by MigTD)
@@ -902,59 +795,28 @@ api_error_code_e md_td_write_element(md_field_id_t field_id, const md_lookup_t* 
             }
             case MD_TDCS_TD_CTLS_FIELD_ID:
             {
-                td_ctls_t td_ctls_modified_bits = { .raw = wr_value ^ read_value };
+                if (!md_ctx.tdcs_ptr->executions_ctl_fields.config_flags.flexible_pending_ve)
+                {
+                    // The guest TD is not allowed to change TD_CTLS.PENDING_VE_DISABLE
+                    td_ctls_t td_ctls_modified_bits = { .raw = wr_value ^ read_value };
+                    if (td_ctls_modified_bits.pending_ve_disable)
+                    {
+                        return TDX_METADATA_FIELD_VALUE_NOT_VALID;
+                    }
+                }
+
+                // To enable virtual topology enumeration, all VCPU must have been properly configured
                 td_ctls_t td_ctls = { .raw = wr_value };
-
-                // If the the current TDCS.TD_CTLS.LOCK bit is set, no modification is allowed.  If the value is the same as it is now, just ignore it.
-                if (md_ctx.tdcs_ptr->executions_ctl_fields.td_ctls.lock)
+                if (td_ctls.enum_topology && !md_ctx.tdcs_ptr->executions_ctl_fields.topology_enum_configured)
                 {
-                    if (td_ctls_modified_bits.raw != 0)
-                    {
-                        return TDX_METADATA_FIELD_VALUE_NOT_VALID;
-                    }
-                }
-                else
-                {
-                    if (!md_ctx.tdcs_ptr->executions_ctl_fields.config_flags.flexible_pending_ve)
-                    {
-                        // The guest TD is not allowed to change TD_CTLS.PENDING_VE_DISABLE
-                        if (td_ctls_modified_bits.pending_ve_disable)
-                        {
-                            return TDX_METADATA_FIELD_VALUE_NOT_VALID;
-                        }
-                    }
-
-                    // REDUCE_VE implicitly turns on ENUM_TOPLOGY and VIRT_CPUID2
-                    if (td_ctls.reduce_ve)
-                    {
-                        td_ctls.enum_topology = 1;
-                        td_ctls.virt_cpuid2 = 1;
-                    }
-
-                    // To enable virtual topology enumeration, all VCPU must have been properly configured
-                    if (td_ctls.enum_topology && !md_ctx.tdcs_ptr->executions_ctl_fields.topology_enum_configured)
-                    {
-                        return TDX_METADATA_FIELD_VALUE_NOT_VALID;
-                    }
-
-                    // check that no reserved bits are set
-                    if (td_ctls.reserved)
-                    {
-                        return TDX_METADATA_FIELD_VALUE_NOT_VALID;
-                    }
-
-                    // Upudate the TDCS field now, since it's used below
-                    md_ctx.tdcs_ptr->executions_ctl_fields.td_ctls = td_ctls;
-
-                    if (td_ctls_modified_bits.reduce_ve)
-                    {
-                        // Update the mutable CPUID_FLAGS based on the updated TD_CTLS.REDUCE_VE and the existing FEATURE_PARAVIRT_CTLS
-                        update_mutable_cpuid_flags(md_ctx.tdcs_ptr);
-                    }
+                    return TDX_METADATA_FIELD_VALUE_NOT_VALID;
                 }
 
-                // The TDCS field was updated above, no need to write
-                write_done = true;
+                // check that no reserved bits are set
+                if (td_ctls.reserved)
+                {
+                    return TDX_METADATA_FIELD_VALUE_NOT_VALID;
+                }
 
                 break;
             }
@@ -985,8 +847,8 @@ tdx_static_assert(MD_TDCS_EXECUTION_CONTROLS_CLASS_CODE < MD_TDCS_CPUID_CLASS_CO
                   wrong_field_class_order);
 
 api_error_code_e md_td_write_field(md_field_id_t field_id, const md_lookup_t* entry,md_access_t access_type,
-                                   md_access_qualifier_t access_qual, md_context_ptrs_t md_ctx,
-                                   uint64_t value[MAX_ELEMENTS_IN_FIELD], uint64_t wr_request_mask, bool_t is_import, bool_t wr_mask_valid)
+        md_access_qualifier_t access_qual, md_context_ptrs_t md_ctx, uint64_t value[MAX_ELEMENTS_IN_FIELD],
+        uint64_t wr_request_mask, bool_t is_import)
 {
     // Since we read a multiple elements of the same field, we would like to directly access the ptr of
     // the first element of the field, which will save us the time of searching the offset and size
@@ -1016,11 +878,7 @@ api_error_code_e md_td_write_field(md_field_id_t field_id, const md_lookup_t* en
     }
 
     // Narrow down the bits to be written with the input mask
-    combined_wr_mask = wr_mask;
-    if (wr_mask_valid)
-    {
-        combined_wr_mask &= wr_request_mask;
-    }
+    combined_wr_mask = wr_mask & wr_request_mask;
 
     // Check if the requested field is writable.
     // Note that there is no check for readable; we don't have write-only
@@ -1054,13 +912,13 @@ api_error_code_e md_td_write_field(md_field_id_t field_id, const md_lookup_t* en
             {
                 // TD_UUID is only written on import.
                 // Save the existing value, it is checked on metadata access by service TDs
-                md_ctx.tdcs_ptr->migration_fields.pre_import_uuid.qwords[0] =
+                md_ctx.tdcs_ptr->migration_fields.preimport_uuid.qwords[0] =
                         md_ctx.tdr_ptr->management_fields.td_uuid.qwords[0];
-                md_ctx.tdcs_ptr->migration_fields.pre_import_uuid.qwords[1] =
+                md_ctx.tdcs_ptr->migration_fields.preimport_uuid.qwords[1] =
                         md_ctx.tdr_ptr->management_fields.td_uuid.qwords[1];
-                md_ctx.tdcs_ptr->migration_fields.pre_import_uuid.qwords[2] =
+                md_ctx.tdcs_ptr->migration_fields.preimport_uuid.qwords[2] =
                         md_ctx.tdr_ptr->management_fields.td_uuid.qwords[2];
-                md_ctx.tdcs_ptr->migration_fields.pre_import_uuid.qwords[3] =
+                md_ctx.tdcs_ptr->migration_fields.preimport_uuid.qwords[3] =
                         md_ctx.tdr_ptr->management_fields.td_uuid.qwords[3];
                 break;
             }
@@ -1085,12 +943,6 @@ api_error_code_e md_td_write_field(md_field_id_t field_id, const md_lookup_t* en
                 }
                 break;
             }
-            case MD_TDCS_CPUID4_NATIVE_VALUES_FIELD_ID:
-            {
-                uint64_t bit_idx = (field_id.field_code - MD_TDCS_CPUID4_NATIVE_VALUES_FIELD_CODE) / 4;
-                md_ctx.tdcs_ptr->executions_ctl2_fields.cpuid4_native_valid[bit_idx] = true;
-                break;
-            }
             case MD_TDCS_EPTP_FIELD_ID:
             {
                 tdx_debug_assert(entry->num_of_elem == 1);
@@ -1102,11 +954,6 @@ api_error_code_e md_td_write_field(md_field_id_t field_id, const md_lookup_t* en
                     return TDX_METADATA_FIELD_VALUE_NOT_VALID;
                 }
                 write_done = true;
-                break;
-            }
-            case MD_TDCS_FEATURE_PARAVIRT_CTLS_FIELD_ID:
-            {
-                // CPUID_FLAGS is updated at the end of mutable state import.   See check_and_init_imported_td_state_mutable()
                 break;
             }
             case MD_TDCS_HP_LOCK_TIMEOUT_FIELD_ID:
@@ -1139,13 +986,13 @@ api_error_code_e md_td_write_field(md_field_id_t field_id, const md_lookup_t* en
                     return TDX_METADATA_FIELD_VALUE_NOT_VALID;
                 }
 
+                md_ctx.tdcs_ptr->management_fields.num_l2_vms = (uint16_t)value[0];
+
                 // Now that we know the number of L2 VMs, check that enough pages have been allocated for TDCS
                 if (!is_required_tdcs_allocated(md_ctx.tdr_ptr, (uint16_t)value[0]))
                 {
-                    return TDX_METADATA_FIELD_NOT_ALLOCATED;
+                    return TDX_TDCS_NOT_ALLOCATED;
                 }
-
-                md_ctx.tdcs_ptr->management_fields.num_l2_vms = (uint16_t)value[0];
 
                 write_done = true;   // Value is only checked
 
@@ -1153,26 +1000,7 @@ api_error_code_e md_td_write_field(md_field_id_t field_id, const md_lookup_t* en
             }
             case MD_TDCS_TD_CTLS_FIELD_ID:
             {
-                td_ctls_t td_ctls = { .raw = value[0] };
-
-                // REDUCE_VE implies ENUM_TOPLOGY and VIRT_CPUID2
-                if (td_ctls.reduce_ve && !(td_ctls.enum_topology && td_ctls.virt_cpuid2))
-                {
-                    return TDX_METADATA_FIELD_VALUE_NOT_VALID;
-                }
-
-                // To enable #VE reduction, all required data (e.g., CPUID(4) native values) should have been imported as part of the immutable state import.
-                if (td_ctls.reduce_ve && !md_ctx.tdcs_ptr->executions_ctl_fields.ve_reduction_valid)
-                {
-                    return TDX_METADATA_FIELD_VALUE_NOT_VALID;
-                }
-
-                // To enable virtual topology enumeration, all VCPUs must have been properly configured
-                if (td_ctls.enum_topology && !md_ctx.tdcs_ptr->executions_ctl_fields.topology_enum_configured)
-                {
-                    return TDX_METADATA_FIELD_VALUE_NOT_VALID;
-                }
-
+                // No special handling on import
                 break;
             }
             case MD_TDCS_TSC_FREQUENCY_FIELD_ID:
@@ -1230,7 +1058,7 @@ api_error_code_e md_td_write_field(md_field_id_t field_id, const md_lookup_t* en
                 cpuid_values.low = value[0];
                 cpuid_values.high = value[1];
 
-                if (!check_cpuid_compatibility_and_set_immutable_cpuid_flags(md_ctx.tdcs_ptr, leaf, subleaf, cpuid_values, index))
+                if (!check_cpuid_compatibility_and_set_flags(md_ctx.tdcs_ptr, leaf, subleaf, cpuid_values, index))
                 {
                     return TDX_METADATA_FIELD_VALUE_NOT_VALID;
                 }
@@ -1279,13 +1107,18 @@ api_error_code_e md_td_write_field(md_field_id_t field_id, const md_lookup_t* en
             elem_ptr = (uint64_t*)(first_elem_addr + ((uint64_t)i * elem_size));
             read_value = *elem_ptr & md_get_element_size_mask(entry->field_id.element_size_code);
 
-            // future features might use write_field not as part of import
-            if ((MD_IMPORT_IMMUTABLE != access_type) && (MD_IMPORT_MUTABLE != access_type))
+            // The caller must not attempt to modify any non-writable bit.
+            // Calculate the forbidden bit mask as follows:
+            // forbidden_mask[N] is 1 if and only if both conditions are met:
+            //    - Non-writable:  element_wr_mask[N] == 0
+            //    - Write attempt: wr_mask[N] == 1
+            // Then check if any of the forbidden bits is being modified.
+
+            uint64_t forbidden_mask = wr_request_mask & ~wr_mask;
+
+            if ((read_value & forbidden_mask) != (value[i] & forbidden_mask))
             {
-                if (!md_check_forbidden_bits_unchanged(read_value, value[i], wr_request_mask, wr_mask, rd_mask))
-                {
-                    return TDX_METADATA_FIELD_VALUE_NOT_VALID;
-                }
+                return TDX_METADATA_FIELD_VALUE_NOT_VALID;
             }
 
             // Update only the relevant bits per the write mask

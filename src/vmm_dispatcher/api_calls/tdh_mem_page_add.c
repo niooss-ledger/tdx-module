@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "x86_defs/x86_defs.h"
 #include "data_structures/td_control_structures.h"
 #include "memory_handlers/keyhole_manager.h"
@@ -130,8 +130,7 @@ api_error_type tdh_mem_page_add(page_info_api_input_t gpa_page_info,
     }
 
     // SEPT and walk to find entry
-    return_val = walk_private_gpa(tdcs_ptr, page_gpa, tdr_ptr->key_management_fields.hkid,
-                                  &page_sept_entry_ptr, &page_level_entry, &page_sept_entry_copy);
+    return_val = walk_private_gpa(tdcs_ptr, page_gpa, &page_sept_entry_ptr, &page_level_entry, &page_sept_entry_copy);
 
     if (return_val != TDX_SUCCESS)
     {
@@ -210,10 +209,6 @@ api_error_type tdh_mem_page_add(page_info_api_input_t gpa_page_info,
     sha_update_block.api_name.bytes[11] = 'D';
     sha_update_block.gpa = page_gpa.raw;
 
-    // preserve VMM's XCR0 state
-    local_data_ptr->vmm_xcr0_state = ia32_xgetbv(0);
-    ia32_xsetbv(0, TDX_MODULE_XCR0_WITH_AVX);
-
     store_ymms_in_buffer(ymms);
 
     if ((sha_error_code = sha384_update_128B(&(tdcs_ptr->measurement_fields.td_sha_ctx),
@@ -222,14 +217,11 @@ api_error_type tdh_mem_page_add(page_info_api_input_t gpa_page_info,
     {
         // Unexpected error - Fatal Error
         TDX_ERROR("Unexpected error in SHA384 - error = %d\n", sha_error_code);
-        fatal_error(FATAL_ERROR_ID_110, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
+        FATAL_ERROR();
     }
 
     load_ymms_from_buffer(ymms);
     basic_memset_to_zero(ymms, sizeof(ymms));
-
-    // restore VMM's XCR0 state
-    ia32_xsetbv(0, local_data_ptr->vmm_xcr0_state);
 
     // Increment TDR child count
     tdr_ptr->management_fields.chldcnt++;

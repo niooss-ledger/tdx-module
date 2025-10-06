@@ -28,7 +28,7 @@
 #include "tdx_basic_defs.h"
 #include "tdx_basic_types.h"
 #include "tdx_api_defs.h"
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "data_structures/tdx_local_data.h"
 #include "x86_defs/x86_defs.h"
 #include "accessors/data_accessors.h"
@@ -39,12 +39,12 @@
 
 _STATIC_INLINE_ bool_t is_operand_busy_error_code(api_error_type error)
 {
-    return (HIGH_32BITS(error) == HIGH_32BITS(TDX_OPERAND_BUSY));
-}
+    if (HIGH_32BITS(error) == HIGH_32BITS(TDX_OPERAND_BUSY))
+    {
+        return true;
+    }
 
-_STATIC_INLINE_ bool_t is_operand_busy_host_priority_error_code(api_error_type error)
-{
-    return (HIGH_32BITS(error) == HIGH_32BITS(TDX_OPERAND_BUSY_HOST_PRIORITY));
+    return false;
 }
 
 static api_error_type tdg_servtd_rd_wr(servtd_binding_handle_t binding_handle, md_field_id_t field_id,
@@ -113,11 +113,6 @@ static api_error_type tdg_servtd_rd_wr(servtd_binding_handle_t binding_handle, m
             TDX_ERROR("Failed to check/lock/map a Target TDR - error = %llx\n", return_val);
             goto EXIT;
         }
-        else if (is_operand_busy_host_priority_error_code(return_val))
-        {
-            TDX_ERROR("Failed to check/lock/map a Target TDR - error = %llx\n", return_val);
-            goto EXIT;
-        }
         else
         {
             cross_td_trap_status = return_val;
@@ -146,7 +141,7 @@ static api_error_type tdg_servtd_rd_wr(servtd_binding_handle_t binding_handle, m
 
      if (!is_equal_256bit(target_tdr_ptr->management_fields.td_uuid, target_uuid))
      {
-         if (is_equal_256bit(target_tdcs_ptr->migration_fields.pre_import_uuid, target_uuid))
+         if (is_equal_256bit(target_tdcs_ptr->migration_fields.preimport_uuid, target_uuid))
          {
              // This is the case where the binding happened before import
              lp->vp_ctx.tdvps->guest_state.gpr_state.r10 = target_tdr_ptr->management_fields.td_uuid.qwords[0];
@@ -243,7 +238,7 @@ static api_error_type tdg_servtd_rd_wr(servtd_binding_handle_t binding_handle, m
      if (write)
      {
          return_val = md_write_element(MD_CTX_TD, field_id, access_type, access_qual,
-                                       md_ctx, wr_value, wr_request_mask, &rd_value, true);
+                                       md_ctx, wr_value, wr_request_mask, &rd_value);
      }
      else
      {

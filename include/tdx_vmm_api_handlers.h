@@ -246,8 +246,7 @@ api_error_type tdh_mem_wr(uint64_t aligned_page_pa, uint64_t target_tdr_pa, uint
  * @return Success or Error type
  */
 api_error_type tdh_mem_page_demote(page_info_api_input_t page_info,
-                              td_handle_and_flags_t target_tdr_and_flags,
-                              uint64_t pamt_hpa0, uint64_t pamt_hpa1);
+                              td_handle_and_flags_t target_tdr_and_flags);
 
 
 /**
@@ -331,11 +330,10 @@ api_error_type tdh_mng_key_freeid(uint64_t tdr_pa);
  *
  * @param tdr_pa The physical address of a TDR page
  * @param td_params_pa The physical address of an input TD_PARAMS struct
- * @param event_filters_info_params HPA (including HKID) of an array of EVENT_FILTER entries
  *
  * @return Success or Error type
  */
-api_error_type tdh_mng_init(uint64_t tdr_pa, uint64_t td_params_pa, uint64_t event_filters_info_params);
+api_error_type tdh_mng_init(uint64_t tdr_pa, uint64_t td_params_pa);
 
 
 /**
@@ -469,7 +467,7 @@ api_error_type tdh_mem_sept_remove(page_info_api_input_t sept_page_info, uint64_
  */
 api_error_type tdh_sys_config(uint64_t tdmr_info_array_pa,
                              uint64_t num_of_tdmr_entries,
-                             sys_config_options_t sysconfig_options);
+                             hkid_api_input_t global_private_hkid);
 
 
 /**
@@ -526,12 +524,10 @@ api_error_type tdh_sys_rdall(uint64_t md_list_hpa, md_field_id_t field_id);
  * @brief Globally initialize the TDX-SEAM module.
  *
  * @note
- * 
- * @param version Version of the API
- * 
+ *
  * @return Success or Error type
  */
-api_error_type tdh_sys_init(uint8_t version);
+api_error_type tdh_sys_init(void);
 
 
 /**

@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "x86_defs/x86_defs.h"
 #include "data_structures/td_control_structures.h"
 #include "memory_handlers/keyhole_manager.h"
@@ -130,7 +130,6 @@ api_error_type tdh_mem_sept_remove(page_info_api_input_t gpa_page_info, uint64_t
     return_val = lock_sept_check_and_walk_private_gpa(tdcs_ptr,
                                                       OPERAND_ID_RCX,
                                                       page_gpa,
-                                                      tdr_ptr->key_management_fields.hkid,
                                                       TDX_LOCK_EXCLUSIVE,
                                                       &sept_entry_ptr[0],
                                                       &sept_level_entry,
@@ -175,7 +174,6 @@ api_error_type tdh_mem_sept_remove(page_info_api_input_t gpa_page_info, uint64_t
 
     // Get removed page L1 SEPT HPA PAMT entry
     removed_page_pa[0].raw = (uint64_t)sept_entry_copy.base << IA32E_4K_PAGE_OFFSET;
-    removed_page_pa[0] = set_hkid_to_pa(removed_page_pa[0], tdr_ptr->key_management_fields.hkid);
 
     if ((return_val = pamt_implicit_get_and_lock(removed_page_pa[0], PT_4KB,
                       TDX_LOCK_EXCLUSIVE, &removed_page_pamt_entry_ptr[0], false)) != TDX_SUCCESS)
@@ -201,14 +199,8 @@ api_error_type tdh_mem_sept_remove(page_info_api_input_t gpa_page_info, uint64_t
             goto EXIT;
         }
 
-        // Check TLB tracking
-        if (!is_tlb_tracked(tdcs_ptr, removed_page_pamt_entry_ptr[0]->bepoch))
-        {
-            TDX_ERROR("TLB tracking not done\n");
-            return_val = TDX_TLB_TRACKING_NOT_DONE;
-        }
-
-        if (return_val != TDX_SUCCESS)
+        return_val = is_tlb_and_iotlb_tracked(tdcs_ptr, removed_page_pamt_entry_ptr[0]->bepoch);
+        if(return_val != TDX_SUCCESS)
         {
             return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
             goto EXIT;
@@ -241,21 +233,16 @@ api_error_type tdh_mem_sept_remove(page_info_api_input_t gpa_page_info, uint64_t
         return_val = l2_sept_walk(tdr_ptr, tdcs_ptr, vm_id, page_gpa, &sept_level_entry, &sept_entry_ptr[vm_id]);
         if (return_val != TDX_SUCCESS)
         {
-            // Should not happen - no need to free the L2 SEPT PTR's
-            extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_td_handle(target_tdr_pa, vm_id, sept_level_entry, page_gpa.raw, *sept_entry_ptr[vm_id]);
-            fatal_error(FATAL_ERROR_ID_15, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
+            FATAL_ERROR(); // Should not happen - no need to free the L2 SEPT PTR's
         }
 
         if (is_l2_sept_free(sept_entry_ptr[vm_id]))
         {
-            // Should not happen - no need to free the L2 SEPT PTR's
-            extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_td_handle(target_tdr_pa, vm_id, sept_level_entry, page_gpa.raw, *sept_entry_ptr[vm_id]);
-            fatal_error(FATAL_ERROR_ID_16, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
+            FATAL_ERROR(); // Should not happen - no need to free the L2 SEPT PTR's
         }
 
         // Get removed page HPA PAMT entry
         removed_page_pa[vm_id].raw = (uint64_t)sept_entry_ptr[vm_id]->base << IA32E_4K_PAGE_OFFSET;
-        removed_page_pa[vm_id] = set_hkid_to_pa(removed_page_pa[vm_id], tdr_ptr->key_management_fields.hkid);
 
         // Get the PAMT node entry of the L2 SEPT page that will be removed, and lock it
         if ((return_val = pamt_implicit_get_and_lock(removed_page_pa[vm_id], PT_4KB,

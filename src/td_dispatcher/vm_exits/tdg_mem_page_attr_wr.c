@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"),
-// to deal in the Software without restriction, including without limitation
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,
-// and/or sell copies of the Software, and to permit persons to whom
-// the Software is furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included
-// in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
-// OR OTHER DEALINGS IN THE SOFTWARE.
-//
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
 // SPDX-License-Identifier: MIT
 
 /**
@@ -67,8 +67,6 @@ static api_error_type get_all_l2_sept_entries(tdr_t *tdr_ptr, tdcs_t *tdcs_ptr, 
     api_error_type return_val = TDX_SUCCESS;
     api_error_type attribute_status = TDX_SUCCESS;
 
-    tdx_module_local_t* local_data_ptr = get_local_data();
-
     for (uint16_t vm_id = 1; vm_id <= tdcs_ptr->management_fields.num_l2_vms; vm_id++)
     {
         // Prepare the masked attributes
@@ -90,13 +88,13 @@ static api_error_type get_all_l2_sept_entries(tdr_t *tdr_ptr, tdcs_t *tdcs_ptr, 
                                                  &page_level_entry, &l2_sept_entry_copy, &l2_septe_ptr[vm_id]);
             if (return_val != TDX_SUCCESS)
             {
-                extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_td_handle(local_data_ptr->vp_ctx.tdr_pa.raw, vm_id, page_level_entry, page_gpa.raw, *l2_septe_ptr[vm_id]);
-                fatal_error(FATAL_ERROR_ID_3, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
+                FATAL_ERROR();
             }
 
-            // Get the L2 attributes.  L2 SEPT entry does not hold BLOCKEDW or PENDING indications
-            // of its own, so provide them based on the L1 state.
-            single_vm_curr_gpa_attr = l2_sept_get_gpa_attr(l2_septe_ptr[vm_id], sept_state_is_any_blockedw(l1_sept_entry_copy), sept_state_is_any_pending(l1_sept_entry_copy));
+            // Get the L2 attributes.  L2 SEPT entry does not hold a BLOCKEDW indication
+            // of its own, so provide it based on the L1 state.
+            single_vm_curr_gpa_attr = l2_sept_get_gpa_attr(l2_septe_ptr[vm_id],
+                                         sept_state_is_any_blockedw(l1_sept_entry_copy));
 
             // Prepare the updated attributes
             new_gpa_attr->attr_arr[vm_id].raw = single_vm_curr_gpa_attr.raw & ~attr_mask.attr_arr[vm_id].raw;
@@ -197,9 +195,9 @@ api_error_type tdg_mem_page_attr_wr(
     tdr_t *tdr_ptr = local_data_ptr->vp_ctx.tdr;
     tdvps_t *tdvps_ptr = local_data_ptr->vp_ctx.tdvps;
 
-    tdx_sanity_check(tdcs_ptr != NULL, FATAL_ERROR_ID_262, 0);
-    tdx_sanity_check(tdr_ptr != NULL, FATAL_ERROR_ID_263, 1);
-    tdx_sanity_check(tdvps_ptr != NULL, FATAL_ERROR_ID_264, 2);
+    tdx_sanity_check(tdcs_ptr != NULL, SCEC_TDCALL_SOURCE(TDG_MEM_PAGE_ATTR_WR_LEAF), 0);
+    tdx_sanity_check(tdr_ptr != NULL, SCEC_TDCALL_SOURCE(TDG_MEM_PAGE_ATTR_WR_LEAF), 1);
+    tdx_sanity_check(tdvps_ptr != NULL, SCEC_TDCALL_SOURCE(TDG_MEM_PAGE_ATTR_WR_LEAF), 2);
 
     // Check the specified attributes
     for (uint16_t vm_id = 0; vm_id < MAX_VMS; vm_id++)
@@ -248,8 +246,7 @@ api_error_type tdg_mem_page_attr_wr(
     }
 
     // SEPT and walk to find entry
-    return_val = walk_private_gpa(tdcs_ptr, page_gpa, tdr_ptr->key_management_fields.hkid,
-                                  &page_sept_entry_ptr, &page_level_entry, &page_sept_entry_copy);
+    return_val = walk_private_gpa(tdcs_ptr, page_gpa, &page_sept_entry_ptr, &page_level_entry, &page_sept_entry_copy);
     if (return_val != TDX_SUCCESS)
     {
         // Do an TD exit and notify the host VMM.
@@ -340,9 +337,9 @@ api_error_type tdg_mem_page_attr_wr(
             // Create the L2 page alias
             // The L2 SEPT entry is created as L2_BLOCKED if the page is pending
             sept_l2_set_leaf_given_hpa_with_hkid(l2_septe_ptr[vm_id], new_gpa_attr.attr_arr[vm_id],
-                                                 set_hkid_to_pa(sept_get_pa(&page_sept_entry_copy),
-                                                 tdr_ptr->key_management_fields.hkid),
-                                                 sept_state_is_any_pending(page_sept_entry_copy));
+                                                    sept_get_pa(&page_sept_entry_copy),
+                                                    sept_state_is_any_pending(page_sept_entry_copy));
+
             sept_set_aliased(page_sept_entry_ptr, vm_id);
         }
 

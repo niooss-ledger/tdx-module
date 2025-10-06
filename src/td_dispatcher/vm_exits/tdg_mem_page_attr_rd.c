@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"),
-// to deal in the Software without restriction, including without limitation
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,
-// and/or sell copies of the Software, and to permit persons to whom
-// the Software is furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included
-// in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
-// OR OTHER DEALINGS IN THE SOFTWARE.
-//
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
 // SPDX-License-Identifier: MIT
 
 /**
@@ -60,8 +60,8 @@ api_error_type tdg_mem_page_attr_rd(pa_t page_gpa)
     tdcs_t *tdcs_ptr = local_data_ptr->vp_ctx.tdcs;
     tdr_t *tdr_ptr = local_data_ptr->vp_ctx.tdr;
 
-    tdx_sanity_check(tdcs_ptr != NULL, FATAL_ERROR_ID_260, 0);
-    tdx_sanity_check(tdr_ptr != NULL, FATAL_ERROR_ID_261, 1);
+    tdx_sanity_check(tdcs_ptr != NULL, SCEC_TDCALL_SOURCE(TDG_MEM_PAGE_ATTR_RD_LEAF), 0);
+    tdx_sanity_check(tdr_ptr != NULL, SCEC_TDCALL_SOURCE(TDG_MEM_PAGE_ATTR_RD_LEAF), 1);
 
     if (!check_gpa_validity(page_gpa, tdcs_ptr->executions_ctl_fields.gpaw, PRIVATE_ONLY, tdcs_ptr->executions_ctl_fields.virt_maxpa))
     {
@@ -73,7 +73,7 @@ api_error_type tdg_mem_page_attr_rd(pa_t page_gpa)
     // Check SEPT and walk to find entry
     // Ignore success/failure indication - this is handled by the check below.
     page_sept_entry_ptr = secure_ept_walk(tdcs_ptr->executions_ctl_fields.eptp, page_gpa,
-                                tdr_ptr->key_management_fields.hkid, &page_level_entry, &page_sept_entry_copy, false);
+                                &page_level_entry, &page_sept_entry_copy, false);
 
     // Create a copy of the SEPT entry and mark it locally as locked (guest-side only).
     return_val = sept_lock_acquire_guest(page_sept_entry_ptr);
@@ -121,15 +121,15 @@ api_error_type tdg_mem_page_attr_rd(pa_t page_gpa)
                                              &page_level_entry, &l2_sept_entry_copy, &l2_septe_ptr);
         if (return_val != TDX_SUCCESS)
         {
-            extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_td_handle(local_data_ptr->vp_ctx.tdr_pa.raw, vm_id, page_level_entry, page_gpa.raw, *l2_septe_ptr);
-            fatal_error(FATAL_ERROR_ID_2, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
+            FATAL_ERROR();
         }
 
         /**
-         * Get the L2 attributes.  L2 SEPT entry does not hold BLOCKEDW or PENDING indications
-         * of its own, so provide them based on the L1 state.
+         * Get the L2 attributes.
+         *  L2 SEPT entry does not hold a BLOCKEDW indication of its own, so provide it based on the L1 state.
          */
-        gpa_attr.attr_arr[vm_id] = l2_sept_get_gpa_attr(l2_septe_ptr, sept_state_is_any_blockedw(page_sept_entry_copy), sept_state_is_any_pending(page_sept_entry_copy));
+        gpa_attr.attr_arr[vm_id] = l2_sept_get_gpa_attr(l2_septe_ptr,
+                                        sept_state_is_any_blockedw(page_sept_entry_copy));
 
         free_la(l2_septe_ptr);
     }

@@ -187,6 +187,8 @@ typedef struct PACKED vp_ctx_s
 
 } vp_ctx_t;
 
+#define LFSR_INIT_VALUE 0xFEEDBEAF
+
 typedef struct PACKED stepping_s
 {
     // Stepping data
@@ -195,6 +197,7 @@ typedef struct PACKED stepping_s
     uint64_t          saved_cr8;            // Saved value of LP's CR8 during stepping
     bool_t            nmi_exit_occured;     // Indicates that stepping has started due to NMI
     bool_t            init_exit_occured;    // Indicates that stepping has started due to INIT
+    uint32_t          lfsr_value;           // Random number
     uint64_t          last_entry_tsc;       // TSC at which this TD vCPU has been entered last time (or 0, if not yet entered)
     uint64_t          guest_rip_on_tdentry; // RIP with which this TD vCPU has been entered last time (or -1, if not yet entered)
 } stepping_t;
@@ -220,14 +223,14 @@ typedef struct PACKED tdx_module_local_s
 
     stepping_t            single_step_def_state;
 
-
     non_extended_state_t  vmm_non_extended_state;
     keyhole_state_t       keyhole_state;
-    bool_t                keyhole_state_initialized;
 
     void*                 local_data_fast_ref_ptr;
     void*                 global_data_fast_ref_ptr;
     void*                 sysinfo_fast_ref_ptr;
+    void*                 io_sysinfo_fast_ref_ptr;
+
     uint64_t              host_rsp;
     uint64_t              host_ssp;
     uint64_t              host_gs_base;
@@ -239,8 +242,6 @@ typedef struct PACKED tdx_module_local_s
     uint64_t              vmm_ia32_perf_global_status;
     uint64_t              vmm_ia32_perf_global_ctrl;
     uint64_t              guest_rcx_on_td_entry;
-
-    uint8_t               fatal_error_mem_mapped;
 
 #ifdef DEBUGFEATURE_TDX_DBG_TRACE
     uint32_t              local_dbg_msg_num;

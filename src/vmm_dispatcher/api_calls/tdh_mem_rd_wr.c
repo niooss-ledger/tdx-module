@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "x86_defs/x86_defs.h"
 #include "x86_defs/vmcs_defs.h"
 #include "data_structures/tdx_local_data.h"
@@ -37,7 +37,7 @@
 #include "helpers/helpers.h"
 #include "accessors/data_accessors.h"
 #include "accessors/vt_accessors.h"
-#include TDVPS_FIELDS_LOOKUP_HEADER
+#include "auto_gen/tdvps_fields_lookup.h"
 
 static api_error_type tdh_mem_rd_wr(uint64_t gpa, uint64_t target_tdr_pa,
                                     uint64_t data, bool_t write)
@@ -127,7 +127,6 @@ static api_error_type tdh_mem_rd_wr(uint64_t gpa, uint64_t target_tdr_pa,
     return_val = check_and_walk_private_gpa_to_leaf(tdcs_ptr,
                                                     OPERAND_ID_RCX,
                                                     page_gpa,
-                                                    tdr_ptr->key_management_fields.hkid,
                                                     &sept_entry_ptr,
                                                     &sept_level_entry,
                                                     &sept_entry_copy);
@@ -173,7 +172,6 @@ static api_error_type tdh_mem_rd_wr(uint64_t gpa, uint64_t target_tdr_pa,
 
     // Get the data HPA at 4KB resolution by inserting GPA bits 30:12 (for 1G) or 21:12 (for 2M)
     data_pa.raw = leaf_ept_entry_to_hpa(sept_entry_copy, page_gpa.raw, sept_level_entry);
-    data_pa = set_hkid_to_pa(data_pa, tdr_ptr->key_management_fields.hkid);
 
     // Map and get the data pointer
     data_ptr = map_pa((void*)data_pa.raw, write ? TDX_RANGE_RW : TDX_RANGE_RO);
@@ -191,6 +189,12 @@ static api_error_type tdh_mem_rd_wr(uint64_t gpa, uint64_t target_tdr_pa,
 
 EXIT:
     // Release all acquired locks and free mappings
+    if (tdr_locked_flag)
+    {
+        pamt_unwalk(tdr_pa, tdr_pamt_block, tdr_pamt_entry_ptr, TDX_LOCK_SHARED, PT_4KB);
+        free_la(tdr_ptr);
+    }
+
     if (septe_locked_flag)
     {
         sept_lock_release(sept_entry_ptr);
@@ -209,12 +213,6 @@ EXIT:
     {
         release_sharex_lock_hp_sh(&tdcs_ptr->management_fields.op_state_lock);
         free_la(tdcs_ptr);
-    }
-
-    if (tdr_locked_flag)
-    {
-        pamt_unwalk(tdr_pa, tdr_pamt_block, tdr_pamt_entry_ptr, TDX_LOCK_SHARED, PT_4KB);
-        free_la(tdr_ptr);
     }
 
     if (data_ptr != NULL)

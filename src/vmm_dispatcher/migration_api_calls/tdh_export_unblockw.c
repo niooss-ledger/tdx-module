@@ -25,9 +25,9 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include OP_STATE_LOOKUP_HEADER
-#include SEPT_STATE_LOOKUP_HEADER
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/op_state_lookup.h"
+#include "auto_gen/sept_state_lookup.h"
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "x86_defs/x86_defs.h"
 #include "accessors/ia32_accessors.h"
 #include "accessors/data_accessors.h"
@@ -130,7 +130,6 @@ api_error_type tdh_export_unblockw(uint64_t page_pa, uint64_t target_tdr_pa)
     return_val = lock_sept_check_and_walk_private_gpa(tdcs_p,
                                                   OPERAND_ID_RCX,
                                                   page_gpa,
-                                                  tdr_p->key_management_fields.hkid,
                                                   TDX_LOCK_SHARED,
                                                   &page_sept_entry_ptr,
                                                   &page_level_entry,
@@ -199,35 +198,9 @@ api_error_type tdh_export_unblockw(uint64_t page_pa, uint64_t target_tdr_pa)
             sept_update_state(&new_septe, SEPT_STATE_PEND_EXP_DIRTY_MASK);
             break;
         default:
-        {
-            extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_td_handle(target_tdr_pa, 0, LVL_PT, page_gpa.raw, page_sept_entry_copy);
-            fatal_error(FATAL_ERROR_ID_6, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
-        }
+            FATAL_ERROR();
     }
 
-    if (sept_state_is_guest_accessible_leaf(new_septe))
-    {
-        // Block any L2 aliases for writing
-        for (uint16_t vm_id = 1; vm_id <= tdcs_p->management_fields.num_l2_vms; vm_id++)
-        {
-            if (sept_state_is_aliased(new_septe, vm_id))
-            {
-                ia32e_sept_t* l2_septe_ptr = NULL;
-                // Walk the L2 SEPT to locate the entry
-                return_val = l2_sept_walk(tdr_p, tdcs_p, vm_id, page_gpa, &page_level_entry,
-                                          &l2_septe_ptr);
-
-                if (return_val != TDX_SUCCESS)
-                {
-                    extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_td_handle(target_tdr_pa, vm_id, page_level_entry, page_gpa.raw, *l2_septe_ptr);
-                    fatal_error(FATAL_ERROR_ID_7, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
-                }
-
-                sept_l2_unblockw(l2_septe_ptr);
-                free_la(l2_septe_ptr);
-            }
-        }
-    }
 
     atomic_mem_write_64b(&page_sept_entry_ptr->raw, new_septe.raw);
 

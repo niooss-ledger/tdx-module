@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "x86_defs/x86_defs.h"
 #include "data_structures/td_control_structures.h"
 #include "memory_handlers/keyhole_manager.h"
@@ -386,7 +386,6 @@ api_error_type tdh_mem_sept_add(page_info_api_input_t sept_level_and_gpa,
     return_val = lock_sept_check_and_walk_private_gpa(tdcs_ptr,
                                                       OPERAND_ID_RCX,
                                                       page_gpa,
-                                                      tdr_ptr->key_management_fields.hkid,
                                                       TDX_LOCK_SHARED,
                                                       &page_sept_entry_ptr[0],
                                                       &page_level_entry,

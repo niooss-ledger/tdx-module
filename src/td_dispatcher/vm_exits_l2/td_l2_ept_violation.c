@@ -34,7 +34,7 @@
 #include "x86_defs/vmcs_defs.h"
 #include "data_structures/tdx_local_data.h"
 #include "tdx_td_api_handlers.h"
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "vmm_dispatcher/tdx_vmm_dispatcher.h"
 #include "helpers/helpers.h"
 #include "memory_handlers/sept_manager.h"
@@ -48,11 +48,10 @@ void td_l2_ept_violation_exit(vm_vmexit_exit_reason_t vm_exit_reason, vmx_exit_q
 
     tdvps_t* tdvps_ptr = tdx_local_data_ptr->vp_ctx.tdvps;
     tdcs_t* tdcs_ptr = tdx_local_data_ptr->vp_ctx.tdcs;
-    tdr_t* tdr_ptr = tdx_local_data_ptr->vp_ctx.tdr;
 
     vmx_exit_inter_info_t exit_inter_info;
     ia32_vmread(VMX_VM_EXIT_INTERRUPTION_INFO_ENCODE, &(exit_inter_info.raw));
-    
+
     bool_t gpaw = tdcs_ptr->executions_ctl_fields.gpaw;
     pa_t gpa;
 
@@ -70,7 +69,7 @@ void td_l2_ept_violation_exit(vm_vmexit_exit_reason_t vm_exit_reason, vmx_exit_q
     if (are_gpa_bits_above_virt_maxpa_set(gpa.raw, gpaw, tdcs_ptr->executions_ctl_fields.virt_maxpa) &&
         exit_qualification.ept_violation.gla_valid)
     {
-        td_l2_to_l1_exit(vm_exit_reason, exit_qualification, 0, exit_inter_info, false);
+        td_l2_to_l1_exit(vm_exit_reason, exit_qualification, 0, exit_inter_info);
     }
 
     bool_t shared_bit = get_gpa_shared_bit(gpa.raw, gpaw);
@@ -79,41 +78,20 @@ void td_l2_ept_violation_exit(vm_vmexit_exit_reason_t vm_exit_reason, vmx_exit_q
     {
         // Walk the L1 SEPT to locate the leaf entry.  Actual level is returned.
         l1_sept_entry_ptr = secure_ept_walk(tdcs_ptr->executions_ctl_fields.eptp, (pa_t)gpa,
-                                            tdr_ptr->key_management_fields.hkid,
                                             &l1_sept_entry_level, &l1_sept_entry_copy, false);
-        
-        if (exit_qualification.ept_violation.data_read | exit_qualification.ept_violation.insn_fetch)
-        {
-            /* Missed operation was either Read or Execute.  In this case, if the page is accessible for
-               read by L1 (including if it's blocked-for-writing) then the EPT violation was due to L2
-               permissions.  Let L1 handle this. */
-            if (sept_state_is_guest_accessible_leaf(l1_sept_entry_copy))
-            {
-                if (l1_sept_entry_ptr != NULL)
-                {
-                    free_la(l1_sept_entry_ptr);
-                }
 
-                td_l2_to_l1_exit(vm_exit_reason, exit_qualification, 0, exit_inter_info, false);
-            }
-        }
-        else
+        // L1 leaf SEPT entry found - Check if the EPT violation needs to be handled by the L1 VMM
+        if (// Was the page fully accessible to the TD (as a whole)?
+            sept_state_is_guest_accessible_leaf(l1_sept_entry_copy))
         {
-            /* Missed operation was Write.  In this case, if the page is accessible for write
-               by L1 then the EPT violation was due to L2 permissions.  Let L1 handle this. */
-            if (sept_state_is_guest_fully_accessible_leaf(l1_sept_entry_copy))
+            if (l1_sept_entry_ptr != NULL)
             {
-                if (l1_sept_entry_ptr != NULL)
-                {
-                    free_la(l1_sept_entry_ptr);
-                }
-
-                // The page is fully accessible to the TD (as a whole), L1 VMM should handle the EPT violation
-                td_l2_to_l1_exit(vm_exit_reason, exit_qualification, 0, exit_inter_info, false);
+                free_la(l1_sept_entry_ptr);
             }
+            // In each of the above cases, L1 VMM should handle the EPT violation
+            td_l2_to_l1_exit(vm_exit_reason, exit_qualification, 0, exit_inter_info);
         }
-        
-        if (sept_state_is_any_pending_and_guest_acceptable(l1_sept_entry_copy))
+        else if (sept_state_is_any_pending_and_guest_acceptable(l1_sept_entry_copy))
         {
             if (l1_sept_entry_ptr != NULL)
             {
@@ -124,7 +102,7 @@ void td_l2_ept_violation_exit(vm_vmexit_exit_reason_t vm_exit_reason, vmx_exit_q
             eeq.type = L2_ENTER_EEQ_PEND_EPT_VIOLATION;
 
             // In each of the above cases, L1 VMM should handle the EPT violation
-            td_l2_to_l1_exit(vm_exit_reason, exit_qualification, eeq.raw, exit_inter_info, false);
+            td_l2_to_l1_exit(vm_exit_reason, exit_qualification, eeq.raw, exit_inter_info);
         }
 
         /* At this point we're going to do a TD exit.
@@ -134,8 +112,8 @@ void td_l2_ept_violation_exit(vm_vmexit_exit_reason_t vm_exit_reason, vmx_exit_q
 
     // Sanitize exit information and do a TD exit
 
-    /* EPT violation is one case where NMI may have been unblocked by an IRET instruction 
-     * before the VM exit happened.  NMI unblocking is only applicable is no IDT vectoring is indicated. 
+    /* EPT violation is one case where NMI may have been unblocked by an IRET instruction
+     * before the VM exit happened.  NMI unblocking is only applicable is no IDT vectoring is indicated.
      * Record this so NMI will be re-blocked if L2 will be reentered following a TD exit and TD entry. */
     if ((exit_qualification.ept_violation.nmi_unblocking_due_to_iret) && !is_idt_vectoring_info_valid())
     {

@@ -29,14 +29,14 @@
 #include "tdx_basic_defs.h"
 #include "tdx_basic_types.h"
 #include "tdx_vmm_api_handlers.h"
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "data_structures/tdx_global_data.h"
 #include "memory_handlers/pamt_manager.h"
 #include "data_structures/loader_data.h"
 #include "accessors/data_accessors.h"
 #include "helpers/helpers.h"
 #include "memory_handlers/keyhole_manager.h"
-#include CPUID_CONFIGURATIONS_HEADER
+#include "auto_gen/cpuid_configurations.h"
 
 typedef struct pamt_data_s
 {
@@ -182,10 +182,8 @@ static bool_t check_pamt_addresses_and_size(uint64_t pamt_base, uint64_t pamt_si
         return false;
     }
 
-    uint64_t required_size = ((tdmr_size / entry_size) * sizeof(pamt_entry_t));
-
     // The size of each PAMT region must be large enough to contain the PAMT for its associated TDMR.
-    if (pamt_size < required_size)
+    if (pamt_size < ((tdmr_size / entry_size) * sizeof(pamt_entry_t)))
     {
         TDX_ERROR("PAMT size=0x%llx isn't big enough to contain entries (0x%llx) for current TDMR\n",
                 pamt_size, (tdmr_size / entry_size) * sizeof(pamt_entry_t));
@@ -531,13 +529,10 @@ static api_error_type check_tdmr_reserved_areas(tdmr_info_entry_t tdmr_info_copy
 
             // Offset and size must comply with the alignment and granularity requirements.
             // TDMR base address and size must comply with the alignment and granularity requirements.
-
-            uint64_t reserved_area_granularity = _4KB;
-
-            if (!is_addr_aligned_pwr_of_2(area_offset, reserved_area_granularity) ||
-                !is_addr_aligned_pwr_of_2(area_size, reserved_area_granularity))
+            if (!is_addr_aligned_pwr_of_2(area_offset, _4KB) ||
+                !is_addr_aligned_pwr_of_2(area_size, _4KB))
             {
-                TDX_ERROR("TDMR[%d]: RSVD_AREA[%d] offset 0x%llx or size 0x%llx are not 2MB (for dynamic PAMT) or 4KB aligned\n",
+                TDX_ERROR("TDMR[%d]: RSVD_AREA[%d] offset 0x%llx or size 0x%llx are not 4KB aligned\n",
                         i, j, area_offset, area_size);
                 return api_error_with_multiple_info(TDX_INVALID_RESERVED_IN_TDMR,
                         (uint8_t)i, (uint8_t)j, 0, 0);
@@ -738,7 +733,7 @@ static api_error_type check_and_set_tdmrs(tdmr_info_entry_t tdmr_info_copy[MAX_T
 
 api_error_type tdh_sys_config(uint64_t tdmr_info_array_pa,
                              uint64_t num_of_tdmr_entries,
-                             sys_config_options_t sysconfig_options)
+                             hkid_api_input_t global_private_hkid)
 {
     // Temporary Variables
 
@@ -747,7 +742,7 @@ api_error_type tdh_sys_config(uint64_t tdmr_info_array_pa,
     bool_t               tdmr_info_p_init = false;
     pa_t                 tdmr_info_pa = {.raw = tdmr_info_array_pa};  // Physical address of an array of physical addresses of the TDMR info structure
     uint64_t*            tdmr_pa_array = NULL; // Pointer to an array of physical addresses of the TDMR info structure
-    uint16_t             hkid = sysconfig_options.hkid;
+    uint16_t             hkid = global_private_hkid.hkid;
     bool_t               global_lock_acquired = false;
     tdx_module_global_t* tdx_global_data_ptr = get_global_data();
 
@@ -772,8 +767,7 @@ api_error_type tdh_sys_config(uint64_t tdmr_info_array_pa,
 
     if (tdx_global_data_ptr->num_of_init_lps < tdx_global_data_ptr->num_of_lps)
     {
-        TDX_ERROR("Num of initialized lps %d is smaller than total num of lps %d\n",
-                    tdx_global_data_ptr->num_of_init_lps, tdx_global_data_ptr->num_of_lps);
+        TDX_ERROR("Num of initialized lps %d is smaller than total num of lps %d\n", tdx_global_data_ptr->num_of_init_lps, tdx_global_data_ptr->num_of_lps);
         retval = TDX_SYS_CONFIG_NOT_PENDING;
         goto EXIT;
     }
@@ -800,7 +794,7 @@ api_error_type tdh_sys_config(uint64_t tdmr_info_array_pa,
         goto EXIT;
     }
 
-    if ((sysconfig_options.reserved != 0) || !is_private_hkid(hkid))
+    if ((global_private_hkid.reserved != 0) || !is_private_hkid(hkid))
     {
         TDX_ERROR("HKID 0x%x is not private\n", hkid);
         retval = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_R8);

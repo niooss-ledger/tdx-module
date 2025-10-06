@@ -1,23 +1,23 @@
-// Copyright (C) 2023 Intel Corporation
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"),
-// to deal in the Software without restriction, including without limitation
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,
-// and/or sell copies of the Software, and to permit persons to whom
-// the Software is furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included
-// in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
-// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
-// OR OTHER DEALINGS IN THE SOFTWARE.
-//
+// Copyright (C) 2023 Intel Corporation                                          
+//                                                                               
+// Permission is hereby granted, free of charge, to any person obtaining a copy  
+// of this software and associated documentation files (the "Software"),         
+// to deal in the Software without restriction, including without limitation     
+// the rights to use, copy, modify, merge, publish, distribute, sublicense,      
+// and/or sell copies of the Software, and to permit persons to whom             
+// the Software is furnished to do so, subject to the following conditions:      
+//                                                                               
+// The above copyright notice and this permission notice shall be included       
+// in all copies or substantial portions of the Software.                        
+//                                                                               
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS       
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,   
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL      
+// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES             
+// OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,      
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE            
+// OR OTHER DEALINGS IN THE SOFTWARE.                                            
+//                                                                               
 // SPDX-License-Identifier: MIT
 
 /**
@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "x86_defs/x86_defs.h"
 #include "data_structures/td_control_structures.h"
 #include "memory_handlers/keyhole_manager.h"
@@ -35,7 +35,6 @@
 #include "helpers/helpers.h"
 #include "accessors/ia32_accessors.h"
 #include "accessors/data_accessors.h"
-
 
 static void sept_split_entry(tdr_t* tdr_ptr, pa_t sept_page_pa, pa_t split_page_pa,
                              ept_level_t split_page_level_entry, ia32e_sept_t split_page_sept_entry_copy)
@@ -66,8 +65,7 @@ static void sept_split_entry(tdr_t* tdr_ptr, pa_t sept_page_pa, pa_t split_page_
     free_la(sept_page_ptr);
 }
 
-api_error_type tdh_mem_page_demote(page_info_api_input_t gpa_page_info, td_handle_and_flags_t target_tdr_and_flags,
-                                   uint64_t pamt_hpa0, uint64_t pamt_hpa1)
+api_error_type tdh_mem_page_demote(page_info_api_input_t gpa_page_info, td_handle_and_flags_t target_tdr_and_flags)
 {
     // Local data for return values
     tdx_module_local_t  * local_data_ptr = get_local_data();
@@ -166,7 +164,6 @@ api_error_type tdh_mem_page_demote(page_info_api_input_t gpa_page_info, td_handl
     return_val = lock_sept_check_and_walk_private_gpa(tdcs_ptr,
                                                       OPERAND_ID_RCX,
                                                       page_gpa,
-                                                      tdr_ptr->key_management_fields.hkid,
                                                       TDX_LOCK_SHARED,
                                                       &split_page_sept_entry_ptr,
                                                       &split_page_level_entry,
@@ -183,17 +180,6 @@ api_error_type tdh_mem_page_demote(page_info_api_input_t gpa_page_info, td_handl
         TDX_ERROR("Failed on GPA check, SEPT lock or walk - error = %llx\n", return_val);
         goto EXIT;
     }
-
-/* 1308552267 - suppress check
-    //TDX_IO_SUPPORT
-    // Verify page mem_type is WB, fail otherwise
-    if (split_page_sept_entry_copy.fields_4k.mt != MT_WB)
-    {
-        TDX_ERROR("Page memory type is not WB.\n");
-        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID,OPERAND_ID_RCX);
-        goto EXIT;
-    }
-*/
 
     // Lock the SEPT entry in memory
     return_val = sept_lock_acquire_host(split_page_sept_entry_ptr);
@@ -239,19 +225,12 @@ api_error_type tdh_mem_page_demote(page_info_api_input_t gpa_page_info, td_handl
             goto EXIT;
         }
 
-        // Check TLB tracking
-        if (!is_tlb_tracked(tdcs_ptr, split_page_pamt_entry_ptr->bepoch))
-        {
-            TDX_ERROR("TLB tracking not done\n");
-            return_val = TDX_TLB_TRACKING_NOT_DONE;
-        }
-
-        if (return_val != TDX_SUCCESS)
+        return_val = is_tlb_and_iotlb_tracked(tdcs_ptr, split_page_pamt_entry_ptr->bepoch);
+        if(return_val != TDX_SUCCESS)
         {
             return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
             goto EXIT;
-    }
-
+        }
     }
 
     // Step #2:
@@ -366,7 +345,8 @@ api_error_type tdh_mem_page_demote(page_info_api_input_t gpa_page_info, td_handl
                 // For L2, it means that if the page is not pending, the L2 entry gets unblocked.
                 // Else, it remains blocked (L2 has a single blocked state that applies for pending too)
                 ia32e_sept_t l2_sept_entry = *l2_sept_entry_ptr[vm_id];
-                if (unblock_required_flag && !sept_state_is_any_pending(split_page_sept_entry_copy))
+                tdx_debug_assert(unblock_required_flag);
+                if (!sept_state_is_any_pending(split_page_sept_entry_copy))
                 {
                     sept_l2_unblock(&l2_sept_entry);
                 }
@@ -405,10 +385,10 @@ api_error_type tdh_mem_page_demote(page_info_api_input_t gpa_page_info, td_handl
     }
 
     // Split PAMT of the demoted page
-    if ((return_val = pamt_demote(split_page_pa, (page_size_t)split_page_level_entry,
-                                  pamt_hpa0, pamt_hpa1)) != TDX_SUCCESS)
+    if ((return_val = pamt_demote(split_page_pa, (page_size_t)split_page_level_entry)) != TDX_SUCCESS)
     {
         TDX_ERROR("Couldn't not split the destined page in PAMT\n");
+        return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
         goto EXIT;
     }
 
@@ -419,9 +399,10 @@ api_error_type tdh_mem_page_demote(page_info_api_input_t gpa_page_info, td_handl
     //  ALL_CHECKS_PASSED:  The function is guaranteed to succeed
     //---------------------------------------------------------------
 
-    sept_set_mapped_non_leaf_given_hpa_with_hkid(split_page_sept_entry_ptr,
-                                                 set_hkid_to_pa(sept_page_pa[0], tdr_ptr->key_management_fields.hkid),
-                                                 true); // Keep locked
+    sept_set_mapped_non_leaf_given_hpa_with_hkid(
+        split_page_sept_entry_ptr,
+        set_hkid_to_pa(sept_page_pa[0], tdr_ptr->key_management_fields.hkid),
+        true); // Keep locked
 
     // Update the new L1 Secure EPT page PAMT entry
     sept_page_pamt_entry_ptr[0]->owner = tdr_pa.page_4k_num;
@@ -436,9 +417,10 @@ api_error_type tdh_mem_page_demote(page_info_api_input_t gpa_page_info, td_handl
             (!target_tdr_and_flags.l2_sept_add_mode || sept_state_is_aliased(split_page_sept_entry_copy, vm_id)))
         {
             // Make the current L2 Secure EPT entry a non-leaf entry pointing the new Secure EPT page.
-            sept_l2_set_mapped_non_leaf_given_hpa_and_hkid(l2_sept_entry_ptr[vm_id],
-                                                           sept_page_pa[vm_id],
-                                                           tdr_ptr->key_management_fields.hkid);
+            sept_l2_set_mapped_non_leaf_given_hpa_and_hkid(
+                l2_sept_entry_ptr[vm_id],
+                sept_page_pa[vm_id],
+                tdr_ptr->key_management_fields.hkid);
 
             // Set the aliased flag in the L1 non-leaf SEPT entry (this is done as a locked operation)
             sept_set_aliased(split_page_sept_entry_ptr, (uint16_t)vm_id);

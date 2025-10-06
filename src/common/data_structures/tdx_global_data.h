@@ -36,8 +36,10 @@
 #include "x86_defs/msr_defs.h"
 #include "x86_defs/vmcs_defs.h"
 #include "x86_defs/x86_defs.h"
-#include CPUID_CONFIGURATIONS_DEFINES_HEADER
+#include "auto_gen/cpuid_configurations_defines.h"
 #include "crypto/sha384.h"
+#include "data_structures/tdxio/iommu_defs.h"
+
 
 
 #define AES_XTS_128                BIT(0)
@@ -164,7 +166,7 @@ typedef struct ALIGN(TDMR_ENTRY_ALIGNMENT) PACKED tdmr_entry_s
 
     uint64_t pamt_1g_base; /**< Base address of the PAMT_1G range */
     uint64_t pamt_2m_base; /**< Base address of the PAMT_2M range */
-    uint64_t pamt_4k_base; /**< Base address of the PAMT_4K range, or PAMT bitmap for dynamic PAMT */
+    uint64_t pamt_4k_base; /**< Base address of the PAMT_4K range */
 
     uint32_t num_of_pamt_blocks; /**< number of PAMT blocks in this TDMR region */
     uint32_t num_of_rsvd_areas;
@@ -184,8 +186,7 @@ typedef struct
 
     uint64_t                        ia32_tsc_adjust;
 
-    ia32_misc_enable_t              ia32_misc_enable;
-
+    //MSRs
     ia32_vmx_basic_t                ia32_vmx_basic;
     ia32_vmx_misc_t                 ia32_vmx_misc;
     ia32_vmx_allowed_bits_t         ia32_vmx_true_pinbased_ctls;
@@ -357,9 +358,6 @@ typedef struct tdx_module_global_s
     uint8_t          num_fixed_ctrs;
     uint32_t         fc_bitmap;
 
-
-    bool_t is_arch_pebs_supported;
-
     // ATTRIBUTES fixed bits masks
     uint64_t     attributes_fixed0;   // Bit value of 0 means ATTRIBUTES bit must be 0
     uint64_t     attributes_fixed1;   // Bit value of 1 means ATTRIBUTES bit must be 1
@@ -383,21 +381,19 @@ typedef struct tdx_module_global_s
     fms_info_t      platform_fms;
     cpuid_1a_eax_t  native_model_info;
 
-    // fatal error diagnostics
-    uint64_t* fatal_info_p;
-    uint64_t fatal_info_config_hpa;
-    sharex_lock_t fatal_info_lock;
-    uint64_t fatal_info_icr;
-
 #ifdef DEBUGFEATURE_TDX_DBG_TRACE
     debug_control_t debug_control;
     debug_message_t trace_buffer[TRACE_BUFFER_SIZE];
 #endif // DEBUGFEATURE_TDX_DBG_TRACE
 
+    //TDX-IO Support
+    iommu_config_t iommu_configs[TOT_NUM_IOMMUS];
+    bool_t tdx_io_supported; // XXX Note, equivalent to features[2] in TDX 2.0
+    uint256_t mmiomt_root_node;
+    uint64_t devifmt_root_node;
     // TODO: remove define once WA is removed
-    bool_t is_a0_wa_invoked;
-    bool_t is_gnr_a0_cpuid;
-    bool_t is_gnr_d_cpuid;
+    bool_t is_gnr_a0_gnr_d_cpuid;
+
 } tdx_module_global_t;
 tdx_static_assert(offsetof(tdx_module_global_t, global_lock) % 2 == 0, global_lock);
 
@@ -434,7 +430,6 @@ tdx_static_assert((offsetof(tdx_module_global_t, tdmr_info_copy) + offsetof(tdmr
 tdx_static_assert((offsetof(tdx_module_global_t, tdmr_info_copy) + offsetof(tdmr_info_entry_t, pamt_4k_size)) % sizeof_field(tdmr_info_entry_t, pamt_4k_size) == 0, tdmr_info_entry_t);
 tdx_static_assert((offsetof(tdx_module_global_t, tdmr_info_copy) + offsetof(tdmr_info_entry_t, rsvd_areas)) % sizeof(uint64_t) == 0, tdmr_info_entry_t);
 
-#define SIZE_OF_CONNECT_FIELDS 0
 
 // // !!! IMPORTANT !!!
 // // ALL HANDED-OFF STRUCTURES NEEDS TO BE PACKED TO ELIMINATE POSSIBLE COMPILER BUILD DIFFS
@@ -444,7 +439,9 @@ tdx_static_assert((offsetof(tdx_module_global_t, tdmr_info_copy) + offsetof(tdmr
                                sizeof_field(tdx_module_global_t, num_of_tdmr_entries) + \
                                sizeof_field(tdx_module_global_t, hkid) + \
                                sizeof_field(tdx_module_global_t, pkg_config_bitmap) +\
-                               SIZE_OF_CONNECT_FIELDS
+                               sizeof_field(tdx_module_global_t, iommu_configs) + \
+                               sizeof_field(tdx_module_global_t, mmiomt_root_node) + \
+                               sizeof_field(tdx_module_global_t, devifmt_root_node)
 
 #define TDX_MIN_HANDOFF_PAGES  ((ROUND_UP(TDX_MIN_HANDOFF_SIZE, _4KB)) / _4KB)
 

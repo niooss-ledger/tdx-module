@@ -25,8 +25,8 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include OP_STATE_LOOKUP_HEADER
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/op_state_lookup.h"
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "x86_defs/x86_defs.h"
 #include "accessors/ia32_accessors.h"
 #include "accessors/data_accessors.h"
@@ -133,12 +133,12 @@ static api_error_type handle_command_by_type(migs_index_and_cmd_t migs_i_and_cmd
         // Accumulate a MAC over the MAC’ed fields of the MBMD
         if (aes_gcm_reset(&migsc_p->aes_gcm_context, iv) != AES_GCM_NO_ERROR)
         {
-            fatal_error(FATAL_ERROR_ID_134, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
+            FATAL_ERROR();
         }
         if (aes_gcm_process_aad(&migsc_p->aes_gcm_context, (uint8_t*)&migsc_p->mbmd.immutable_td_state,
                                 MBMD_SIZE_NO_MAC(migsc_p->mbmd.immutable_td_state)) != AES_GCM_NO_ERROR)
         {
-            fatal_error(FATAL_ERROR_ID_135, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
+            FATAL_ERROR();
         }
 
         // Update the MBMD with values not included in the MAC calculation
@@ -226,7 +226,7 @@ static api_error_type handle_continues_export(api_error_type* return_val, bool_t
         // Write the MBMD's MAC field
         if (aes_gcm_finalize(&migsc_p->aes_gcm_context, migsc_p->mbmd.immutable_td_state.mac) != AES_GCM_NO_ERROR)
         {
-            fatal_error(FATAL_ERROR_ID_136, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
+            FATAL_ERROR();
         }
 
         // Write out the MBMD
@@ -398,6 +398,12 @@ api_error_type tdh_export_state_immutable(uint64_t target_tdr_pa, uint64_t hpa_a
         goto EXIT;
     }
 
+    return_val = check_no_tdx_io_device_attached(tdr_p, tdcs_p);
+    if (return_val != TDX_SUCCESS)
+    {
+        goto EXIT;
+    }
+
     // Check and map the MBMD buffer in shared memory, and write out the MBMD
     if (mbmd_hpa_and_size.size < sizeof(mbmd_immutable_td_state_t))
     {
@@ -506,7 +512,7 @@ api_error_type tdh_export_state_immutable(uint64_t target_tdr_pa, uint64_t hpa_a
 
         if (aes_gcm_encrypt(&migsc_p->aes_gcm_context, (uint8_t*)&md_list, (uint8_t*)enc_md_list_hdr_p, _4KB) != AES_GCM_NO_ERROR)
         {
-            fatal_error(FATAL_ERROR_ID_137, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
+            FATAL_ERROR();
         }
 
         page_list_i++;

@@ -28,7 +28,7 @@
 #include "tdx_basic_defs.h"
 #include "tdx_basic_types.h"
 #include "tdx_vmm_api_handlers.h"
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/tdx_error_codes_defs.h"
 
 #include "data_structures/tdx_global_data.h"
 #include "data_structures/tdx_local_data.h"
@@ -40,9 +40,12 @@
 #include "accessors/ia32_accessors.h"
 #include "accessors/data_accessors.h"
 #include "accessors/vt_accessors.h"
+#include "tdxio/vtbar.h"
+#include "tdxio/kcbar.h"
+
 #include "helpers/smrrs.h"
 #include "memory_handlers/keyhole_manager.h"
-#include CPUID_CONFIGURATIONS_HEADER
+#include "auto_gen/cpuid_configurations.h"
 
 _STATIC_INLINE_ api_error_type check_msrs(tdx_module_global_t* tdx_global_data_ptr)
 {
@@ -246,7 +249,6 @@ _STATIC_INLINE_ api_error_type compare_cpuid_configuration(tdx_module_global_t* 
         }
     }
 
-
     // Compare IA32_TSC_ADJUST to the value sampled on TDHSYSINIT
     if (ia32_rdmsr(IA32_TSC_ADJ_MSR_ADDR) != tdx_global_data_ptr->plt_common_config.ia32_tsc_adjust)
     {
@@ -430,27 +432,6 @@ _STATIC_INLINE_ api_error_type check_enumeration_and_compare_configuration(tdx_m
     return TDX_SUCCESS;
 }
 
-_STATIC_INLINE_ void map_fatal_info_pointer(void)
-{
-    tdx_module_global_t* global_data = get_global_data();
-
-    // only the first thread who reaches here should do the mapping
-    if (LOCK_RET_SUCCESS == acquire_sharex_lock_ex(&global_data->fatal_info_lock))
-    {
-        // verify all checks in tdh_sys_init passed and the fatal error info mem should be mapped
-        if ((uint64_t)(-1) != global_data->fatal_info_config_hpa)
-        {
-            global_data->fatal_info_p = (uint64_t*)map_pa((void*)global_data->fatal_info_config_hpa, TDX_RANGE_RW);
-            get_local_data()->fatal_error_mem_mapped = 1;
-
-            zero_cacheline((void*)global_data->fatal_info_p);
-            global_data->fatal_info_config_hpa = (uint64_t)(-1);
-        }
-
-        release_sharex_lock_ex(&global_data->fatal_info_lock);
-    }
-}
-
 _STATIC_INLINE_ void increment_num_of_lps(tdx_module_global_t* tdx_global_data_ptr)
 {
     (void)_lock_xadd_32b(&tdx_global_data_ptr->num_of_init_lps, 1);
@@ -484,6 +465,96 @@ _STATIC_INLINE_ void tdx_local_init(tdx_module_local_t* tdx_local_data_ptr,
     increment_num_of_lps(tdx_global_data_ptr);
 
     tdx_local_data_ptr->guest_rcx_on_td_entry = 0;
+}
+
+/**
+ * @brief For each I/O stack with hiop_rp_bit_vector != 0 check the SMRR range doesn't overlap the following ranges:
+ *          - MMIOH BASE  -- MMIOH_LIMIT range
+ *          - MEMCFG BASE -- MEMCFG_LIMIT range
+ *          - VTBAR_BASE  -- VTBAR_SIZE (64KB) range
+ *          - KCBAR_ BASE -- KCBAR_SIZE (128KB) range
+ *
+ * @return bool_t
+ */
+_STATIC_INLINE_ bool_t is_smrr_overlap_io_range(void)
+{
+    socket_io_info_t *socket_io_info_ptr = NULL;
+    hiop_info_t *hiop_info_ptr = NULL;
+    iommu_id_t iommu_id = {.raw = 0};
+
+    tdx_module_global_t *tdx_global_data_ptr = get_global_data();
+
+    if (!tdx_global_data_ptr->tdx_io_supported)
+    {
+        return false;
+    }
+
+    for (uint8_t socket_id = 0; socket_id < NUM_OF_SOCKETS; socket_id++)
+    {
+        iommu_id.socket_id = socket_id;
+        socket_io_info_ptr = get_socket_io_info(iommu_id);
+
+        for (uint8_t hiop_id = 0; hiop_id < NUM_OF_HIOPS; hiop_id++)
+        {
+            iommu_id.hiop_id = hiop_id;
+            hiop_info_ptr = get_hiop_info(iommu_id, socket_io_info_ptr);
+
+            if (hiop_info_ptr->hiop_rp_bit_vector == 0)
+            {
+                continue;
+            }
+
+            uint8_t smrr_count = 1;
+            if (get_sysinfo_table()->mcheck_fields.smrr2_not_supported == 0 &&
+                tdx_global_data_ptr->plt_common_config.ia32_mtrrcap.smrr2 != 0)
+            {
+                smrr_count++;
+            }
+
+            for (uint8_t smrr_idx = 0; smrr_idx < smrr_count; smrr_idx++)
+            {
+                if (!tdx_global_data_ptr->plt_common_config.smrr[smrr_idx].smrr_mask.vld)
+                {
+                    continue;
+                }
+
+                smrr_base_t smrr_base = {.raw = 0};
+                smrr_base.base = tdx_global_data_ptr->plt_common_config.smrr[smrr_idx].smrr_base.base;
+
+                smrr_mask_t smrr_mask = {.raw = 0};
+                smrr_mask.mask = tdx_global_data_ptr->plt_common_config.smrr[smrr_idx].smrr_mask.mask;
+                const uint64_t smrr_size = mask_to_size(smrr_mask.raw);
+
+                const uint64_t mmioh_size = hiop_info_ptr->hiop_mmioh_limit - hiop_info_ptr->hiop_mmioh_base;
+                if (is_overlap(smrr_base.raw, smrr_size, hiop_info_ptr->hiop_mmioh_base, mmioh_size))
+                {
+                    TDX_ERROR("SMRR overlaps MMIOH range\n");
+                    return true;
+                }
+
+                if (is_overlap(smrr_base.raw, smrr_size, hiop_info_ptr->hiop_mmcfg_base, MMCFG_RANGE_SIZE))
+                {
+                    TDX_ERROR("SMRR overlaps MMCFG range\n");
+                    return true;
+                }
+
+                const uint64_t vtbar_pa = get_vtbar_pa(socket_io_info_ptr, hiop_info_ptr);
+                if (is_overlap(smrr_base.raw, smrr_size, vtbar_pa, VTBAR_SIZE))
+                {
+                    TDX_ERROR("SMRR overlaps VTBAR range\n");
+                    return true;
+                }
+
+                const uint64_t kcbar_pa = get_kcbar_pa(socket_io_info_ptr, hiop_info_ptr);
+                if (is_overlap(smrr_base.raw, smrr_size, kcbar_pa, KCBAR_SIZE))
+                {
+                    TDX_ERROR("SMRR overlaps KCBAR range\n");
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
 }
 
 api_error_type tdh_sys_lp_init(void)
@@ -528,6 +599,14 @@ api_error_type tdh_sys_lp_init(void)
 
     // Explicit LP-scope state initialization
     tdx_local_data_ptr->vp_ctx.last_tdvpr_pa.raw = NULL_PA;
+    uint32_t lfsr_value = LFSR_INIT_VALUE;
+    if (!lfsr_init_seed (&lfsr_value))
+    {
+        TDX_ERROR("LFSR initialization failed\n");
+        retval = TDX_RND_NO_ENTROPY;
+        goto EXIT;
+    }
+    tdx_local_data_ptr->single_step_def_state.lfsr_value = lfsr_value;
 
     /* Do a global EPT flush.  This is required to guarantee security in case of
        a TDX-SEAM module update. */
@@ -554,14 +633,19 @@ api_error_type tdh_sys_lp_init(void)
 
     // Initialize keyhole
     init_keyhole_state();
-
-    // map the fatal error info memmory if needed
-    map_fatal_info_pointer();
-
     /**
      * Calc LPID from local_data_ptr
      */
     tdx_local_data_ptr->lp_info.lp_id = (uint32_t)get_current_thread_num(get_sysinfo_table(), tdx_local_data_ptr);
+
+    // This check can only be done after initializing the keyhole
+    if (is_smrr_overlap_io_range())
+    {
+        TDX_ERROR("SMRR %d overlaps IO range\n");
+        tdx_local_data_ptr->lp_info.lp_id = 0;
+        retval = TDX_SMRR_OVERLAPS_IORANGE;
+        goto EXIT;
+    }
 
     tdx_local_init(tdx_local_data_ptr, tdx_global_data_ptr);
 

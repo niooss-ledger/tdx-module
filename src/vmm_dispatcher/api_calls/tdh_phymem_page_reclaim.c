@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "x86_defs/x86_defs.h"
 #include "data_structures/tdx_local_data.h"
 #include "data_structures/td_control_structures.h"
@@ -34,6 +34,7 @@
 #include "memory_handlers/pamt_manager.h"
 #include "helpers/helpers.h"
 #include "accessors/data_accessors.h"
+#include "tdxio/iommu.h"
 
 api_error_type tdh_phymem_page_reclaim(uint64_t page_pa)
 {
@@ -96,8 +97,42 @@ api_error_type tdh_phymem_page_reclaim(uint64_t page_pa)
     if ((reclaimed_page_pamt_entry_ptr->pt == PT_NDA) ||
         (reclaimed_page_pamt_entry_ptr->pt == PT_RSVD))
     {
-        TDX_WARN("Page to reclaim is NDA, PAMT or reserved\n");
+        TDX_WARN("Page to reclaim is NDA or reserved\n");
         return_val = api_error_with_operand_id(TDX_PAGE_METADATA_INCORRECT, OPERAND_ID_RCX);
+        goto EXIT;
+    }
+
+    if ((reclaimed_page_pamt_entry_ptr->pt == PT_DEVIFCS_R) ||
+        (reclaimed_page_pamt_entry_ptr->pt == PT_DEVIFCS_NR) ||
+        (reclaimed_page_pamt_entry_ptr->pt == PT_MMIO_MT) ||
+        (reclaimed_page_pamt_entry_ptr->pt == PT_DEVIF_MT))
+    {
+        TDX_ERROR("Page to reclaim is DEVIFCS_R, DEVIFCS_NR or MMIO_MT\n");
+        return_val = api_error_with_operand_id(TDX_PAGE_METADATA_INCORRECT, OPERAND_ID_RCX);
+        goto EXIT;
+    }
+
+    if (reclaimed_page_pamt_entry_ptr->pt == PT_IOMMU_MT)
+    {
+        iommu_id_t iommu_id = {.raw = (uint16_t)reclaimed_page_pamt_entry_ptr->owner};
+        uint64_t generation = reclaimed_page_pamt_entry_ptr->bepoch.raw;
+
+        // Update output registers
+        reclaimed_page_level.level = reclaimed_page_leaf_size;
+        local_data_ptr->vmm_regs.rcx = PT_IOMMU_MT;
+        local_data_ptr->vmm_regs.rdx = iommu_id.raw;
+        local_data_ptr->vmm_regs.r8 = reclaimed_page_level.raw;
+
+        iommu_config_t *iommu_config_ptr = &get_global_data()->iommu_configs[iommu_id.raw];
+
+        if (generation >= iommu_config_ptr->iommu_generation)
+        {
+            return_val = TDX_IOMMU_MT_PAGE_IN_USE;
+            goto EXIT;
+        }
+
+        reclaimed_page_pamt_entry_ptr->pt = PT_NDA;
+        return_val = TDX_SUCCESS;
         goto EXIT;
     }
 

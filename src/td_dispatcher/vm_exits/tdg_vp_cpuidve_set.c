@@ -30,7 +30,7 @@
 #include "tdx_basic_types.h"
 #include "tdx_api_defs.h"
 
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "data_structures/tdx_local_data.h"
 #include "accessors/data_accessors.h"
 #include "tdx_td_api_handlers.h"
@@ -59,16 +59,6 @@ api_error_type tdg_vp_cpuidve_set(uint64_t control)
         TDX_ERROR("Reserved field is not 0\n");
         retval = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RCX);
         goto EXIT;
-    }
-
-    if (tdx_local_data_ptr->vp_ctx.tdcs->executions_ctl_fields.td_ctls.lock)
-    {
-        if ((tdx_local_data_ptr->vp_ctx.tdvps->management.cpuid_supervisor_ve != cpuid_ve.supervisor) ||
-            (tdx_local_data_ptr->vp_ctx.tdvps->management.cpuid_user_ve != cpuid_ve.user))
-        {
-            retval = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RCX);
-            goto EXIT;
-        }
     }
 
     tdx_local_data_ptr->vp_ctx.tdvps->management.cpuid_supervisor_ve = cpuid_ve.supervisor;

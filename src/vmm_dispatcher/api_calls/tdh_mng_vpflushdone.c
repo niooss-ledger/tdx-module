@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "x86_defs/x86_defs.h"
 #include "data_structures/tdx_global_data.h"
 #include "data_structures/td_control_structures.h"
@@ -111,6 +111,12 @@ api_error_type tdh_mng_vpflushdone(uint64_t target_tdr_pa)
             TDX_ERROR("TD associated vcpus is (%d) and not zero\n",
                       tdcs_ptr->management_fields.num_assoc_vcpus);
             return_val = TDX_FLUSHVP_NOT_DONE;
+            goto EXIT;
+        }
+
+        return_val = check_no_tdx_io_device_attached(tdr_ptr, tdcs_ptr);
+        if (return_val != TDX_SUCCESS)
+        {
             goto EXIT;
         }
     }

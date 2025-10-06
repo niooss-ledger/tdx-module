@@ -29,13 +29,19 @@
 #include "accessors/vt_accessors.h"
 #include "accessors/data_accessors.h"
 #include "x86_defs/vmcs_defs.h"
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "data_structures/tdx_global_data.h"
 #include "data_structures/tdx_local_data.h"
 #include "tdx_vmm_api_handlers.h"
 #include "debug/tdx_debug.h"
 #include "helpers/helpers.h"
 #include "metadata_handlers/metadata_generic.h"
+#include "data_structures/tdxio/tdisp_defs.h"
+
+
+//TDX-IO New APIs
+#include "tdxio/tdxio_vmm_api_handlers.h"
+
 
 _STATIC_INLINE_ void mark_lp_as_busy(void)
 {
@@ -57,12 +63,13 @@ void tdx_vmm_dispatcher(void)
     vm_vmexit_exit_reason_t exit_reason;
     ia32_vmread(VMX_VM_EXIT_REASON_ENCODE, &exit_reason.raw);
 
-    tdx_sanity_check(exit_reason.basic_reason == VMEXIT_REASON_SEAMCALL, FATAL_ERROR_ID_308, 2);
+    tdx_sanity_check(exit_reason.basic_reason == VMEXIT_REASON_SEAMCALL, SCEC_VMM_DISPATCHER_SOURCE, 2);
 
     tdx_module_global_t * global_data = get_global_data();
     // Get leaf code from RAX in local data (saved on entry)
     tdx_leaf_and_version_t leaf_opcode;
     leaf_opcode.raw = local_data->vmm_regs.rax;
+
 
     ia32_core_capabilities_t core_capabilities;
 
@@ -120,10 +127,21 @@ void tdx_vmm_dispatcher(void)
         ia32_vmwrite(VMX_HOST_IA32_PERF_GLOBAL_CONTROL_FULL_ENCODE, tdx_module_perf_global_ctrl);
     }
 
+    // preserve VMM's XCR0 state
+    local_data->vmm_xcr0_state = ia32_xgetbv(0);
+    ia32_xsetbv(0, TDX_MODULE_XCR0_WITH_AVX);
+
     if ((leaf_opcode.reserved0 != 0) || (leaf_opcode.reserved1 != 0))
     {
         TDX_ERROR("Leaf and version not supported 0x%llx\n", leaf_opcode.raw);
         // update RAX in local data with error code
+        local_data->vmm_regs.rax = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RAX);
+        goto EXIT;
+    }
+
+    if (!is_valid_tdx_io_host_call(leaf_opcode.raw))
+    {
+        TDX_ERROR("tdx_vmm_dispatcher - TDX-IO not supported, invalid leaf = %d\n", leaf_opcode);
         local_data->vmm_regs.rax = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RAX);
         goto EXIT;
     }
@@ -139,7 +157,6 @@ void tdx_vmm_dispatcher(void)
             case TDH_MNG_RD_LEAF:
             case TDH_VP_RD_LEAF:
             case TDH_VP_INIT_LEAF:
-            case TDH_SYS_INIT_LEAF:
                 break;
             default:
                 TDX_ERROR("Version greater than zero not supported for current leaf 0x%llx\n", leaf_opcode.raw);
@@ -271,7 +288,7 @@ void tdx_vmm_dispatcher(void)
     }
     case TDH_MNG_INIT_LEAF:
     {
-        local_data->vmm_regs.rax = tdh_mng_init(local_data->vmm_regs.rcx, local_data->vmm_regs.rdx, local_data->vmm_regs.r8);
+        local_data->vmm_regs.rax = tdh_mng_init(local_data->vmm_regs.rcx, local_data->vmm_regs.rdx);
         break;
     }
     case TDH_VP_INIT_LEAF:
@@ -311,8 +328,7 @@ void tdx_vmm_dispatcher(void)
 
         td_handle_and_flags_t target_tdr_and_flags = { .raw = local_data->vmm_regs.rdx };
 
-        local_data->vmm_regs.rax = tdh_mem_page_demote(page_info, target_tdr_and_flags,
-                                                       local_data->vmm_regs.r12, local_data->vmm_regs.r13);
+        local_data->vmm_regs.rax = tdh_mem_page_demote(page_info, target_tdr_and_flags);
         break;
     }
     case TDH_VP_ENTER_LEAF:
@@ -401,12 +417,12 @@ void tdx_vmm_dispatcher(void)
     }
     case TDH_SYS_CONFIG_LEAF:
     {
-        sys_config_options_t sysconfig_options;
-        sysconfig_options.raw = local_data->vmm_regs.r8;
+        hkid_api_input_t global_private_hkid;
+        global_private_hkid.raw = local_data->vmm_regs.r8;
 
         local_data->vmm_regs.rax = tdh_sys_config(local_data->vmm_regs.rcx,
                                                  local_data->vmm_regs.rdx,
-                                                 sysconfig_options);
+                                                 global_private_hkid);
         break;
     }
     case TDH_SYS_KEY_CONFIG_LEAF:
@@ -424,7 +440,7 @@ void tdx_vmm_dispatcher(void)
     }
     case TDH_SYS_INIT_LEAF:
     {
-        local_data->vmm_regs.rax = tdh_sys_init((uint8_t)leaf_opcode.version);
+        local_data->vmm_regs.rax = tdh_sys_init();
         break;
     }
     case TDH_SYS_RD_LEAF:
@@ -496,6 +512,7 @@ void tdx_vmm_dispatcher(void)
                                              local_data->vmm_regs.r9);
         break;
     }
+
     case TDH_SERVTD_BIND_LEAF:
         {
             servtd_attributes_t servtd_attr = {.raw = local_data->vmm_regs.r10};
@@ -685,6 +702,217 @@ void tdx_vmm_dispatcher(void)
                                             local_data->vmm_regs.r13);
         break;
     }
+
+    case TDH_IOMMU_SETREG_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_iommu_setreg((iommu_id_reg_t)local_data->vmm_regs.rcx,
+                                              (iommu_register_id_e)local_data->vmm_regs.rdx,
+                                              local_data->vmm_regs.r8);
+        break;
+    }
+    case TDH_IOMMU_GETREG_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_iommu_getreg(local_data->vmm_regs.rcx,
+                                              (iommu_register_id_e)local_data->vmm_regs.rdx);
+        break;
+    }
+    case TDH_SPDM_CREATE_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_spdm_create((iommu_id_reg_t)local_data->vmm_regs.rcx,
+                                              local_data->vmm_regs.rdx,
+                                              (pa_t)local_data->vmm_regs.r8);
+        break;
+    }
+    case TDH_SPDM_DELETE_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_spdm_delete((iommu_id_reg_t)local_data->vmm_regs.rcx,
+                                              local_data->vmm_regs.rdx);
+        break;
+    }
+    case TDH_IDE_STREAM_CREATE_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_ide_stream_create((iommu_id_reg_t)local_data->vmm_regs.rcx,
+                                              local_data->vmm_regs.rdx,
+                                              (ide_stream_cfg_reg_t)local_data->vmm_regs.r8,
+                                              (ide_stream_ctrl_reg_t)local_data->vmm_regs.r9,
+                                              (rid_assoc_1_reg_t)local_data->vmm_regs.r10,
+                                              (rid_assoc_2_reg_t)local_data->vmm_regs.r11,
+                                              (ide_addr_assoc_1_reg_t)local_data->vmm_regs.r12,
+                                              (ide_addr_assoc_2_reg_t)local_data->vmm_regs.r13,
+                                              (ide_addr_assoc_3_reg_t)local_data->vmm_regs.r14,
+                                              (pa_t)local_data->vmm_regs.r15);
+        break;
+    }
+    case TDH_IDE_STREAM_BLOCK_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_ide_stream_block((iommu_id_reg_t)local_data->vmm_regs.rcx,
+                                              (stream_id_reg_t)local_data->vmm_regs.rdx);
+        break;
+    }
+    case TDH_IDE_STREAM_DELETE_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_ide_stream_delete((iommu_id_reg_t)local_data->vmm_regs.rcx,
+                                              (stream_id_reg_t)local_data->vmm_regs.rdx);
+        break;
+    }
+    case TDH_IDE_STREAM_IDEKMREQ_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_ide_stream_idekmreq((iommu_id_reg_t)local_data->vmm_regs.rcx,
+                                              (stream_id_reg_t)local_data->vmm_regs.rdx,
+                                              (ide_object_id_t)local_data->vmm_regs.r8,
+                                              (ide_km_param_reg_t)local_data->vmm_regs.r9,
+                                              local_data->vmm_regs.r10,
+                                              (pa_t)local_data->vmm_regs.r11);
+        break;
+    }
+    case TDH_IDE_STREAM_IDEKMRSP_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_ide_stream_idekmrsp((iommu_id_reg_t)local_data->vmm_regs.rcx,
+                                              (stream_id_reg_t)local_data->vmm_regs.rdx,
+                                              (pa_t)local_data->vmm_regs.r8);
+        break;
+    }
+    case TDH_DEVIF_CREATE_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_devif_create((devif_id_t)local_data->vmm_regs.rcx,
+                                              (pa_t)local_data->vmm_regs.rdx,
+                                              (pa_t)local_data->vmm_regs.r8,
+                                              (pa_t)local_data->vmm_regs.r9,
+                                              (pa_t)local_data->vmm_regs.r10);
+        break;
+    }
+    case TDH_DEVIF_REMOVE_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_devif_remove((function_id_reg_t)local_data->vmm_regs.rcx);
+        break;
+    }
+    case TDH_DEVIF_REQUEST_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_devif_request((function_id_reg_t)local_data->vmm_regs.rcx,
+                                              (devif_req_in_t)local_data->vmm_regs.rdx,
+                                              (pa_t)local_data->vmm_regs.r8,
+                                              local_data->vmm_regs.r9);
+        break;
+    }
+    case TDH_DEVIF_RESPONSE_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_devif_response((function_id_reg_t)local_data->vmm_regs.rcx,
+                                              (devif_rsp_in_t)local_data->vmm_regs.rdx,
+                                              (pa_t)local_data->vmm_regs.r8,
+                                              local_data->vmm_regs.r9);
+        break;
+    }
+    case TDH_DMAR_ADD_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_dmar_add((dmar_idx_t)local_data->vmm_regs.rcx,
+                                              (pa_t)local_data->vmm_regs.rdx,
+                                              local_data->vmm_regs.r8,
+                                              local_data->vmm_regs.r9,
+                                              local_data->vmm_regs.r10,
+                                              local_data->vmm_regs.r11,
+                                              local_data->vmm_regs.r12,
+                                              local_data->vmm_regs.r13,
+                                              local_data->vmm_regs.r14,
+                                              local_data->vmm_regs.r15);
+        break;
+    }
+    case TDH_DMAR_BLOCK_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_dmar_block((dmar_idx_t)local_data->vmm_regs.rcx);
+        break;
+    }
+    case TDH_DMAR_READ_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_dmar_read((dmar_idx_t)local_data->vmm_regs.rcx);
+        break;
+    }
+    case TDH_DMAR_REMOVE_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_dmar_remove((dmar_idx_t)local_data->vmm_regs.rcx);
+        break;
+    }
+    case TDH_MMIO_MT_ADD_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_mmio_mt_add((mmiomt_idx_t)local_data->vmm_regs.rcx,
+                                              (pa_t)local_data->vmm_regs.rdx);
+        break;
+    }
+    case TDH_MMIO_MT_SET_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_mmio_mt_set((mmiomt_idx_t)local_data->vmm_regs.rcx,
+                                              (mmiomt_set_info_t)local_data->vmm_regs.rdx);
+        break;
+    }
+    case TDH_MMIO_MT_RD_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_mmio_mt_rd((mmiomt_idx_t)local_data->vmm_regs.rcx);
+        break;
+    }
+    case TDH_MMIO_MT_REMOVE_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_mmio_mt_remove((mmiomt_idx_t)local_data->vmm_regs.rcx);
+        break;
+    }
+    case TDH_MMIO_MAP_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_mmio_map((page_info_api_input_t)local_data->vmm_regs.rcx,
+                                              (pa_t)local_data->vmm_regs.rdx,
+                                              (pa_t)local_data->vmm_regs.r8);
+        break;
+    }
+    case TDH_MMIO_BLOCK_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_mmio_block((page_info_api_input_t)local_data->vmm_regs.rcx,
+                                              (pa_t)local_data->vmm_regs.rdx);
+        break;
+    }
+    case TDH_MMIO_UNMAP_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_mmio_unmap((page_info_api_input_t)local_data->vmm_regs.rcx,
+                                              (pa_t)local_data->vmm_regs.rdx);
+        break;
+    }
+    case TDH_IQ_INV_REQUEST_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_iq_inv_request((iommu_id_reg_t)local_data->vmm_regs.rcx,
+                (inv_req_type_e) local_data->vmm_regs.rdx,
+                local_data->vmm_regs.r8,
+                local_data->vmm_regs.r9,
+                local_data->vmm_regs.r10,
+                local_data->vmm_regs.r11,
+                local_data->vmm_regs.r12);
+        break;
+    }
+    case TDH_IQ_INV_PROCESS_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_iq_inv_process((iommu_id_reg_t)local_data->vmm_regs.rcx);
+        break;
+    }
+    case TDH_MEM_SHARED_SEPT_WR_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_mem_shared_sept_wr((page_info_api_input_t)local_data->vmm_regs.rcx,
+                                                        (pa_t)local_data->vmm_regs.rdx,
+                                                        (ia32e_sept_t)local_data->vmm_regs.r8);
+        break;
+    }
+    case TDH_DEVIF_MT_ADD_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_devif_mt_add((devifmt_idx_t)local_data->vmm_regs.rcx,
+                                                        (pa_t)local_data->vmm_regs.rdx);
+        break;
+    }
+    case TDH_DEVIF_MT_REMOVE_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_devif_mt_remove((devifmt_idx_t)local_data->vmm_regs.rcx);
+        break;
+    }
+    case TDH_DEVIF_MT_RD_LEAF:
+    {
+        local_data->vmm_regs.rax = tdh_devif_mt_rd((devifmt_idx_t)local_data->vmm_regs.rcx);
+        break;
+    }
+
+
     default:
     {
         TDX_ERROR("tdx_vmm_dispatcher - TDX_OPERAND_INVALID - invalid leaf = %d\n", leaf_opcode);
@@ -693,16 +921,13 @@ void tdx_vmm_dispatcher(void)
     }
     }
 
-    tdx_sanity_check(local_data->vmm_regs.rax != UNINITIALIZE_ERROR, FATAL_ERROR_ID_310, 1);
+    tdx_sanity_check(local_data->vmm_regs.rax != UNINITIALIZE_ERROR, SCEC_VMM_DISPATCHER_SOURCE, 1);
 
     IF_RARE (local_data->reset_avx_state)
     {
         // Current IPP crypto lib uses SSE state only (YMM's), so we only clear them
         clear_ymms();
         local_data->reset_avx_state = false;
-
-        // restore VMM's XCR0 state
-        ia32_xsetbv(0, local_data->vmm_xcr0_state);
     }
 
 EXIT:
@@ -728,15 +953,18 @@ void tdx_vmm_post_dispatching(void)
         ia32_wrmsr(IA32_LAM_ENABLE_MSR_ADDR, local_data_ptr->vmm_non_extended_state.ia32_lam_enable);
     }
 
+    // restore VMM's XCR0 state
+    ia32_xsetbv(0, local_data_ptr->vmm_xcr0_state);
+
     mark_lp_as_free();
 
     // Check that we have no mapped keyholes left
-    tdx_sanity_check(local_data_ptr->keyhole_state.total_ref_count - local_data_ptr->fatal_error_mem_mapped == 0, FATAL_ERROR_ID_311, 20);
+    tdx_sanity_check(local_data_ptr->keyhole_state.total_ref_count == 0, SCEC_KEYHOLE_MANAGER_SOURCE, 20);
 
     TDX_LOG("tdx_vmm_post_dispatching - preparing to do SEAMRET\n");
 
     tdx_seamret_to_vmm(); // Restore GPRs and SEAMRET
 
     // Shouldn't reach here:
-    tdx_sanity_check(0, FATAL_ERROR_ID_312, 0);
+    tdx_sanity_check(0, SCEC_VMM_DISPATCHER_SOURCE, 0);
 }

@@ -27,13 +27,13 @@
 #include "tdx_basic_defs.h"
 #include "tdx_basic_types.h"
 #include "tdx_api_defs.h"
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "tdx_td_api_handlers.h"
 #include "data_structures/tdx_local_data.h"
 #include "data_structures/tdx_tdvps.h"
 #include "accessors/data_accessors.h"
 
-api_error_type tdg_vp_veinfo_get(uint8_t version)
+api_error_type tdg_vp_veinfo_get(void)
 {
     // TDX Local data
     tdx_module_local_t* local_data_ptr = get_local_data();
@@ -47,14 +47,6 @@ api_error_type tdg_vp_veinfo_get(uint8_t version)
     local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.r9 = 0;
     local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.r10 = 0;
 
-    // TDG.VP.VEINFO.GET supports version 1.  Other version checks are done by the TDCALL dispatcher.
-    if (version > 1)
-    {
-        TDX_ERROR("version %d is not supported by TDG.VP.VEINFO.GET\n", version);
-        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID, OPERAND_ID_RAX);
-        goto EXIT;
-    }
-
     // Check that VE_INFO has valid contents
     if (local_data_ptr->vp_ctx.tdvps->ve_info.valid == 0)
     {
@@ -63,15 +55,8 @@ api_error_type tdg_vp_veinfo_get(uint8_t version)
         goto EXIT;
     }
     
-    exit_reason_and_ve_category_t exit_reason_and_ve_category = { .raw = 0 };
-    exit_reason_and_ve_category.exit_reason = (uint32_t)local_data_ptr->vp_ctx.tdvps->ve_info.exit_reason;
-    if (version > 0)
-    {
-        exit_reason_and_ve_category.ve_category = (uint32_t)local_data_ptr->vp_ctx.tdvps->ve_info.ve_category;
-    }
-
     // Retrieve the data from the VE_INFO and put into output registers
-    local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.rcx = exit_reason_and_ve_category.raw;
+    local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.rcx = (uint64_t)local_data_ptr->vp_ctx.tdvps->ve_info.exit_reason;
     local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.rdx = local_data_ptr->vp_ctx.tdvps->ve_info.exit_qualification;
     local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.r8 = local_data_ptr->vp_ctx.tdvps->ve_info.gla;
     local_data_ptr->vp_ctx.tdvps->guest_state.gpr_state.r9 = local_data_ptr->vp_ctx.tdvps->ve_info.gpa;

@@ -25,9 +25,9 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include OP_STATE_LOOKUP_HEADER
-#include SEPT_STATE_LOOKUP_HEADER
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/op_state_lookup.h"
+#include "auto_gen/sept_state_lookup.h"
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "x86_defs/x86_defs.h"
 #include "accessors/ia32_accessors.h"
 #include "accessors/data_accessors.h"
@@ -155,8 +155,7 @@ api_error_type tdh_export_restore(gpa_list_info_t gpa_list_info, uint64_t target
 
             sept_entry_level = LVL_PT;
             // Walk the Secure-EPT to locate the parent entry for the new TD page
-            return_val = walk_private_gpa(tdcs_p, gpa, tdr_p->key_management_fields.hkid,
-                                          &sept_entry_ptr, &sept_entry_level, &sept_entry_copy);
+            return_val = walk_private_gpa(tdcs_p, gpa, &sept_entry_ptr, &sept_entry_level, &sept_entry_copy);
 
             if (return_val != TDX_SUCCESS)
             {
@@ -182,7 +181,7 @@ api_error_type tdh_export_restore(gpa_list_info_t gpa_list_info, uint64_t target
 
             // Atomically decrement MIG_COUNT
             uint64_t old_value = _lock_xadd_64b(&tdcs_p->migration_fields.mig_count, (uint64_t)-1);
-            tdx_sanity_check(old_value != 0, FATAL_ERROR_ID_306, 0);
+            tdx_sanity_check(old_value != 0, SCEC_SEAMCALL_SOURCE(TDH_EXPORT_RESTORE_LEAF), 0);
 
             // Prepare the EPT entry value:
             //   - If the SEPT state is one of the PENDING_* states, update it to PENDING.
@@ -198,30 +197,6 @@ api_error_type tdh_export_restore(gpa_list_info_t gpa_list_info, uint64_t target
             }
             else
             {
-                if (sept_state_is_any_blockedw(sept_entry_copy))
-                {
-                    // Block any L2 aliases for writing
-                    for (uint16_t vm_id = 1; vm_id <= tdcs_p->management_fields.num_l2_vms; vm_id++)
-                    {
-                        if (sept_state_is_aliased(sept_entry_copy, vm_id))
-                        {
-                            ia32e_sept_t* l2_septe_ptr = NULL;
-                            // Walk the L2 SEPT to locate the entry
-                            return_val = l2_sept_walk(tdr_p, tdcs_p, vm_id, gpa, &sept_entry_level,
-                                                      &l2_septe_ptr);
-
-                            if (return_val != TDX_SUCCESS)
-                            {
-                                // Should never happen
-                                extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_td_handle(target_tdr_pa, vm_id, sept_entry_level, gpa.raw, *l2_septe_ptr);
-                                fatal_error(FATAL_ERROR_ID_27, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
-                            }
-
-                            sept_l2_unblockw(l2_septe_ptr);
-                            free_la(l2_septe_ptr);
-                        }
-                    }
-                }
                 sept_update_state(&new_sept_entry, SEPT_STATE_MAPPED_MASK);
                 new_sept_entry.w = 1;
             }

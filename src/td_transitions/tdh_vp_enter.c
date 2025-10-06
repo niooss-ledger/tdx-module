@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "x86_defs/x86_defs.h"
 #include "data_structures/td_control_structures.h"
 #include "memory_handlers/keyhole_manager.h"
@@ -94,10 +94,10 @@ _STATIC_INLINE_ void ia32_perf_global_status_write(uint64_t reset_command, uint6
 
 _STATIC_INLINE_ void restore_guest_td_extended_state(tdvps_t* tdvps_ptr, tdcs_t *tdcs_ptr)
 {
-    uint64_t xstate_bv = tdvps_ptr->guest_extension_state.xbuff.xsave_header.xstate_bv;
-    uint64_t xcomp_bv = tdvps_ptr->guest_extension_state.xbuff.xsave_header.xcomp_bv;
+    uint64_t xstate_bv = tdvps_ptr->guest_extension_state.xbuf.xsave_header.xstate_bv;
+    uint64_t xcomp_bv = tdvps_ptr->guest_extension_state.xbuf.xsave_header.xcomp_bv;
 
-    // Check for xbuffF header corruption before trying to use SAFE_XRSTORS
+    // Check for XBUFF header corruption before trying to use SAFE_XRSTORS
     // Checks are done according to SDM Volume 1, Chapter 13.12
     // A #GP occurs in the following cases:
     //  - XCOMP_BV[63] = 0.
@@ -108,8 +108,8 @@ _STATIC_INLINE_ void restore_guest_td_extended_state(tdvps_t* tdvps_ptr, tdcs_t 
     if (((xcomp_bv & BIT(63)) == 0) ||
         ((xcomp_bv & ~BIT(63) & ~(tdcs_ptr->executions_ctl_fields.xfam)) != 0) ||
         ((xstate_bv & ~xcomp_bv) != 0) ||
-        (!tdx_memcmp_to_zero(tdvps_ptr->guest_extension_state.xbuff.xsave_header.reserved,
-                             sizeof(tdvps_ptr->guest_extension_state.xbuff.xsave_header.reserved))))
+        (!tdx_memcmp_to_zero(tdvps_ptr->guest_extension_state.xbuf.xsave_header.reserved,
+                             sizeof(tdvps_ptr->guest_extension_state.xbuf.xsave_header.reserved))))
     {
         TDX_ERROR("Failed checks on XBUFF header. xcomp_bv = 0x%llx, xstate_bv = 0x%llx, xfam = 0x%llx\n",
                 xcomp_bv, xstate_bv, tdcs_ptr->executions_ctl_fields.xfam);
@@ -120,7 +120,7 @@ _STATIC_INLINE_ void restore_guest_td_extended_state(tdvps_t* tdvps_ptr, tdcs_t 
     ia32_xsetbv(0, tdcs_ptr->executions_ctl_fields.xfam & XCR0_USER_BIT_MASK);
     ia32_wrmsr(IA32_XSS_MSR_ADDR, tdcs_ptr->executions_ctl_fields.xfam & XCR0_SUPERVISOR_BIT_MASK);
 
-    safe_xrstors(&tdvps_ptr->guest_extension_state.xbuff, tdcs_ptr->executions_ctl_fields.xfam);
+    safe_xrstors(&tdvps_ptr->guest_extension_state.xbuf, tdcs_ptr->executions_ctl_fields.xfam);
 }
 
 static void emulate_ept_violation_td_exit(tdx_module_local_t* local_data_ptr, pa_t faulting_gpa,
@@ -138,8 +138,9 @@ static void emulate_ept_violation_td_exit(tdx_module_local_t* local_data_ptr, pa
     exit_qualification.vm = vm_id;
 
     // Emulate an Async TDEXIT
-    initialize_extended_state(tdcs_ptr->executions_ctl_fields.xfam);
-    tdvps_ptr->management.vcpu_state = VCPU_READY;
+    initialize_extended_state(local_data_ptr->vp_ctx.xfam);
+
+    tdvps_ptr->management.state = VCPU_READY;
     tdvps_ptr->management.last_td_exit = LAST_EXIT_ASYNC_FAULT;
 
     // Set TD exit information
@@ -175,7 +176,7 @@ static void save_xmms_by_mask(tdvps_t* tdvps_ptr, uint16_t xmm_select)
     {
         if (xmm_select & (uint16_t)BIT(i))
         {
-            tdvps_ptr->guest_extension_state.xbuff.legacy_region.xmm[i] = xmms[i];
+            tdvps_ptr->guest_extension_state.xbuf.legacy_region.xmm[i] = xmms[i];
 
         }
     }
@@ -184,7 +185,7 @@ static void save_xmms_by_mask(tdvps_t* tdvps_ptr, uint16_t xmm_select)
 
     if (xmm_select != 0)
     {
-        tdvps_ptr->guest_extension_state.xbuff.xsave_header.xstate_bv |= BIT(1);
+        tdvps_ptr->guest_extension_state.xbuf.xsave_header.xstate_bv |= BIT(1);
     }
 
 }
@@ -220,15 +221,15 @@ static void save_regs_after_tdvmcall(tdvps_t* tdvps_ptr, tdvmcall_control_t cont
 
 static void set_l2_exit_host_routing(tdvps_t* tdvps_ptr)
 {
-    if (tdvps_ptr->management.l2_exit_host_routing == HOST_ROUTED_NONE)
+    if (tdvps_ptr->management.l2_exit_host_routed == HOST_ROUTED_NONE)
     {
         if (tdvps_ptr->management.last_td_exit == LAST_EXIT_TDVMCALL)
         {
-            tdvps_ptr->management.l2_exit_host_routing = HOST_ROUTED_TDVMCALL;
+            tdvps_ptr->management.l2_exit_host_routed = HOST_ROUTED_TDVMCALL;
         }
         else
         {
-            tdvps_ptr->management.l2_exit_host_routing = HOST_ROUTED_ASYNC;
+            tdvps_ptr->management.l2_exit_host_routed = HOST_ROUTED_ASYNC;
         }
     }
 }
@@ -239,31 +240,6 @@ static void restore_guest_td_state_before_td_entry(tdcs_t* tdcs_ptr, tdvps_t* td
     tdx_module_local_t* local_data_ptr = get_local_data();
     // Save MSR (NON_FAULTING_MSR_ADDR) value before the first usage of safe_wrmsr
     local_data_ptr->non_faulting_msr_value = ia32_rdmsr(NON_FAULTING_MSR_ADDR);
-
-    // Save VMM MSR's that are supposed to be restored on TD-exits, before calling any safe_wrmsr
-    // safe_wrmsr may fail, and invoke TD-exit flow
-
-    uint64_t perf_global_status_mask = (BIT(32) | BIT(59));
-
-    if (!tdcs_ptr->executions_ctl_fields.attributes.perfmon)
-    {
-        // save VMM's Fixed Counter Controls (FCC) MSR
-        local_data_ptr->vmm_ia32_fixed_ctr_ctrl = ia32_rdmsr(IA32_FIXED_CTR_CTRL_MSR_ADDR);
-        // save VMM's FC0 value
-        local_data_ptr->vmm_ia32_fixed_ctr0 = ia32_rdmsr(IA32_PMC_FX0_CTR_MSR_ADDR);
-        // save VMM's Perf Global Status (PGS) counter freezing and FC0
-        local_data_ptr->vmm_ia32_perf_global_status = ia32_rdmsr(IA32_PERF_GLOBAL_STATUS_MSR_ADDR) & perf_global_status_mask;
-    }
-
-    ia32_tsx_ctrl_t tsx_ctrl = { .raw = 0 };
-
-    if (!tdcs_ptr->executions_ctl_fields.cpuid_flags.tsx_supported &&
-            global_data->plt_common_config.ia32_arch_capabilities.tsx_ctrl)
-    {
-        // Read the host VMM value of IA32_TSX_CTRL
-        tsx_ctrl.raw = ia32_rdmsr(IA32_TSX_CTRL_MSR_ADDR);
-        local_data_ptr->vmm_non_extended_state.ia32_tsx_ctrl = tsx_ctrl.raw; // Will be used on TD exit
-    }
 
     // CR2 state restoration
     ia32_load_cr2(tdvps_ptr->guest_state.cr2);
@@ -290,69 +266,44 @@ static void restore_guest_td_state_before_td_entry(tdcs_t* tdcs_ptr, tdvps_t* td
     if (tdcs_ptr->executions_ctl_fields.attributes.perfmon)
     {
         safe_wrmsr(IA32_FIXED_CTR_CTRL_MSR_ADDR, tdvps_ptr->guest_msr_state.ia32_fixed_ctr_ctrl);
+        for (uint8_t i = 0; i < global_data->num_fixed_ctrs; i++)
         {
-            // The CPU does not support the new Perfmon MSR range.  Use the legacy range.
-            // --------------------------------------------------------------------------
-
-            /* Restore fixed function Perfmon counters
-             */
-
-            for (uint8_t i = 0; i < MAX_FIXED_CTR; i++)
+            if ((global_data->fc_bitmap & BIT(i)) != 0)
             {
-                if ((global_data->fc_bitmap & BIT(i)) != 0)
-                {
-                    safe_wrmsr(IA32_PMC_FX0_CTR_MSR_ADDR + i, tdvps_ptr->guest_msr_state.ia32_pmc_fx_ctrx[i]);
-                }
-            }
-
-            for (uint32_t i = 0; i < NUM_PMC; i++)
-            {
-                {
-                    safe_wrmsr(IA32_PMC_GP0_CTR_MSR_ADDR + i, tdvps_ptr->guest_msr_state.ia32_pmc_gp_ctrx[i]);
-
-                    ia32_perfevtsel_t perfevtsel_value = {.raw = tdvps_ptr->guest_msr_state.ia32_pmc_gp_cfg_ax[i]};
-                    if (perfevtsel_value.forbidden) // if forbidden
-                    {
-                        /* The Perfmon event has been filtered out.  Write the value but clear the ENABLE bit (22) to 0.
-                           This ensures that the IA32_PERF_GLOBAL_INUSE MSR returns the in-use status bit for this
-                           counter as if it is being used, since the bit is set if and only if IA32_PERFEVTSELx
-                           EVENT_SELECT bits (7:0) are not 0. */
-                        perfevtsel_value.forbidden = 0;
-                        perfevtsel_value.en = 0;
-                    }
-
-                    safe_wrmsr(IA32_PERFEVTSEL0_MSR_ADDR + i, perfevtsel_value.raw);
-
-                }
+                safe_wrmsr(IA32_FIXED_CTR0_MSR_ADDR + i, tdvps_ptr->guest_msr_state.ia32_fixed_ctr[i]);
             }
         }
+
+        for (uint32_t i = 0; i < NUM_PMC; i++)
+        {
+            safe_wrmsr(IA32_A_PMC0_MSR_ADDR + i, tdvps_ptr->guest_msr_state.ia32_a_pmc[i]);
+            safe_wrmsr(IA32_PERFEVTSEL0_MSR_ADDR + i, tdvps_ptr->guest_msr_state.ia32_perfevtsel[i]);
+        }
+
         for (uint32_t i = 0; i < 2; i++)
         {
-            safe_wrmsr(IA32_OFFCORE_RSPx_MSR_ADDR + i, tdvps_ptr->guest_msr_state.msr_offcore_rspx[i]);
+            safe_wrmsr(IA32_OFFCORE_RSPx_MSR_ADDR + i, tdvps_ptr->guest_msr_state.ia32_offcore_rsp[i]);
         }
 
         ia32_perf_global_status_write(ia32_rdmsr(IA32_PERF_GLOBAL_STATUS_MSR_ADDR),
                 tdvps_ptr->guest_msr_state.ia32_perf_global_status);
+        safe_wrmsr(IA32_PEBS_ENABLE_MSR_ADDR, tdvps_ptr->guest_msr_state.ia32_pebs_enable);
         if (global_data->plt_common_config.ia32_perf_capabilities.perf_metrics_available)
         {
             safe_wrmsr(IA32_PERF_METRICS_MSR_ADDR, tdvps_ptr->guest_msr_state.ia32_perf_metrics);
         }
-
-        // Legacy PEBS MSRs
-        if (!global_data->plt_common_config.ia32_misc_enable.pebs_unavailable)
+        safe_wrmsr(IA32_PEBS_DATA_CFG_MSR_ADDR, tdvps_ptr->guest_msr_state.ia32_pebs_data_cfg);
+        safe_wrmsr(IA32_PEBS_LD_LAT_MSR_ADDR, tdvps_ptr->guest_msr_state.ia32_pebs_ld_lat);
+        // MSR_PEBS_FRONTEND exists only in big cores
+        if (global_data->native_model_info.core_type == CORE_TYPE_BIGCORE)
         {
-            safe_wrmsr(IA32_PEBS_ENABLE_MSR_ADDR, tdvps_ptr->guest_msr_state.ia32_pebs_enable);
-            safe_wrmsr(IA32_PEBS_DATA_CFG_MSR_ADDR, tdvps_ptr->guest_msr_state.msr_pebs_data_cfg);
-            safe_wrmsr(IA32_PEBS_LD_LAT_MSR_ADDR, tdvps_ptr->guest_msr_state.msr_pebs_ld_lat);
-            // MSR_PEBS_FRONTEND exists only in big cores
-            if (global_data->native_model_info.core_type == CORE_TYPE_BIGCORE)
-            {
-                safe_wrmsr(IA32_PEBS_FRONTEND_MSR_ADDR, tdvps_ptr->guest_msr_state.msr_pebs_frontend);
-            }
+            safe_wrmsr(IA32_PEBS_FRONTEND_MSR_ADDR, tdvps_ptr->guest_msr_state.ia32_pebs_frontend);
         }
     }
     else
     {
+        // save VMM's Fixed Counter Controls (FCC) MSR
+        local_data_ptr->vmm_ia32_fixed_ctr_ctrl = ia32_rdmsr(IA32_FIXED_CTR_CTRL_MSR_ADDR);
         local_data_ptr->ia32_fixed_ctr_ctrl_value =((local_data_ptr->vmm_ia32_fixed_ctr_ctrl & ~TDX_MODULE_IA32_ENABLE_CTR0_CTRL)
                                                     | TDX_MODULE_IA32_FIXED_CTR_CTRL)
                                                     & TDX_MODULE_IA32_CTR_0_1_2_MASK;
@@ -363,11 +314,18 @@ static void restore_guest_td_state_before_td_entry(tdcs_t* tdcs_ptr, tdvps_t* td
             safe_wrmsr(IA32_FIXED_CTR_CTRL_MSR_ADDR, local_data_ptr->ia32_fixed_ctr_ctrl_value);
         }
 
+        // save VMM's FC0 value
+        local_data_ptr->vmm_ia32_fixed_ctr0 = ia32_rdmsr(IA32_FIXED_CTR0_MSR_ADDR);
+
         if (0x0 != local_data_ptr->vmm_ia32_fixed_ctr0)
         {
             // clear FC0
-            safe_wrmsr(IA32_PMC_FX0_CTR_MSR_ADDR, 0x0);
+            safe_wrmsr(IA32_FIXED_CTR0_MSR_ADDR, 0x0);
         }
+
+        uint64_t perf_global_status_mask = (BIT(32) | BIT(59));
+        // save VMM's Perf Global Status (PGS) counter freezing and FC0
+        local_data_ptr->vmm_ia32_perf_global_status = ia32_rdmsr(IA32_PERF_GLOBAL_STATUS_MSR_ADDR) & perf_global_status_mask;
 
         if (0x0 != local_data_ptr->vmm_ia32_perf_global_status)
         {
@@ -389,6 +347,10 @@ static void restore_guest_td_state_before_td_entry(tdcs_t* tdcs_ptr, tdvps_t* td
     }
     else if (get_global_data()->plt_common_config.ia32_arch_capabilities.tsx_ctrl)
     {
+        // Read the host VMM value of IA32_TSX_CTRL
+        ia32_tsx_ctrl_t tsx_ctrl = { .raw = ia32_rdmsr(IA32_TSX_CTRL_MSR_ADDR) };
+        local_data_ptr->vmm_non_extended_state.ia32_tsx_ctrl = tsx_ctrl.raw; // Will be used on TD exit
+
         // Optimize by disabling TSX only if not disabled by the host VMM
         if (!tsx_ctrl.rtm_disable || tsx_ctrl.rsvd)
         {
@@ -483,8 +445,8 @@ _STATIC_INLINE_ void set_l2_to_l1_async_exit_gprs(tdvps_t* tdvps_p, vm_vmexit_ex
 {
     api_error_code_t error_code;
 
-    tdx_debug_assert(tdvps_p->management.l2_exit_host_routing != HOST_ROUTED_NONE);
-    error_code.raw = tdvps_p->management.l2_exit_host_routing == HOST_ROUTED_ASYNC ? TDX_L2_EXIT_HOST_ROUTED_ASYNC : TDX_L2_EXIT_HOST_ROUTED_TDVMCALL;
+    tdx_debug_assert(tdvps_p->management.l2_exit_host_routed != HOST_ROUTED_NONE);
+    error_code.raw = tdvps_p->management.l2_exit_host_routed == HOST_ROUTED_ASYNC ? TDX_L2_EXIT_HOST_ROUTED_ASYNC : TDX_L2_EXIT_HOST_ROUTED_TDVMCALL;
     error_code.details_l2 = (uint32_t)exit_reason.raw;
 
     tdvps_p->guest_state.gpr_state.rax = error_code.raw;
@@ -532,10 +494,10 @@ _STATIC_INLINE_ void set_l2_to_l1_async_exit_gprs(tdvps_t* tdvps_p, vm_vmexit_ex
     tdvps_p->guest_state.gpr_state.r15 = 0;
 }
 
-static api_error_type handle_l2_entry(tdr_t* tdr_ptr, tdcs_t* tdcs_ptr, tdvps_t* tdvps_ptr,
+static api_error_type handle_l2_entry(tdcs_t* tdcs_ptr, tdvps_t* tdvps_ptr,
         vm_vmexit_exit_reason_t* exit_reason, vmx_exit_qualification_t* exit_qualification, pa_t* faulting_gpa)
 {
-    if (tdvps_ptr->management.l2_exit_host_routing == HOST_ROUTED_NONE)
+    if (tdvps_ptr->management.l2_exit_host_routed == HOST_ROUTED_NONE)
     {
         // We're reentering into L2.
         // If the L2 was in the middle of IDT vectoring when the VM exit happened, re-inject it as VOE.
@@ -558,7 +520,7 @@ static api_error_type handle_l2_entry(tdr_t* tdr_ptr, tdcs_t* tdcs_ptr, tdvps_t*
     }
 
     // Emulate Virtual L2->L1 Exit
-    if (tdvps_ptr->management.l2_exit_host_routing != HOST_ROUTED_NONE)
+    if (tdvps_ptr->management.l2_exit_host_routed != HOST_ROUTED_NONE)
     {
         // There's a sticky indication of host routing.
         // This means we have a TD entry to L1 after a TD exit from L2, which hasn't been
@@ -588,14 +550,14 @@ static api_error_type handle_l2_entry(tdr_t* tdr_ptr, tdcs_t* tdcs_ptr, tdvps_t*
             tdvps_ptr->management.last_td_exit = LAST_EXIT_ASYNC_FAULT;
         }
 
-        if (tdvps_ptr->management.l2_exit_host_routing == HOST_ROUTED_TDVMCALL)
+        if (tdvps_ptr->management.l2_exit_host_routed == HOST_ROUTED_TDVMCALL)
         {
             // There's a sticky indication of host routing of TDG.VP.VMCALL results.
             // This means we have a TD entry to L1 after a synchronous TD exit from L2, which hasn't been
             // completed yet (previous might have been previous attempts which failed).
 
             // Translate soft-translated GPAs, if required
-            if (!translate_l2_enter_guest_state_gpa(tdr_ptr, tdcs_ptr, tdvps_ptr,
+            if (!translate_l2_enter_guest_state_gpa(tdcs_ptr, tdvps_ptr,
                                 tdvps_ptr->management.curr_vm, &faulting_gpa->raw))
             {
                 // Address translation failed.  Emulate an EPT violation TD exit from L2
@@ -619,7 +581,7 @@ static api_error_type handle_l2_entry(tdr_t* tdr_ptr, tdcs_t* tdcs_ptr, tdvps_t*
         set_l2_to_l1_async_exit_gprs(tdvps_ptr, *exit_reason, *exit_qualification, *faulting_gpa);
 
         // At this point we can clear the sticky flag, since the saved L1 state indicates the proper exit from L2
-        tdvps_ptr->management.l2_exit_host_routing = HOST_ROUTED_NONE;
+        tdvps_ptr->management.l2_exit_host_routed = HOST_ROUTED_NONE;
 
         // Make L1 (VM #0) the current VM
         set_vm_vmcs_as_active(tdvps_ptr, 0);
@@ -772,7 +734,6 @@ api_error_type tdh_vp_enter(uint64_t vcpu_handle_and_flags)
         set_l2_exit_host_routing(tdvps_ptr);
     }
 
-
     // We read TSC below.  Compare IA32_TSC_ADJUST to the value sampled on TDHSYSINIT
     // to make sure the host VMM doesn't play any trick on us.
     IF_RARE (ia32_rdmsr(IA32_TSC_ADJ_MSR_ADDR) != global_data_ptr->plt_common_config.ia32_tsc_adjust)
@@ -832,8 +793,8 @@ api_error_type tdh_vp_enter(uint64_t vcpu_handle_and_flags)
 
     if (tdvps_ptr->management.curr_vm != 0)
     {
-        return_val = handle_l2_entry(tdr_ptr, tdcs_ptr, tdvps_ptr,
-                                           &exit_reason, &exit_qualification, &faulting_gpa);
+        return_val = handle_l2_entry(tdcs_ptr, tdvps_ptr,
+                                &exit_reason, &exit_qualification, &faulting_gpa);
 
         IF_RARE (return_val != TDX_SUCCESS)
         {
@@ -846,7 +807,7 @@ api_error_type tdh_vp_enter(uint64_t vcpu_handle_and_flags)
     else if ((filter_result == FILTER_OK_NOTIFY_EPS_FAULT) && can_inject_epf_ve(exit_qualification, tdvps_ptr))
     {
         tdx_debug_assert(tdvps_ptr->management.curr_vm == 0);
-        tdx_inject_ve((uint32_t)exit_reason.raw, exit_qualification.raw, VE_INFO_ARCH, tdvps_ptr, faulting_gpa.raw, 0);
+        tdx_inject_ve((uint32_t)exit_reason.raw, exit_qualification.raw, tdvps_ptr, faulting_gpa.raw, 0);
     }
 
     /*-------------------------------------------------------------------------------------
@@ -873,7 +834,7 @@ api_error_type tdh_vp_enter(uint64_t vcpu_handle_and_flags)
 
     // Translate soft-translated GPAs, if required
     if ((tdvps_ptr->management.curr_vm != 0) &&
-        !translate_gpas(tdr_ptr, tdcs_ptr, tdvps_ptr, tdvps_ptr->management.curr_vm, &faulting_gpa.raw))
+        !translate_gpas(tdcs_ptr, tdvps_ptr, tdvps_ptr->management.curr_vm, &faulting_gpa.raw))
     {
         // decrement the TLB tracker that was incremented at the beginning of TDENTER
         revert_tlb_tracking_state(tdcs_ptr, tdvps_ptr);
@@ -1008,7 +969,7 @@ api_error_type tdh_vp_enter(uint64_t vcpu_handle_and_flags)
 
     local_data_ptr->single_step_def_state.last_entry_tsc = ia32_rdtsc();
 
-    tdvps_ptr->management.vcpu_state = VCPU_ACTIVE;
+    tdvps_ptr->management.state = VCPU_ACTIVE;
 
     if (tdvps_ptr->management.vm_launched[tdvps_ptr->management.curr_vm])
     {
@@ -1019,15 +980,8 @@ api_error_type tdh_vp_enter(uint64_t vcpu_handle_and_flags)
         tdx_return_to_td(false, true, &tdvps_ptr->guest_state.gpr_state);
     }
 
-    if (local_data_ptr->current_td_vm_id != 0)
-    {
-        resume_l1_and_emulate_termination(VMM_FAILED_TO_ENTER_L2);
-    }
-    else
-    {
-        // Flow should never reach here
-        tdx_sanity_check(0, FATAL_ERROR_ID_281, 0);
-    }
+    // Flow should never reach here
+    tdx_sanity_check(0, SCEC_SEAMCALL_SOURCE(TDH_VP_ENTER_LEAF), 0);
 
 EXIT_FAILURE:
 

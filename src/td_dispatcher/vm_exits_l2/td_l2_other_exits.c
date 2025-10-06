@@ -34,7 +34,7 @@
 #include "x86_defs/vmcs_defs.h"
 #include "data_structures/tdx_local_data.h"
 #include "tdx_td_api_handlers.h"
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "vmm_dispatcher/tdx_vmm_dispatcher.h"
 #include "helpers/helpers.h"
 #include "memory_handlers/sept_manager.h"
@@ -53,11 +53,11 @@ _STATIC_INLINE_ bool_t is_any_host_owned_bit_modified(uint64_t cr, uint64_t gues
 // For L2, only PE, MP, EM and TD bits can be modified
 #define CR0_L2_LMSW_MASK 0xFULL
 
-uint16_t td_l2_cr_access_exit(vmx_exit_qualification_t vm_exit_qualification, uint16_t vm_id)
+cr_write_status_e td_l2_cr_access_exit(vmx_exit_qualification_t vm_exit_qualification, uint16_t vm_id)
 {
     uint64_t   value;
     ia32_cr0_t cr0;
-    uint16_t status = CR_ACCESS_SUCCESS;
+    cr_write_status_e status = CR_ACCESS_SUCCESS;
 
     tdx_module_local_t* tdx_local_data_ptr = get_local_data();
 
@@ -106,12 +106,12 @@ uint16_t td_l2_cr_access_exit(vmx_exit_qualification_t vm_exit_qualification, ui
                         return CR_L2_TO_L1_EXIT; // L2->L1 exit
                     }
 
-                    status = (uint16_t)write_guest_cr4(value, tdcs_p, tdvps_p);
+                    status = write_guest_cr4(value, tdcs_p);
                     break;
 
                 default:
                     // VM exits due to other CR accesses cause L2->L1 exit or #VE
-                    return construct_msr_status_with_ve_category(CR_ACCESS_NON_ARCH, VE_INFO_UNSUPPORTED_FEATURE);
+                    return CR_ACCESS_NON_ARCH;
             } // switch (vm_exit_qualification.cr_access.cr_num)
 
             break;
@@ -159,7 +159,7 @@ uint16_t td_l2_cr_access_exit(vmx_exit_qualification_t vm_exit_qualification, ui
 
         default:
             // VM exits due to other access types cause L2->L1 exit or #VE
-            return construct_msr_status_with_ve_category(CR_ACCESS_NON_ARCH, VE_INFO_UNSUPPORTED_FEATURE);
+            return CR_ACCESS_NON_ARCH;
     }
 
     return status;
@@ -171,7 +171,6 @@ void td_l2_exception_or_nmi_exit(vm_vmexit_exit_reason_t vm_exit_reason,
 {
     if (vm_exit_inter_info.interruption_type == VMEXIT_INTER_INFO_TYPE_NMI)
     {
-
         // This exit was due to an NMI
         async_tdexit_to_vmm(TDX_SUCCESS, vm_exit_reason,
                             vm_exit_qualification.raw, 0, 0, vm_exit_inter_info.raw);
@@ -185,7 +184,7 @@ void td_l2_exception_or_nmi_exit(vm_vmexit_exit_reason_t vm_exit_reason,
     else
     {
         // Other cases are handled by the L1 VMM
-        td_l2_to_l1_exit(vm_exit_reason, vm_exit_qualification, 0, vm_exit_inter_info, false);
+        td_l2_to_l1_exit(vm_exit_reason, vm_exit_qualification, 0, vm_exit_inter_info);
     }
 }
 

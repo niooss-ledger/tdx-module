@@ -27,7 +27,7 @@
 
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "x86_defs/x86_defs.h"
 #include "helpers/helpers.h"
 #include "memory_handlers/sept_manager.h"
@@ -115,7 +115,6 @@ api_error_type tdh_mem_page_relocate(uint64_t source_page_pa,
     return_val = lock_sept_check_and_walk_private_gpa(tdcs_ptr,
                                                       OPERAND_ID_RCX,
                                                       mapped_gpa,
-                                                      tdr_ptr->key_management_fields.hkid,
                                                       TDX_LOCK_SHARED,
                                                       &mapped_page_sept_entry_ptr,
                                                       &mapped_page_level_entry,
@@ -160,7 +159,6 @@ api_error_type tdh_mem_page_relocate(uint64_t source_page_pa,
 
     // Get currently mapped page HPA
     source_pa.raw = leaf_ept_entry_to_hpa(mapped_page_sept_entry_copy, mapped_gpa.raw, mapped_page_level_entry);
-    source_pa = set_hkid_to_pa(source_pa, tdr_ptr->key_management_fields.hkid);
 
     // Verify mapped HPA is different than target HPA
     if (remove_hkid_from_pa(source_pa).full_pa == target_pa.full_pa)
@@ -193,14 +191,8 @@ api_error_type tdh_mem_page_relocate(uint64_t source_page_pa,
             goto EXIT;
         }
 
-        // Check TLB tracking
-        if (!is_tlb_tracked(tdcs_ptr, mapped_page_pamt_ptr->bepoch))
-        {
-            TDX_ERROR("TLB tracking not done\n");
-            return_val = TDX_TLB_TRACKING_NOT_DONE;
-        }
-
-        if (return_val != TDX_SUCCESS)
+        return_val = is_tlb_and_iotlb_tracked(tdcs_ptr, mapped_page_pamt_ptr->bepoch);
+        if(return_val != TDX_SUCCESS)
         {
             return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
             goto EXIT;
@@ -258,13 +250,11 @@ api_error_type tdh_mem_page_relocate(uint64_t source_page_pa,
         return_val = l2_sept_walk(tdr_ptr, tdcs_ptr, vm_id, mapped_gpa, &mapped_page_level_entry, &l2_sept_entry_ptr);
         if (return_val != TDX_SUCCESS)
         {
-            // Should not happen - no need to free the L2 SEPT PTR's
-            extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_td_handle(target_tdr_pa, vm_id, mapped_page_level_entry, mapped_gpa.raw, *l2_sept_entry_ptr);
-            fatal_error(FATAL_ERROR_ID_9, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
+            FATAL_ERROR(); // Should not happen - no need to free the L2 SEPT PTR's
         }
 
         ia32e_sept_t l2_epte_val = {.raw = l2_sept_entry_ptr->raw};
-        l2_epte_val.base = set_hkid_to_pa(target_pa, tdr_ptr->key_management_fields.hkid).page_4k_num;
+        l2_epte_val.base = target_pa.full_pa >> 12;
 
         if (!sept_state_is_any_pending(mapped_page_sept_entry_copy))
         {

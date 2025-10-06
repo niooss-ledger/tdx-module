@@ -26,12 +26,13 @@
 
 #include "helpers/migration.h"
 #include "x86_defs/x86_defs.h"
-#include SEPT_STATE_LOOKUP_HEADER
+#include "auto_gen/sept_state_lookup.h"
 #include "memory_handlers/pamt_manager.h"
 #include "memory_handlers/keyhole_manager.h"
 #include "memory_handlers/sept_manager.h"
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "helpers/helpers.h"
+
 
 /**
  * migsc_init
@@ -55,7 +56,7 @@ void migsc_init(migsc_t *migsc, const key256_t *key)
 
     if (aes_gcm_init(key, &migsc->aes_gcm_context, &iv) != AES_GCM_NO_ERROR)
     {
-        fatal_error(FATAL_ERROR_ID_43, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
+        FATAL_ERROR();
     }
 }
 
@@ -105,3 +106,4 @@ void copy_mbmd(mbmd_t* mbmd_dst, mbmd_t* mbmd_src)
 {
     tdx_memcpy(mbmd_dst, sizeof(mbmd_t), mbmd_src, sizeof(mbmd_t));
 }
+

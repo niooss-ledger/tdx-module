@@ -35,7 +35,6 @@
 #include "data_structures/tdx_tdvps.h"
 #include "td_transitions/td_exit_stepping.h"
 #include "data_structures/tdx_local_data.h"
-#include "helpers/helpers.h"
 
 
 /**
@@ -47,7 +46,9 @@
  */
 __attribute__((visibility("hidden"))) void tdx_tdexit_entry_point(void);
 
+#ifdef DEBUGFEATURE_TDX_DBG_TRACE
 void tdx_failed_vmentry(void);
+#endif // DEBUGFEATURE_TDX_DBG_TRACE
 
 /**
  * @brief Common prologue flow for L1 and L2 TD dispatchers
@@ -60,11 +61,12 @@ void tdx_failed_vmentry(void);
  *
  * @return Stepping filter result
  */
-stepping_filter_e tdx_td_l1_l2_dispatcher_common_prologue(tdx_module_local_t* local_data,
-                                                          uint16_t vm_id,
-                                                          vm_vmexit_exit_reason_t* vm_exit_reason,
-                                                          vmx_exit_qualification_t* vm_exit_qualification,
-                                                          vmx_exit_inter_info_t* vm_exit_inter_info);
+stepping_filter_e tdx_td_l1_l2_dispatcher_common_prologue(
+        tdx_module_local_t* local_data,
+        uint16_t vm_id,
+        vm_vmexit_exit_reason_t* vm_exit_reason,
+        vmx_exit_qualification_t* vm_exit_qualification,
+        vmx_exit_inter_info_t* vm_exit_inter_info);
 
 /**
  * @brief Dispatcher for TD side VM Exits
@@ -111,9 +113,8 @@ void check_pending_voe_on_debug_td_return(void);
  *
  * @param vm_exit_reason
  * @param exit_qualification
- * @param category
  */
-void td_generic_ve_exit(vm_vmexit_exit_reason_t vm_exit_reason, uint64_t exit_qualification, ve_category_e category);
+void td_generic_ve_exit(vm_vmexit_exit_reason_t vm_exit_reason, uint64_t exit_qualification);
 
 /**
  * @brief Handler for all TDCALLs

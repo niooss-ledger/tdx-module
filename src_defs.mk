@@ -22,7 +22,6 @@
 
 # src_defs.mk - Sources, targets definitions and locations
 
-include proj_defs.mk
 
 # Makefile location - which is the project root dir
 MAKEFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
@@ -32,46 +31,34 @@ PROJ_DIR := $(patsubst %/,%,$(__PROJ_DIR))
 
 # Binary output location and name
 RELEASE_DIR := $(PROJ_DIR)/bin/release
-DEBUG_DIR := $(PROJ_DIR)/bin/debug
 TARGET_NAME := libtdx.so
 RELEASE_TARGET := $(RELEASE_DIR)/$(TARGET_NAME)
-DEBUG_TARGET := $(DEBUG_DIR)/$(TARGET_NAME)
 OBJ_DIR_NAME := obj
 
 
 # Source directories
-SRC_DIRS := src/common src/common/accessors src/common/crypto \
+SRC_DIRS := include include/auto_gen src/common src/common/accessors src/common/crypto \
 			src/common/data_structures src/common/debug src/common/helpers src/common/memory_handlers \
 			src/common/metadata_handlers src/common/x86_defs src/td_dispatcher src/td_dispatcher/vm_exits \
 			src/td_transitions src/vmm_dispatcher src/vmm_dispatcher/api_calls \
-			src/common/exception_handling src/td_dispatcher/vm_exits_l2 include/auto_gen_1_5 src/vmm_dispatcher/migration_api_calls
+			src/common/exception_handling src/td_dispatcher/vm_exits_l2 src/common/tdxio src/common/data_structures/tdxio \
+			include/tdxio src/td_dispatcher/vm_exits/tdxio src/vmm_dispatcher/api_calls/tdxio src/vmm_dispatcher/migration_api_calls
+
 SRC_DIRS := $(foreach dir,$(SRC_DIRS),$(PROJ_DIR)/$(dir))
 
 
 VPATH := $(SRC_DIRS)
 
-# Source and headers files
-C_SRC_FILES = $(foreach dir,$(SRC_DIRS),$(sort $(wildcard $(dir)/*.c)))
-
-ifndef PERF_TDX
-ifndef SUPPRESS_PERF_UTILS_FILTER_OUT
- C_SRC_FILES := $(filter-out $(PROJ_DIR)/src/common/helpers/perf_meas_util.c, ${C_SRC_FILES})
-endif # SUPPRESS_PERF_UTILS_FILTER_OUT
-endif # PERF_TDX
-ASM_SRC_FILES = $(foreach dir,$(SRC_DIRS),$(sort $(wildcard $(dir)/*.S)))
-SRC_FILES = $(C_SRC_FILES) $(ASM_SRC_FILES)
-HEADER_FILES = $(foreach dir,$(SRC_DIRS),$(sort $(wildcard $(dir)/*.h)))
-
 # Objects
-__C_OBJECTS = $(patsubst %.c, %.o, $(notdir $(C_SRC_FILES)))
-__ASM_OBJECTS = $(patsubst %.S, %.o, $(notdir $(ASM_SRC_FILES)))
+__C_OBJECTS := $(shell cat $(PROJ_DIR)/c_objects.txt)
+__ASM_OBJECTS := $(shell cat $(PROJ_DIR)/asm_objects.txt)
 
 # Libraries
 CRYPTO_LIB_BUILD_FLAVOR := RELEASE
 ifndef CRYPTO_LIB_VERSION
-CRYPTO_LIB_VERSION      := 1.0.1
+CRYPTO_LIB_VERSION      := 2021_10_0
 endif # CRYPTO_LIB_VERSION
-CRYPTO_LIB_MAIN_DIR     := $(PROJ_DIR)/libs/ipp/cryptography-primitives-$(CRYPTO_LIB_VERSION)
+CRYPTO_LIB_MAIN_DIR     := $(PROJ_DIR)/libs/ipp/ipp-crypto-ipp-crypto_$(CRYPTO_LIB_VERSION)
 CRYPTO_LIB_SRC_DIR      := $(CRYPTO_LIB_MAIN_DIR)/sources
 CRYPTO_LIB_BUILD_PATH   := $(CRYPTO_LIB_MAIN_DIR)/_build/.build/$(CRYPTO_LIB_BUILD_FLAVOR)
 CRYPTO_LIB_PATH         := $(CRYPTO_LIB_BUILD_PATH)/lib
@@ -85,3 +72,7 @@ INCLUDE_PATH := -I$(PROJ_DIR)/include -I$(CRYPTO_LIB_BUILD_PATH)/include -I$(PRO
 # Tools
 TOOLS_DIR := $(PROJ_DIR)/tools
 PAD_BINARY_PY := $(TOOLS_DIR)/pad_binary/pad_binary.py
+
+#Python scripts
+AUTO_GEN_PATH := $(PROJ_DIR)/include/auto_gen
+TPA_HASH_PARSER := $(TOOLS_DIR)/tpa_hash_parser.py

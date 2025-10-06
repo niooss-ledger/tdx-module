@@ -25,23 +25,21 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include OP_STATE_LOOKUP_HEADER
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/op_state_lookup.h"
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "x86_defs/x86_defs.h"
 #include "accessors/ia32_accessors.h"
 #include "accessors/data_accessors.h"
 #include "helpers/helpers.h"
 #include "helpers/migration.h"
 #include "metadata_handlers/metadata_generic.h"
-#include "metadata_handlers/metadata_vp.h"
 
 /* Initialize VCPU-scope metadata.
-   - Called at the beginning of VCPU state import
    - Initialize fields marked as "IE*" ("IE", "IES", "IESME" etc.) in the TDVPS and TD VMCS spreadsheets.
    - Note that some fields are initialized during VMCS preparation and VCPU association
      functions prepare_td_vmcs(), associate_vcpu_initial() and associate_vcpu().
 */
-static void pre_init_imported_vp_state(tdr_t* tdr_p, tdcs_t *tdcs_p, tdvps_t *tdvps_p)
+static void init_imported_vp_state(tdr_t* tdr_p, tdcs_t *tdcs_p, tdvps_t *tdvps_p)
 {
     tdvps_p->management.last_exit_tsc = ia32_rdtsc();
 
@@ -49,16 +47,6 @@ static void pre_init_imported_vp_state(tdr_t* tdr_p, tdcs_t *tdcs_p, tdvps_t *td
     init_td_vmcs(tdr_p, tdcs_p, tdvps_p, true, 0);
 }
 
-/* Initialize VCPU-scope L2 VM metadata.
-   - Called at the beginning of VCPU state import
-   - Initialize fields marked as "IE" or "IES" in the TDVPS and L2 VMCS spreadsheets.
-   - Note that some fields are initialized during VMCS preparation and VCPU association
-     functions prepare_td_vmcs(), associate_vcpu_initial() and associate_vcpu().
-*/
-static void pre_init_imported_vp_l2_state(tdr_t* tdr_p, tdcs_t *tdcs_p, tdvps_t *tdvps_p, uint16_t vm_id)
-{
-    init_td_vmcs(tdr_p, tdcs_p, tdvps_p, true, vm_id);
-}
 
 api_error_type tdh_import_state_vp(uint64_t target_tdvpr_pa, uint64_t hpa_and_size_pa,
                                    uint64_t page_or_list_pa, uint64_t  migs_i_and_cmd_pa)
@@ -216,11 +204,11 @@ api_error_type tdh_import_state_vp(uint64_t target_tdvpr_pa, uint64_t hpa_and_si
          */
 
         // Check the VCPU state
-        if (tdvps_p->management.vcpu_state != VCPU_UNINITIALIZED)
+        if (tdvps_p->management.state != VCPU_UNINITIALIZED)
         {
             tdcs_p->management_fields.op_state = OP_STATE_FAILED_IMPORT;
-            TDX_ERROR("VCPU in incorrect state (0x%u)\n", tdvps_p->management.vcpu_state);
-            return_val = api_error_with_operand_id_fatal(TDX_VCPU_STATE_INCORRECT, tdvps_p->management.vcpu_state);
+            TDX_ERROR("VCPU in incorrect state (0x%u)\n", tdvps_p->management.state);
+            return_val = api_error_fatal(TDX_VCPU_STATE_INCORRECT);
             goto EXIT;
         }
 
@@ -276,16 +264,12 @@ api_error_type tdh_import_state_vp(uint64_t target_tdvpr_pa, uint64_t hpa_and_si
         if (aes_gcm_process_aad(&migsc_p->aes_gcm_context, (uint8_t*)&migsc_p->mbmd.vp_state,
                 MBMD_SIZE_NO_MAC(migsc_p->mbmd.vp_state)) != AES_GCM_NO_ERROR)
         {
-            fatal_error(FATAL_ERROR_ID_155, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
+            FATAL_ERROR();
         }
 
         page_list_i = 0;
 
-        // Initialize the VMCS version identifier and execute VMCLEAR
-        for (uint16_t vm_id = 0; vm_id <= tdcs_p->management_fields.num_l2_vms; vm_id++)
-        {
-            prepare_td_vmcs(tdvps_p, vm_id);
-        }
+        prepare_td_vmcs(tdvps_p, 0);
 
         // Associate the CVPU with the current LP and update TD MVCS
         associate_vcpu_initial(tdvps_p, tdcs_p);
@@ -293,14 +277,8 @@ api_error_type tdh_import_state_vp(uint64_t target_tdvpr_pa, uint64_t hpa_and_si
 
         // Initialize VCPU-scope metadata fields marked as "IE" and "IES" in the TDVPS and TD VMCS spreadsheets,
         // not including L2 state
-        pre_init_imported_vp_state(tdr_p, tdcs_p, tdvps_p);
+        init_imported_vp_state(tdr_p, tdcs_p, tdvps_p);
 
-        // Initialize the L2 VMCSes
-        for (uint16_t vm_id = 1; vm_id <= tdcs_p->management_fields.num_l2_vms; vm_id++)
-        {
-            set_vm_vmcs_as_active(tdvps_p, vm_id);
-            pre_init_imported_vp_l2_state(tdr_p, tdcs_p, tdvps_p, vm_id);
-        }
 
         // Set the initial field ID.
         field_id.raw = MD_FIELD_ID_NA;
@@ -337,11 +315,11 @@ api_error_type tdh_import_state_vp(uint64_t target_tdvpr_pa, uint64_t hpa_and_si
         }
 
         // Check the VCPU state
-        if ((tdvps_p->management.vcpu_state != VCPU_IMPORT) && (tdvps_p->management.vcpu_state != VCPU_DISABLED))
+        if ((tdvps_p->management.state != VCPU_IMPORT) && (tdvps_p->management.state != VCPU_DISABLED))
         {
             tdcs_p->management_fields.op_state = OP_STATE_FAILED_IMPORT;
-            TDX_ERROR("VCPU in incorrect state (0x%ux)\n", tdvps_p->management.vcpu_state);
-            return_val = api_error_with_operand_id_fatal(TDX_VCPU_STATE_INCORRECT, tdvps_p->management.vcpu_state);
+            TDX_ERROR("VCPU in incorrect state (0x%ux)\n", tdvps_p->management.state);
+            return_val = api_error_fatal(TDX_VCPU_STATE_INCORRECT);
             goto EXIT;
         }
 
@@ -427,7 +405,7 @@ api_error_type tdh_import_state_vp(uint64_t target_tdvpr_pa, uint64_t hpa_and_si
         // Decrypt the metadata list
         if (aes_gcm_decrypt(&migsc_p->aes_gcm_context, (uint8_t*)md_list_hdr_p , (uint8_t*)&md_list, _4KB) != AES_GCM_NO_ERROR)
         {
-            fatal_error(FATAL_ERROR_ID_156, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
+            FATAL_ERROR();
         }
 
         // Do a sanity check on the list buffer size
@@ -500,9 +478,9 @@ api_error_type tdh_import_state_vp(uint64_t target_tdvpr_pa, uint64_t hpa_and_si
              * from being used if the import is not resumed and completed
              * If the VCPU state was imported as disabled, keep it disabled.
              */
-            if (tdvps_p->management.vcpu_state != VCPU_DISABLED)
+            if (tdvps_p->management.state != VCPU_DISABLED)
             {
-                tdvps_p->management.vcpu_state = VCPU_IMPORT;
+                tdvps_p->management.state = VCPU_IMPORT;
             }
 
             local_data_ptr->vmm_regs.rcx = original_rcx;
@@ -521,7 +499,7 @@ api_error_type tdh_import_state_vp(uint64_t target_tdvpr_pa, uint64_t hpa_and_si
     uint8_t mac[MAC256_LEN];
     if (aes_gcm_finalize(&migsc_p->aes_gcm_context, mac) != AES_GCM_NO_ERROR)
     {
-        fatal_error(FATAL_ERROR_ID_157, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
+        FATAL_ERROR();
     }
 
     if (!tdx_memcmp_safe(mac, migsc_p->mbmd.vp_state.mac, sizeof(mac)))
@@ -560,14 +538,11 @@ api_error_type tdh_import_state_vp(uint64_t target_tdvpr_pa, uint64_t hpa_and_si
         goto EXIT;
     }
 
-    // Initialize VCPU-Scope metadata
-    init_imported_vp_state(tdcs_p, tdvps_p);
-
     // Update the VCPU state
     // If the VCPU state was imported as disabled, keep it disabled.
-    if (tdvps_p->management.vcpu_state != VCPU_DISABLED)
+    if (tdvps_p->management.state != VCPU_DISABLED)
     {
-        tdvps_p->management.vcpu_state = VCPU_READY;
+        tdvps_p->management.state = VCPU_READY;
     }
 
     // Update the migration stream counters and mark as non-interrupted
@@ -585,11 +560,6 @@ EXIT:
         migsc_unlock(&tdcs_p->f_migsc_links[migs_i]);
     }
 
-    if (op_state_locked_flag)
-    {
-        release_sharex_lock_hp(&(tdcs_p->management_fields.op_state_lock), TDX_LOCK_SHARED);
-    }
-
     if (tdr_pamt_p != NULL)
     {
         pamt_implicit_release_lock(tdr_pamt_p, TDX_LOCK_SHARED);
@@ -599,6 +569,11 @@ EXIT:
     if (tdvpr_locked_flag)
     {
         pamt_unwalk(tdvpr_pa, tdvpr_pamt_block, tdvpr_pamt_p, TDX_LOCK_EXCLUSIVE, PT_4KB);
+    }
+
+    if (op_state_locked_flag)
+    {
+        release_sharex_lock_hp(&(tdcs_p->management_fields.op_state_lock), TDX_LOCK_SHARED);
     }
 
     if (tdcs_p != NULL)

@@ -63,7 +63,9 @@ extern const idt_and_gdt_tables_t tdx_idt_and_gdt;
 
 void tdx_fault_wrapper(void);
 
-void tdx_exception_handler(uint64_t vector, uint64_t errc, uint64_t faulting_rip);
+#ifdef DEBUGFEATURE_TDX_DBG_TRACE
+void tdx_debug_exception_handler(uint64_t vector, uint64_t errc, uint64_t faulting_rip);
+#endif // DEBUGFEATURE_TDX_DBG_TRACE
 
 // Names from that point can be changed freely
 

@@ -90,22 +90,17 @@ typedef enum td_msr_access_status_e
 } td_msr_access_status_t;
 
 /**
- * @brief Helper function for ia32_misc_enable writes
- */
-uint16_t wrmsr_ia32_misc_enable(tdvps_t* tdvps_p, tdcs_t* tdcs_p, uint64_t wr_value);
-
-/**
  * @brief Handler for RDMSR exit
  *
  */
-uint16_t td_rdmsr_exit(void);
+td_msr_access_status_t td_rdmsr_exit(void);
 
 
 /**
  * @brief Handler for WRMSR exit
  *
  */
-uint16_t td_wrmsr_exit(void);
+td_msr_access_status_t td_wrmsr_exit(void);
 
 
 // VM-transitions and injections helper flows
@@ -132,13 +127,12 @@ void tdx_ept_misconfig_exit_to_vmm(pa_t gpa);
  *
  * @param vm_exit_reason     - Exit reason to be stored in the VE_AREA
  * @param exit_qualification - VM-exit qualification to be stored in the VE AREA
- * @param category           - msr status category
  * @param tdvps_p            - TDVPS where the VE_AREA is located
  * @param gpa                - guest physical address to be stored in the VE_AREA
  * @param glp                - guest linear address to be stored in the VE_AREA
  */
-void tdx_inject_ve(uint64_t vm_exit_reason, uint64_t exit_qualification, ve_category_e category,
-                   tdvps_t* tdvps_p, uint64_t gpa, uint64_t gla);
+void tdx_inject_ve(uint64_t vm_exit_reason, uint64_t exit_qualification, tdvps_t* tdvps_p,
+        uint64_t gpa, uint64_t gla);
 
 /**
  * @brief Handler for nmi exit, Inject an NMI if applicable

@@ -64,50 +64,9 @@
 #define IA32_TSC_AUX_MSR_ADDR                            0xC0000103
 #define IA32_TSC_DEADLINE_MSR_ADDR                       0x6E0
 #define IA32_FIXED_CTR_CTRL_MSR_ADDR                     0x38D
-#define IA32_PMC_FX0_CTR_MSR_ADDR                        0x309
-#define IA32_PMC_GP0_CTR_MSR_ADDR                        0x4C1
+#define IA32_FIXED_CTR0_MSR_ADDR                         0x309
+#define IA32_A_PMC0_MSR_ADDR                             0x4C1
 #define IA32_PERFEVTSEL0_MSR_ADDR                        0x186
-#define IA32_PERFEVTSEL1_MSR_ADDR                        0x187
-#define IA32_PERFEVTSEL2_MSR_ADDR                        0x188
-#define IA32_PERFEVTSEL3_MSR_ADDR                        0x189
-#define IA32_PERFEVTSEL4_MSR_ADDR                        0x18A
-#define IA32_PERFEVTSEL5_MSR_ADDR                        0x18B
-#define IA32_PERFEVTSEL6_MSR_ADDR                        0x18C
-#define IA32_PERFEVTSEL7_MSR_ADDR                        0x18D
-
-#define IA32_PMC_GP0_CFG_A_MSR_ADDR                      0x1901
-#define IA32_PMC_GP1_CFG_A_MSR_ADDR                      0x1905
-#define IA32_PMC_GP2_CFG_A_MSR_ADDR                      0x1909
-#define IA32_PMC_GP3_CFG_A_MSR_ADDR                      0x190D
-#define IA32_PMC_GP4_CFG_A_MSR_ADDR                      0x1911
-#define IA32_PMC_GP5_CFG_A_MSR_ADDR                      0x1915
-#define IA32_PMC_GP6_CFG_A_MSR_ADDR                      0x1919
-#define IA32_PMC_GP7_CFG_A_MSR_ADDR                      0x191D
-
-#define IA32_PMC_GP0_CFG_C_MSR_ADDRESS                   0x1903
-#define IA32_PMC_GP1_CFG_C_MSR_ADDRESS                   0x1907
-#define IA32_PMC_GP2_CFG_C_MSR_ADDRESS                   0x190B
-#define IA32_PMC_GP3_CFG_C_MSR_ADDRESS                   0x190F
-#define IA32_PMC_GP4_CFG_C_MSR_ADDRESS                   0x1913
-#define IA32_PMC_GP5_CFG_C_MSR_ADDRESS                   0x1917
-#define IA32_PMC_GP6_CFG_C_MSR_ADDRESS                   0x191B
-#define IA32_PMC_GP7_CFG_C_MSR_ADDRESS                   0x191F
-#define IA32_PMC_GP8_CFG_C_MSR_ADDRESS                   0x1923
-#define IA32_PMC_GP9_CFG_C_MSR_ADDRESS                   0x1927
-#define PMC_GP_CFG_C_MSRS_COUNT                          8
-#define PMC_GP_CFG_C_BITS_MASK                           0x3FF
-
-#define IA32_PMC_FX0_CFG_C_MSR_ADDRESS                   0x1983
-#define IA32_PMC_FX1_CFG_C_MSR_ADDRESS                   0x1987
-#define IA32_PMC_FX2_CFG_C_MSR_ADDRESS                   0x198B
-#define IA32_PMC_FX3_CFG_C_MSR_ADDRESS                   0x198F
-#define IA32_PMC_FX4_CFG_C_MSR_ADDRESS                   0x1993
-#define IA32_PMC_FX5_CFG_C_MSR_ADDRESS                   0x1997
-#define IA32_PMC_FX6_CFG_C_MSR_ADDRESS                   0x199B
-#define PMC_FX_CFG_C_MSRS_COUNT                          7
-#define PMC_FX_CFG_C_BITS_MASK                           0x7F
-
-
 #define IA32_PERF_METRICS_MSR_ADDR                       0x329
 #define IA32_PEBS_ENABLE_MSR_ADDR                        0x3F1
 #define IA32_PEBS_DATA_CFG_MSR_ADDR                      0x3F2
@@ -130,13 +89,6 @@
 #define IA32_MISC_PACKAGE_CTLS_MSR_ADDR                  0xBC
 #define IA32_UARCH_MISC_CTL_MSR_ADDR                     0x1B01
 #define IA32_XAPIC_DISABLE_STATUS_MSR_ADDR               0xBD
-#define IA32_SMI_COUNT_MSR_ADDR                          0x34
-#define IA32_FEATURE_CONTROL_MSR_ADDR                    0x3A
-#define IA32_PPIN_CTL_MSR_ADDR                           0x4E
-#define IA32_BIOS_UPDT_TRIG_MSR_ADDR                     0x79
-#define IA32_BIOS_SIGN_ID_MSR_ADDR                       0x8B
-#define IA32_PLATFORM_INFO_MSR_ADDR                      0xCE
-#define IA32_FEATURE_ENABLES_MSR_ADDR                    0x140
 // Partial WBINVD related MSRs
 #define IA32_WBINVDP_MSR_ADDR                            0x98
 #define IA32_WBNOINVDP_MSR_ADDR                          0x99
@@ -159,16 +111,6 @@
 
 #define NUM_PMC                      8
 #define MAX_FIXED_CTR                7ULL // Max supported by TDX module
-
-#define IA32_A_PMC_BASE              0x1900
-#define IA32_FIXED_CTR_BASE          0x1980
-#define PERFMON_MSR_INDEX_DELTA      4 // Difference between MSR indices for counter N and counter N+1
-
-// Programmable Counters:  Index is IA32_A_PMC_BASE + PERFMON_MSR_INDEX_DELTA * COUNTER_NUMBER + *_OFFSET
-#define IA32_A_PMC_OFFSET                 0
-#define IA32_PERFEVTSEL_OFFSET            1
-// Fixed Counters:  Index is IA32_FIXED_CTR_BASE + PERFMON_MSR_INDEX_DELTA * COUNTER_NUMBER + *_OFFSET
-#define IA32_FIXED_CTR_OFFSET             0
 
 #define IA32_PERF_GLOBAL_CTRL_FIXED_CTR12_EN_MASK           (BIT(33) | BIT(34))
 
@@ -457,10 +399,12 @@ typedef union ia32_spec_ctrl_u
 } ia32_spec_ctrl_t;
 tdx_static_assert(sizeof(ia32_spec_ctrl_t) == 8, ia32_spec_ctrl_t);
 
+
 // TODO, uncomment once is_not_gnr_a0_stepping WA is removed
 // #define IA32_SPEC_CTRL_SSBD_BIT         BIT(2)
 // #define IA32_SPEC_CTRL_IPRED_DIS_S_BIT  BIT(4)
 // #define TDX_MODULE_IA32_SPEC_CTRL       (IA32_SPEC_CTRL_SSBD_BIT | IA32_SPEC_CTRL_IPRED_DIS_S_BIT)
+
 
 #define IA32_ARCH_CAPABILITIES_CONFIG_MASK  (BIT(4) | BIT(19) | BIT(20) | BIT(24))
 
@@ -525,7 +469,7 @@ typedef union ia32_misc_enable_u
         uint64_t bts_unavailable        : 1;  // 11
         uint64_t pebs_unavailable       : 1;  // 12
         uint64_t rsvd4                  : 3;  // 15:13
-        uint64_t est                    : 1;  // 16
+        uint64_t enable_gv3             : 1;  // 16
         uint64_t rsvd5                  : 1;  // 17
         uint64_t enable_monitor_fsm     : 1;  // 18
         uint64_t rsvd6                  : 3;  // 21:19
@@ -572,35 +516,5 @@ typedef union ia32_xapic_disable_status_u
     };
     uint64_t raw;
 } ia32_xapic_disable_status_t;
-
-typedef union ia32_perfevtsel_s
-{
-    struct
-    {
-        union
-        {
-            struct
-            {
-                uint8_t event_select;  // Bits 7:0
-                uint8_t umask;         // Bits 15:8
-            };
-            uint16_t event_id;         // Bits 15:0
-        };
-        uint8_t  usr        :  1;      // Bit 16
-        uint8_t  os         :  1;      // Bit 17
-        uint8_t  e          :  1;      // Bit 18
-        uint8_t  pc         :  1;      // Bit 19
-        uint8_t  interrupts :  1;      // Bit 20
-        uint8_t  any_thr    :  1;      // Bit 21
-        uint8_t  en         :  1;      // Bit 22
-        uint8_t  inv        :  1;      // Bit 23
-        uint8_t  cmask      :  8;      // Bits 31:24
-        uint32_t reserved_0 : 31;      // Bits 62:32
-        uint32_t forbidden  :  1;      // Bit 63:  This is a TDX definition, this bit is reserved for the real MSR
-    };
-
-    uint64_t raw;
-} ia32_perfevtsel_t;
-tdx_static_assert(sizeof(ia32_perfevtsel_t) == 8, ia32_perfevtsel_t);
 
 #endif /* SRC_COMMON_X86_DEFS_MSR_DEFS_H_ */

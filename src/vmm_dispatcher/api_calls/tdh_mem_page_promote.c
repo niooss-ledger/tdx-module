@@ -26,7 +26,7 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "x86_defs/x86_defs.h"
 #include "data_structures/td_control_structures.h"
 #include "memory_handlers/keyhole_manager.h"
@@ -68,7 +68,6 @@ static api_error_type is_sept_page_valid_for_merge(ia32e_paging_table_t* merged_
 
         // Read the copy after locking
         current_sept_copy = *current_sept;
-        current_sept_copy.raw = remove_hkid_from_pa((pa_t)current_sept_copy.raw).raw;
 
         sept_cleanup_if_pending(&current_sept_copy, leaf_entry_level);
 
@@ -132,7 +131,6 @@ static api_error_type is_l2_sept_page_valid_for_merge(ia32e_paging_table_t* merg
         ia32e_sept_t current_sept_copy;
 
         current_sept_copy = *current_sept;
-        current_sept_copy.raw = remove_hkid_from_pa((pa_t)current_sept_copy.raw).raw;
 
         IF_RARE (i == 0)
         {
@@ -263,7 +261,6 @@ api_error_type tdh_mem_page_promote(page_info_api_input_t gpa_page_info, uint64_
     return_val = lock_sept_check_and_walk_private_gpa(tdcs_ptr,
                                                       OPERAND_ID_RCX,
                                                       page_gpa,
-                                                      tdr_ptr->key_management_fields.hkid,
                                                       TDX_LOCK_SHARED,
                                                       &merged_sept_page_sept_entry_ptr[0],
                                                       &merged_sept_parent_level_entry,
@@ -280,17 +277,6 @@ api_error_type tdh_mem_page_promote(page_info_api_input_t gpa_page_info, uint64_
         TDX_ERROR("Failed on GPA check, SEPT lock or walk - error = %llx\n", return_val);
         goto EXIT;
     }
-
-/* 1308552267 - suppress check
-    //TDX_IO_SUPPORT
-    // Verify page mem_type is WB, fail otherwise
-    if (merged_sept_page_sept_entry_copy.fields_4k.mt != MT_WB)
-    {
-        TDX_ERROR("Page memory type is not WB.\n");
-        return_val = api_error_with_operand_id(TDX_OPERAND_INVALID,OPERAND_ID_RCX);
-        goto EXIT;
-    }
-*/
 
     // Lock the SEPT entry in memory
     return_val = sept_lock_acquire_host(merged_sept_page_sept_entry_ptr[0]);
@@ -341,14 +327,8 @@ api_error_type tdh_mem_page_promote(page_info_api_input_t gpa_page_info, uint64_
             goto EXIT;
         }
 
-        // Check TLB tracking
-        if (!is_tlb_tracked(tdcs_ptr, merged_sept_page_pamt_entry_ptr[0]->bepoch))
-        {
-            TDX_ERROR("TLB tracking not done\n");
-            return_val = TDX_TLB_TRACKING_NOT_DONE;
-        }
-
-        if (return_val != TDX_SUCCESS)
+        return_val = is_tlb_and_iotlb_tracked(tdcs_ptr, merged_sept_page_pamt_entry_ptr[0]->bepoch);
+        if(return_val != TDX_SUCCESS)
         {
             return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);
             goto EXIT;
@@ -358,7 +338,7 @@ api_error_type tdh_mem_page_promote(page_info_api_input_t gpa_page_info, uint64_
     // Step #2
 
     // Map the Secure-EPT page before merging
-    merged_sept_page_ptr[0] = map_pa_with_hkid(merged_sept_page_pa[0].raw_void, tdr_ptr->key_management_fields.hkid, TDX_RANGE_RW);
+    merged_sept_page_ptr[0] = map_pa(merged_sept_page_pa[0].raw_void, TDX_RANGE_RW);
 
     // Scan the Secure EPT page content and verify all 512 entries:
     //   - Are leaf SEPT_PRESENT entries(this also implies that the corresponding pages
@@ -394,9 +374,7 @@ api_error_type tdh_mem_page_promote(page_info_api_input_t gpa_page_info, uint64_
                                       &merged_sept_page_sept_entry_ptr[vm_id]);
             if ((return_val != TDX_SUCCESS))
             {
-                // Should not happen since the large range is aliased
-                extended_fatal_info_t extended_fatal_info = prepare_extended_fatal_info_sept_td_handle(target_tdr_pa, vm_id, l2_sept_parent_level_entry, page_gpa.raw, *merged_sept_page_sept_entry_ptr[vm_id]);
-                fatal_error(FATAL_ERROR_ID_8, FATAL_INFO_FORMAT_SEPT_TD_HANDLE_INFO, &extended_fatal_info);
+                FATAL_ERROR(); // Should not happen since the large range is aliased
             }
 
             // L2 SEPT entry was found
@@ -405,10 +383,9 @@ api_error_type tdh_mem_page_promote(page_info_api_input_t gpa_page_info, uint64_
             // The L2 SEPT entry must be a non-leaf entry since the L1 SEPT entry is a non-leaf
             tdx_sanity_check(!is_secure_ept_leaf_entry(&l2_merged_sept_page_sept_entry_copy) &&
                              !is_l2_sept_free(&l2_merged_sept_page_sept_entry_copy),
-                             FATAL_ERROR_ID_285, 0);
+                             SCEC_SEAMCALL_SOURCE(TDH_MEM_PAGE_PROMOTE_LEAF), 0);
 
             merged_sept_page_pa[vm_id].raw = merged_sept_page_sept_entry_ptr[vm_id]->base << 12;
-            merged_sept_page_pa[vm_id] = set_hkid_to_pa(merged_sept_page_pa[vm_id], tdr_ptr->key_management_fields.hkid);
 
             if ((return_val = pamt_implicit_get_and_lock(merged_sept_page_pa[vm_id], PT_4KB,
                                 TDX_LOCK_EXCLUSIVE, &merged_sept_page_pamt_entry_ptr[vm_id], false)) != TDX_SUCCESS)
@@ -460,11 +437,8 @@ api_error_type tdh_mem_page_promote(page_info_api_input_t gpa_page_info, uint64_
     merged_page_pa.raw = leaf_ept_entry_to_hpa(merged_sept_page_ptr[0]->sept[0], 0,
                                           (ept_level_t)(merged_sept_parent_level_entry - 1));
 
-    uint64_t removed_pages_pa[DEFAULT_NUM_PAMT_PAGES];
-    merged_page_pa = set_hkid_to_pa(merged_page_pa, tdr_ptr->key_management_fields.hkid);
-
     // Merge PAMT range of the promoted page
-    if ((return_val = pamt_promote(merged_page_pa, (page_size_t)merged_sept_parent_level_entry, removed_pages_pa)) != TDX_SUCCESS)
+    if ((return_val = pamt_promote(merged_page_pa, (page_size_t)merged_sept_parent_level_entry)) != TDX_SUCCESS)
     {
         TDX_ERROR("Couldn't not merge the destined page in PAMT\n");
         return_val = api_error_with_operand_id(return_val, OPERAND_ID_RCX);

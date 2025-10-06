@@ -25,8 +25,8 @@
  */
 #include "tdx_vmm_api_handlers.h"
 #include "tdx_basic_defs.h"
-#include OP_STATE_LOOKUP_HEADER
-#include TDX_ERROR_CODES_DEFS_HEADER
+#include "auto_gen/op_state_lookup.h"
+#include "auto_gen/tdx_error_codes_defs.h"
 #include "x86_defs/x86_defs.h"
 #include "accessors/ia32_accessors.h"
 #include "accessors/data_accessors.h"
@@ -224,7 +224,7 @@ api_error_type tdh_export_state_vp(uint64_t target_tdvpr_pa, uint64_t hpa_and_si
         if (aes_gcm_process_aad(&migsc_p->aes_gcm_context, (uint8_t*)&migsc_p->mbmd.vp_state,
                 MBMD_SIZE_NO_MAC(migsc_p->mbmd.vp_state)) != AES_GCM_NO_ERROR)
         {
-            fatal_error(FATAL_ERROR_ID_141, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
+            FATAL_ERROR();
         }
 
         // Update the MBMD with values not included in the MAC calculation
@@ -344,7 +344,7 @@ api_error_type tdh_export_state_vp(uint64_t target_tdvpr_pa, uint64_t hpa_and_si
 
         if (aes_gcm_encrypt(&migsc_p->aes_gcm_context, (uint8_t*)&md_list, (uint8_t*)enc_md_list_hdr_p , _4KB  ) != AES_GCM_NO_ERROR)
         {
-            fatal_error(FATAL_ERROR_ID_142, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
+            FATAL_ERROR();
         }
 
         page_list_i++;
@@ -383,7 +383,7 @@ api_error_type tdh_export_state_vp(uint64_t target_tdvpr_pa, uint64_t hpa_and_si
             // Write the MBMD's MAC field
             if (aes_gcm_finalize(&migsc_p->aes_gcm_context, migsc_p->mbmd.vp_state.mac) != AES_GCM_NO_ERROR)
             {
-                fatal_error(FATAL_ERROR_ID_143, FATAL_INFO_FORMAT_BASIC_INFO, NULL);
+                FATAL_ERROR();
             }
 
             // Write out the MBMD
